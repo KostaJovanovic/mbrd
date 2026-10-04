@@ -1009,6 +1009,15 @@
   pointer-events: none;
   border: 2px solid var(--select);
 }
+/* And inside the mode a card's own controls stand down: a tap on a play
+   button, a scrubber, a link or a 3D stage picks the card it is on, rather than
+   playing, seeking or leaving. Taken out of hit-testing so the press lands on
+   the card and canvas/input.ts never sees a widget. The same list as `widget`
+   there, less the text a note is being edited in, plus an embed's frame, which
+   would otherwise take the tap for the page inside it. */
+:root.is-picking #world .item :is(audio, video[controls], input, button, a, .wave, .model-stage, iframe) {
+  pointer-events: none;
+}
 
 /* The first end, once one is chosen. canvas/items.ts writes data-pick, and it
    writes it in build() as well as on the live node - a card culled while it is

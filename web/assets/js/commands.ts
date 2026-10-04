@@ -180,6 +180,14 @@ function registerLayoutOps() {
   });
 }
 
+/** Said as the multi-select mode comes on, by either door. The standing mark is
+ *  synced off the bus in main.ts so every exit clears it. The Feed has no drag,
+ *  so the second sentence is the canvas's alone. */
+function multiSelectHint() {
+  toast(board.layoutMode === 'mobile' ? 'Tap cards to add them.'
+    : 'Tap cards to add them. Drag a selected one to move them all.');
+}
+
 /** Build the command surface. Deps injected to avoid importing ui/appearance.ts (touches DOM at import). */
 export function createCommands(vp: CommandsViewport, { resetAppearance, setWhimsy, perf, bench }: CommandDeps) {
   registerLayoutOps();
@@ -433,10 +441,15 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     toggleMultiSelect: () => {
       const on = !isMultiSelect();
       setMultiSelect(on);
-      // Standing mark synced off the bus in main.ts so every exit clears it.
-      // The Feed has no drag, so the second sentence is the canvas's alone.
-      if (on) toast(board.layoutMode === 'mobile' ? 'Tap cards to add them.'
-        : 'Tap cards to add them. Drag a selected one to move them all.');
+      if (on) multiSelectHint();
+    },
+    // A hold on another card while one is picked: the mode, and that card.
+    holdToPick: (id: string) => {
+      if (!isMultiSelect()) {
+        setMultiSelect(true);
+        multiSelectHint();
+      }
+      select([id], true);
     },
     undo, redo,
     deleteSelection: () => {

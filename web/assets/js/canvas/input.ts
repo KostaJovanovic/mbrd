@@ -1178,6 +1178,8 @@ type InputCommands = {
   // Read straight from state.ts on the pointer path - the flag is state, not a
   // command - so what is wanted here is only the way *out*, for Escape.
   toggleMultiSelect?(): void,
+  /** Turn the multi-select mode on with this card added - a hold on a second card. */
+  holdToPick?(id: string): void,
   connectTap?(id: string | null, sticky?: boolean): boolean,
   connectionUnder?(at: Point): { a: string, b: string } | null,
   pickConnection?(at: Point): void,
@@ -1350,6 +1352,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // still lands with nothing selected. Only the moment moves, from the press to
   // the lift.
   let clearOnLift: number | null = null;
+  /**
+   * Where a press on bare board began, when it held two or more cards picked.
+   * A group is the expensive selection to rebuild, and a board bigger than the
+   * screen is looked around by dragging it - so for a group the clear is a
+   * *tap's* alone, and a press that travels past the slop calls it off. One
+   * card keeps the old rule: a pan still lands with nothing selected.
+   */
+  let clearIfStill: { x: number, y: number } | null = null;
   /**
    * A press that may still turn out to be the click that walks a tour on.
    *
@@ -2326,7 +2336,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // between them, and a pan that cost you the nine is the mode failing at
       // the one thing it exists for. The way out is the row that turned it on,
       // Escape, or tapping the cards back off.
+      clearIfStill = null;
       if (isMultiSelect()) clearOnLift = null;
+      // A group survives a pan, from any pointer: only a tap puts it down.
+      else if (selection.size > 1) {
+        clearOnLift = e.pointerId;
+        clearIfStill = { x: e.clientX, y: e.clientY };
+      }
       // Touch defers it to the lift so a hold can cancel it - see clearOnLift.
       else if (e.pointerType === 'touch') clearOnLift = selection.size ? e.pointerId : null;
       else if (selection.size) clearSelection();
@@ -2380,6 +2396,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         && Math.hypot(e.clientX - taps.empty.x, e.clientY - taps.empty.y) > TAP_MOVE_SLOP) {
       taps.empty = null;
       taps.lastEmpty = null;
+    }
+    // A press on bare board under a group that has become a pan keeps the group.
+    if (clearOnLift === e.pointerId && clearIfStill
+        && Math.hypot(e.clientX - clearIfStill.x, e.clientY - clearIfStill.y) > TAP_MOVE_SLOP) {
+      clearOnLift = null;
+      clearIfStill = null;
     }
     // And the same slop again for the tour's click: a pointer that has gone
     // this far was moving the board, not asking for the next stop.
@@ -2808,7 +2830,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // uncover the very paste it exists to catch. Defer the clear to the next task
     // instead, past the click that carries the paste.
     if (e.button === 1) setTimeout(() => { midPaste.down = false; }, 0);
-    const tap = e.type === 'pointerup' && taps.empty?.pointerId === e.pointerId
+    // `let`: a tap that put a selection down is spent on that, and does not
+    // become the first half of a double tap - see the clear below.
+    let tap = e.type === 'pointerup' && taps.empty?.pointerId === e.pointerId
       ? { x: taps.empty.x, y: taps.empty.y, at: e.timeStamp }
       : null;
     if (taps.empty?.pointerId === e.pointerId) taps.empty = null;
@@ -2850,7 +2874,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // hold, which does so where it opens the menu.
     if (clearOnLift === e.pointerId) {
       clearOnLift = null;
-      if (selection.size) clearSelection();
+      clearIfStill = null;
+      // A tap that deselected did something, so a second tap after it is a
+      // fresh first tap and not the start of a double-tap-drag selection.
+      if (selection.size) { clearSelection(); tap = null; }
     }
     cancelPress();
     pointers.delete(e.pointerId);
@@ -3151,6 +3178,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // A tour and its editor show the board rather than work on it: no viewer,
     // no note editor, no rename. Nor does the Timeline while it plays.
     if (cmds.inTour?.() || cmds.tourEditing?.() || timelinePlaying()) return;
+    // The multi-select mode is picking cards, and a double tap there is two
+    // picks - the card in and out again - never the viewer or an editor.
+    if (isMultiSelect()) return;
     // The point, not the target - and that is not a preference.
     //
     // onDown captures the pointer on #viewport (el.setPointerCapture, above), and
@@ -3365,7 +3395,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // Enter opens a lone selected card the way a double-click does - the
       // keyboard's way to the viewer, the note editor and the title's rename.
       // A focused button took its own Enter above (nativeKeyTarget).
-      case 'Enter': if (selection.size === 1 && !onlyLooking()) {
+      case 'Enter': if (selection.size === 1 && !onlyLooking() && !isMultiSelect()) {
         const only = [...selection][0];
         const type = byId(only)?.type;
         if (type === 'note') cmds.editNote(only);
@@ -3695,6 +3725,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   function openMenuAt(x: number, y: number, hit: string | null, touch = false) {
     // Every row on it edits or starts something, and the Timeline is playing.
     if (timelinePlaying()) return;
+    // A finger holding a second card while one is picked is building a group,
+    // not asking for a menu: the multi-select mode comes on with that card in
+    // it. Here rather than at the hold timer, so the engines whose own long
+    // press arrives as the contextmenu above answer the same way.
+    if (touch && hit && selection.size && !selection.has(hit) && !isMultiSelect() && cmds.holdToPick) {
+      cmds.holdToPick(hit);
+      return;
+    }
     // A fence's body lets presses through to the board (fences.css), so a
     // press inside one finds no item. Its menu is found by where the press is.
     const id = hit ?? fenceBodyAt(x, y);

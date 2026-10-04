@@ -136,6 +136,8 @@ export interface FeedCommands {
   addStickerAt: (shape: string, at: Point) => void;
   contextMenu: (x: number, y: number, id: string | null, count: number,
     opts?: { mobile?: boolean, touch?: boolean, selectAll?: () => void }) => void;
+  /** Turn the multi-select mode on with this tile added - a hold on a second tile. */
+  holdToPick?: (id: string) => void;
 }
 
 /**
@@ -343,7 +345,11 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     e.preventDefault();
     cancelHold();
     if (heldOpen) return;
-    if (id) openTileMenu(e.clientX, e.clientY, id);
+    // The engines whose long press arrives as this event, before the timer.
+    if (id && pressType === 'touch' && selection.size && !selection.has(id) && !isMultiSelect() && cmds?.holdToPick) {
+      heldOpen = true;
+      cmds.holdToPick(id);
+    } else if (id) openTileMenu(e.clientX, e.clientY, id);
     else openSheetMenu(e.clientX, e.clientY);
   });
   root.addEventListener('pointerdown', e => {
@@ -366,7 +372,10 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
       // handler opens the viewer, and a hold shouldn't open both a menu and an item.
       heldOpen = true;
       const { x, y, id } = holdFrom;
-      if (id) openTileMenu(x, y, id);
+      // A hold on a second tile while one is picked builds a group, as on the
+      // canvas (openMenuAt() in canvas/input.ts): the mode, with this tile in it.
+      if (id && selection.size && !selection.has(id) && !isMultiSelect() && cmds?.holdToPick) cmds.holdToPick(id);
+      else if (id) openTileMenu(x, y, id);
       else openSheetMenu(x, y);
     }, HOLD_MS);
   }, { passive: true });
