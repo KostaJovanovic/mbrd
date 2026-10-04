@@ -83,6 +83,7 @@ export interface MenuCommands {
   addNoteAt: (at: Point | null) => void;
   selectAll: () => void;
   rearrange: () => void;
+  nudgeBoard: () => void;
   rearrangeFence: (id: string) => void;
   // The touch multi-select mode: whether it is on, and the one way in or out.
   multiSelect: () => boolean;
@@ -1047,6 +1048,8 @@ function canvasEntries(at: Point): MenuEntry[] {
         action: () => cmds!.rearrangeFence(fence) }
       : { label: 'Rearrange board', icon: 'i-rearrange',
         action: () => cmds!.rearrange() },
+    // The whole board whatever `at` is: a fence's contents are nudged with it.
+    { label: 'Nudge board', icon: 'i-nudge', action: () => cmds!.nudgeBoard() },
     { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
     { sep: true },
     // Board marks — tick on the trailing edge shows current state.

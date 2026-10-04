@@ -544,7 +544,9 @@ export const SECTIONS: Section[] = [
       // canvas's: the Feed packs its wall by order, at a fixed gap, with no
       // grid, so on a phone none of them changed anything and they are absent.
       { type: 'buttons', needsBoard: true, when: desktop,
-        buttons: [{ cmd: 'rearrange', label: 'Rearrange everything', closesPanel: true }] },
+        buttons: [{ cmd: 'rearrange', label: 'Rearrange everything', closesPanel: true },
+          { cmd: 'nudgeBoard', label: 'Nudge board', closesPanel: true,
+            title: () => 'Push overlapping cards apart, keeping where they are' }] },
       { id: 'spacing', type: 'range', label: 'Spacing', needsBoard: true, when: desktop,
         min: 0, max: 200, step: 4, unit: 'px',
         get: () => board.settings.spacing,

@@ -9,7 +9,7 @@ import { cue } from '../cuelume/engine.ts';
 import {
   board, byId, selection, select, deselect, clearSelection, isMultiSelect, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, stuckPlacement, wouldStick,
-  rolledAway, rolledFences,
+  rolledAway, rolledFences, fenceOf,
   travelling, isFence, isLocked, dragRoot, isPinned, isSticky, stuckTo, resettle,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
   baseStep, timelinePlaying, fenceAt, lastCommand,
@@ -23,7 +23,7 @@ import {
 import type { Box, Bounds, Point } from '../geometry.ts';
 import {
   itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName, showStickTarget,
-  setDragging,
+  setDragging, barHeight,
 } from './items.ts';
 import { noteFloor } from './notes.ts';
 import { linkURL } from './renderers.ts';
@@ -281,55 +281,77 @@ export function marqueeHit(
 }
 
 /**
- * One card's claim on the region that carries it: the fraction of the box it
- * sits at, frozen at grip time, and its half-extents, which do not change.
+ * One card's claim on the region that carries it, frozen at grip time: the
+ * fraction of the box it sits at, its half-extents, which do not change, and
+ * how far it already hung past each wall (`out`, zero when it was inside). The
+ * top wall is the underside of the fence's name plate.
  */
-export type CarryHold = { fx: number, fy: number, hw: number, hh: number };
+export type CarryHold = {
+  fx: number, fy: number, hw: number, hh: number,
+  out: { w: number, e: number, s: number, n: number },
+};
+
+/** A fence's box mid-resize, and the height of its name plate. */
+type CarryRoom = { x: number, y: number, w: number, h: number, plate: number };
+
+/** Where a card was when the grip was taken, read as a CarryHold. */
+export function carryHold(card: Box, box: CarryRoom): CarryHold {
+  const { hw, hh } = rotatedExtents(card);
+  const past = (v: number) => Math.max(v, 0);
+  return {
+    fx: (card.x - box.x) / (box.w || 1),
+    fy: (card.y - box.y) / (box.h || 1),
+    hw, hh,
+    out: {
+      w: past((box.x - box.w / 2) - (card.x - hw)),
+      e: past((card.x + hw) - (box.x + box.w / 2)),
+      s: past((box.y - box.h / 2) - (card.y - hh)),
+      n: past((card.y + hh) - (box.y + box.h / 2 - box.plate)),
+    },
+  };
+}
 
 /**
- * The smallest a fence may be dragged while its contents still *fit* inside it -
- * `{ w, h }`, or zeroes when it holds nothing.
+ * Where a held card goes in the box a resize has reached. It keeps its
+ * fraction of the box - pulling a region in gathers its cards, pushing it out
+ * spreads them - until a wall reaches it, and then the wall pushes it along
+ * instead. Read from the grip each frame, never from the last frame, so a card
+ * a wall pushed goes back to its own spot when the wall moves away again.
  *
- * Every card in a region keeps its fraction of the box (stuckPlacement), so no
- * card can be left outside by a moving edge - but a card is a box and not a
- * point, and its size does not shrink with the region. Past a certain width the
- * cards are at the right fractions and hanging over the border anyway, which is
- * why a floor is needed at all.
- *
- * `holds` are `{ fx, fy, hw, hh }`: the fraction of the box each card sits at,
- * frozen at grip time, and its half-extents, which do not change. A card at
- * fraction fx has its far edge at `w * |fx| + hw`, and that has to stay inside
- * `w / 2` - so `w >= hw / (0.5 - |fx|)`, and the binding card is whichever asks
- * for the most. No corner arithmetic: the fraction is preserved whatever edge
- * is dragged, so the floor is a fact about the box's size alone.
- *
- * Capped at the size the drag started from. A card can already be hanging out
- * of a fence - it joined by its centre, and nothing has had to move it since -
- * and an uncapped floor would then be larger than the fence, so touching a grip
- * would snap the region open to swallow it. A card at or past the halfway
- * fraction can never fit; the cap turns that infinity into "this one will not
- * shrink".
+ * A card that hung out of the fence when the grip was taken may keep hanging
+ * out by as much, so touching a grip never jumps it. A box too small to hold a
+ * card on an axis centres it there; carryFloor() keeps that from happening.
  */
-/** The smallest box the held cards allow, as a width and a height. */
-type CarryFloor = { w: number, h: number };
-
-export function carryFloor(
-  box: { w: number, h: number },
-  holds: readonly CarryHold[] | null | undefined,
-): CarryFloor {
-  if (!holds?.length) return { w: 0, h: 0 };
-  const axis = (side: number, at: (p: CarryHold) => number, half: (p: CarryHold) => number) => {
-    let want = 0;
-    for (const p of holds) {
-      const room = 0.5 - Math.abs(at(p));
-      want = Math.max(want, room > 0 ? half(p) / room : Infinity);
-    }
-    return Math.min(side, want);
-  };
+export function carryPlace(box: CarryRoom, hold: CarryHold): Point {
+  const along = (at: number, lo: number, hi: number) => (lo > hi ? (lo + hi) / 2 : clamp(at, lo, hi));
   return {
-    w: axis(box.w, p => p.fx, p => p.hw),
-    h: axis(box.h, p => p.fy, p => p.hh),
+    x: along(box.x + hold.fx * box.w,
+      box.x - box.w / 2 + hold.hw - hold.out.w, box.x + box.w / 2 - hold.hw + hold.out.e),
+    y: along(box.y + hold.fy * box.h,
+      box.y - box.h / 2 + hold.hh - hold.out.s, box.y + box.h / 2 - box.plate - hold.hh + hold.out.n),
   };
+}
+
+/**
+ * The smallest a fence may be dragged: big enough for its largest card on
+ * each axis, with the plate on top. Cards are pushed by the walls rather than
+ * stopping them (carryPlace), so this is the only limit left - past it a card
+ * would have to be outside. Zeroes when the fence holds nothing.
+ *
+ * Capped at the size the drag started from, so a fence already too small for
+ * what it holds does not snap open the moment a grip is touched.
+ */
+export function carryFloor(
+  box: { w: number, h: number, plate?: number },
+  holds: readonly CarryHold[] | null | undefined,
+): { w: number, h: number } {
+  if (!holds?.length) return { w: 0, h: 0 };
+  let w = 0, h = 0;
+  for (const p of holds) {
+    w = Math.max(w, 2 * p.hw - p.out.w - p.out.e);
+    h = Math.max(h, 2 * p.hh - p.out.s - p.out.n + (box.plate ?? 0));
+  }
+  return { w: Math.min(box.w, w), h: Math.min(box.h, h) };
 }
 
 /**
@@ -1091,8 +1113,13 @@ type ResizeGesture = {
   driven: string[],
   start: Point,
   box: { x: number, y: number, w: number, h: number },
-  // A fence's carry, and null for everything else - see carryFloor().
+  // A fence's carry, and null for everything else - see carryPlace(). One per
+  // card standing in the fence itself; `carried` maps every follower to the
+  // index of the card it goes with (itself, its host, or the nested fence it is
+  // in), or -1 for one that keeps its plain fraction.
   holds: CarryHold[] | null,
+  carried: number[] | null,
+  plate: number,
   lockAspect: boolean,
   // A picture card's own proportion, which the grip holds whatever Shift says;
   // null on everything else, and on a picture not yet measured, whose box is
@@ -1903,6 +1930,45 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       return { id: rid, box: { x: r.x, y: r.y, w: r.w, h: r.h, rot: r.rot, z: r.z } };
     });
     for (const rid of riders) ensureMounted(rid);
+    // What the region has to keep inside its walls: each card standing in the
+    // fence itself, where it sits as a fraction of it, and how much room it
+    // takes. Frozen with the grip, like everything else here, so a drag that
+    // grows past a card and comes back is not held open by something it has not
+    // formally picked up - membership is not re-measured until the release.
+    //
+    // Only the fence's own carry has these. A card being resized under its
+    // stuck notes has never had walls and does not want them: a sticky hanging
+    // over the edge of a photograph is a sticky, not a mistake. A note on a card
+    // in the fence, or a card in a fence inside it, goes with the card or fence
+    // it belongs to, so a wall pushing a card pushes its sticky too.
+    const carrying = isFence(it) && board.layoutMode !== 'mobile';
+    const plate = carrying ? barHeight(id) : 0;
+    let holds: CarryHold[] | null = null;
+    let carried: number[] | null = null;
+    if (carrying) {
+      const room = { x: it.x, y: it.y, w: it.w, h: it.h, plate };
+      const index = new Map<string, number>();
+      const list: CarryHold[] = [];
+      for (const f of followers) {
+        const r = byId(f.id);
+        if (!r || stuckTo(r) || fenceOf(r)?.id !== id) continue;
+        index.set(f.id, list.length);
+        list.push(carryHold(f.box, room));
+      }
+      // Bounded: a sticky and a fence chain are both strict orders, so the walk
+      // ends at a card in this fence or at nothing, and never loops.
+      const rootOf = (fid: string) => {
+        let at = byId(fid);
+        for (let k = 0; at && k < 64; k++) {
+          const hit = index.get(at.id);
+          if (hit !== undefined) return hit;
+          at = stuckTo(at) ?? fenceOf(at) ?? undefined;
+        }
+        return -1;
+      };
+      holds = list;
+      carried = followers.map(f => rootOf(f.id));
+    }
     enter('resize', {
       id, corner, node,
       before: followers.length ? before.concat(snapshotGeom(riders)) : before,
@@ -1913,25 +1979,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       driven: [id],
       start: vp.toWorld(origin?.x ?? e.clientX, origin?.y ?? e.clientY),
       box: { x: it.x, y: it.y, w: it.w, h: it.h },
-      // What the region has to stay big enough to hold: where each card sits as
-      // a fraction of it, and how much room that card takes. Frozen with the
-      // grip, like everything else here, so a drag that grows past a card and
-      // comes back is not held open by something it has not formally picked up -
-      // membership is not re-measured until the release. See carryFloor().
-      //
-      // Only the fence's own carry has one. A card being resized under its stuck
-      // notes has never had a floor and does not want one: a sticky hanging over
-      // the edge of a photograph is a sticky, not a mistake.
-      holds: isFence(it) && board.layoutMode !== 'mobile'
-        ? followers.map(f => {
-          const { hw, hh } = rotatedExtents(f.box);
-          return {
-            fx: (f.box.x - it.x) / (it.w || 1),
-            fy: (f.box.y - it.y) / (it.h || 1),
-            hw, hh,
-          };
-        })
-        : null,
+      holds, carried, plate,
       // Nothing but a picture is aspect-locked by default. Shift is the lock for
       // everything else, at both ends: on a corner it holds the proportion, on
       // an edge it holds it and scales from that side. Kept as a field rather
@@ -2633,8 +2681,19 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // one-item write.
       const applyResize = (host: ResizeTarget) => {
         if (!grip.followers.length) return applyGeom([host]);
-        const riders = grip.followers.map(f => {
-          const at = stuckPlacement(f.box, grip.box, host);
+        const room = { ...host, plate: grip.plate };
+        const riders = grip.followers.map((f, k) => {
+          let at = stuckPlacement(f.box, grip.box, host);
+          // A wall that reached the card it goes with pushes it, and it by the same.
+          const root = grip.carried?.[k] ?? -1;
+          if (root >= 0 && grip.holds) {
+            const hold = grip.holds[root];
+            const put = carryPlace(room, hold);
+            at = {
+              x: at.x + put.x - (host.x + hold.fx * host.w),
+              y: at.y + put.y - (host.y + hold.fy * host.h),
+            };
+          }
           return { id: f.id, x: at.x, y: at.y, w: f.box.w, h: f.box.h, rot: f.box.rot, z: f.box.z };
         });
         // A fence resized on the grid lands what it carries on the grid too.
@@ -2699,13 +2758,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
           h = lattice.h;
         }
       }
-      // A fence may not be dragged smaller than what it is carrying. The cards
-      // keep their fractions whatever happens here, so this is not about losing
-      // one - it is about a region drawn too small to hold what is standing in
-      // it, whose cards would hang over the border while the memo still called
-      // them members. See carryFloor(), which is the whole of the arithmetic.
+      // A fence may not be dragged smaller than its largest card. Its walls push
+      // the cards along rather than stopping at them (carryPlace), so this is
+      // the one size past which a card would have to be outside. See carryFloor().
       if (grip.holds) {
-        const floor = carryFloor(grip.box, grip.holds);
+        const floor = carryFloor({ ...grip.box, plate: grip.plate }, grip.holds);
         w = Math.max(w, floor.w);
         h = Math.max(h, floor.h);
       }

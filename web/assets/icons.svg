@@ -216,6 +216,13 @@
   <rect x="8.9" y="8.9" width="4.6" height="4.6" rx="1"/>
 </symbol>
 
+<!-- Nudge board: two cards that touched, pushed a little apart. -->
+<symbol id="i-nudge" viewBox="0 0 16 16">
+  <rect x="1.5" y="4.5" width="5" height="7" rx="1"/>
+  <rect x="9.5" y="4.5" width="5" height="7" rx="1"/>
+  <path d="M8 2.5v11"/>
+</symbol>
+
 <symbol id="i-find" viewBox="0 0 16 16">
   <circle cx="7.1" cy="7.1" r="4.1"/>
   <path d="M10.2 10.2L13.4 13.4"/>

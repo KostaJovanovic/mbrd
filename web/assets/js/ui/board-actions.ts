@@ -1,5 +1,5 @@
 // Multi-step board commands delegated from commands.ts: save cooldown,
-// reset size, clear-everything guard, rearrange, reload, restart, scale.
+// reset size, clear-everything guard, rearrange, nudge, reload, restart, scale.
 // Called by commands.ts, never wired to elements directly. vp is injected
 // by initBoardActions() so nothing touches the DOM at import time.
 
@@ -29,6 +29,7 @@ import { getAsset } from '../storage/assets.ts';
 import { saveBoard, exportBoard, autosave, clearAllData } from '../storage/storage.ts';
 import { defaultSize, measureSize } from '../canvas/renderers.ts';
 import { arrange, mobileOrder } from '../arrange/arrangements.ts';
+import { nudgeApart } from '../arrange/nudge.ts';
 import type { Obstacle } from '../arrange/arrangements.ts';
 import { syncBoardMode } from './board-view.ts';
 import type { Item, Geometry } from '../board-model.ts';
@@ -57,9 +58,42 @@ type GeomRow = Omit<Geometry, 'presnap'> & {
 type RearrangeOptions = {
   name?: string;
   center?: Point;
-  enclose?: string;
+  /** A fence to lay out inside, at the size it already is. */
+  within?: string;
   label?: string;
 };
+
+/** A fence's room for cards: inside its margin and under its name plate. */
+function fenceRoom(fence: Item) {
+  const pad = baseStep();
+  const plate = barHeight(fence.id);
+  const x0 = fence.x - fence.w / 2 + pad, x1 = fence.x + fence.w / 2 - pad;
+  // World y points up: the plate is along the top edge.
+  const y0 = fence.y - fence.h / 2 + pad, y1 = fence.y + fence.h / 2 - plate - pad;
+  return { x0, x1, y0: Math.min(y0, y1), y1: Math.max(y0, y1) };
+}
+
+/**
+ * Pull laid-out cards in towards the middle of `room` until every one is
+ * inside it, keeping their order. Spots only, never sizes: a fence too small
+ * for its cards gets them overlapping rather than shrunk or spilled out.
+ */
+function squeezeInto(laid: { w: number, h: number }[], spots: Point[], room: { x0: number, x1: number, y0: number, y1: number }) {
+  const axis = (lo: number, hi: number, at: (i: number) => number, half: (i: number) => number, put: (i: number, v: number) => void) => {
+    let c0 = Infinity, c1 = -Infinity, reach = 0;
+    spots.forEach((_, i) => { c0 = Math.min(c0, at(i)); c1 = Math.max(c1, at(i)); reach = Math.max(reach, half(i)); });
+    // The span the centres may use so the widest card still clears both walls.
+    const free0 = lo + reach, free1 = hi - reach;
+    const mid = (lo + hi) / 2;
+    const span = c1 - c0;
+    if (c0 >= free0 && c1 <= free1) return;
+    const k = span > 0 ? Math.max(free1 - free0, 0) / span : 0;
+    const from = (c0 + c1) / 2;
+    spots.forEach((_, i) => put(i, mid + (Math.min(k, 1)) * (at(i) - from)));
+  };
+  axis(room.x0, room.x1, i => spots[i].x, i => laid[i].w / 2, (i, v) => { spots[i].x = v; });
+  axis(room.y0, room.y1, i => spots[i].y, i => laid[i].h / 2, (i, v) => { spots[i].y = v; });
+}
 
 let vp: ActionsViewport | null = null;
 
@@ -396,7 +430,7 @@ function obstacleBox(item: Item, step: number): Obstacle {
 /**
  * Lay `items` out again. A subset relays about its own centre (not the
  * origin) and the view stays put. Options: name (layout override),
- * center, enclose (fence to resize around the result), label.
+ * center, within (fence to lay out inside, at its own size), label.
  *
  * This block used to sit above obstacleBox(), which was inserted underneath it
  * by a half-finished edit, so the function it documents had no documentation
@@ -406,7 +440,6 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   if (!items.length) return;
   const whole = items.length === board.items.length;
   const mobile = board.layoutMode === 'mobile';
-  const enclosing = options.enclose ? byId(options.enclose) : null;
 
   // A stuck note is not laid out; it rides its host to the host's new slot and
   // keeps its place on it. So a pinned sticky stays pinned through a Rearrange,
@@ -460,12 +493,8 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // Filtering earlier would have made one locked card silently turn it into the
   // subset behaviour, which is a different command wearing the same name.
   const free = items.filter(it => !isRider(it) && !isLocked(it) && !carriedIds.has(it.id));
-  // The region joins the snapshot when there is one, so closing it around the
-  // result is inside the same undo entry as the layout that made it necessary.
-  //
   // SAFETY: as above - see GeomRow.
-  const beforeAll = snapshotGeom(
-    enclosing ? [...items.map(i => i.id), enclosing.id] : items.map(i => i.id)) as GeomRow[];
+  const beforeAll = snapshotGeom(items.map(i => i.id)) as GeomRow[];
   // Where the cards on screen stand now, so they can slide to their slots
   // below rather than jump there. Read before anything moves.
   const seen = seenPlaces(items.map(i => i.id));
@@ -497,9 +526,8 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     }
   }
   // A region that *contains* what is being laid out is not something to avoid:
-  // it is the room the layout is happening in. That includes the one being
-  // closed around the result, which is about to be resized to fit it - counting
-  // it would push a region's own contents out of the region. Read here, with
+  // it is the room the layout is happening in - counting it would push a
+  // region's own contents out of the region. Read here, with
   // parentOf above, because fenceOf() measures against live geometry.
   const around = new Set<string>();
   for (const it of items) {
@@ -510,7 +538,10 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   const anchored = board.items.filter(it =>
     held.has(it.id) && !isRider(it) && !around.has(it.id));
 
-  const at = options.center ?? (whole ? { x: 0, y: 0 } : middleOf(free));
+  const host = options.within ? byId(options.within) : null;
+  const room = host && isFence(host) ? fenceRoom(host) : null;
+  const at = room ? { x: (room.x0 + room.x1) / 2, y: (room.y0 + room.y1) / 2 }
+    : options.center ?? (whole ? { x: 0, y: 0 } : middleOf(free));
   // SAFETY: as above - see GeomRow.
   const before = snapshotGeom(free.map(i => i.id)) as GeomRow[];
   // Two things vary here, and neither is enough on its own.
@@ -597,7 +628,9 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
       cellStep: snapDesktop ? step : 0,
       seed,
       obstacles: anchored.map(item => obstacleBox(item, snapDesktop ? step : 0)),
+      width: room ? room.x1 - room.x0 : undefined,
     });
+    if (room) squeezeInto(laid, spots, room);
     placed = laid.map((item, slot) => ({
       ...item,
       x: spots[slot].x,
@@ -711,50 +744,6 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     }
   }
 
-  // The region closes around what it now holds, measured from where the cards
-  // actually landed rather than from where the layout meant to put them - the
-  // lattice pass and the rider pass both ran in between. A step of margin, the
-  // same one a fence is drawn with, so the cards are inside it rather than flush
-  // against it.
-  //
-  // Driven, unlike the carried contents: its edges are what membership means, so
-  // a region that changed size is the one thing that has to ask again - the rule
-  // commitGeom() already states for a resize.
-  const closing: string[] = [];
-  if (enclosing) {
-    // items are already the live board items - see rearrange()'s signature - so
-    // itemBounds() takes them directly rather than round-tripping through byId.
-    const box = fenceBox(null, itemBounds(items), step);
-    if (box) {
-      applyGeom([{ id: enclosing.id, ...box, rot: enclosing.rot, z: enclosing.z }]);
-      // Then again, with room at the top for the name. A fence's plate lies
-      // across the top of its box, so a block closed to a step of margin puts
-      // its first row under the region's own name - which is the one thing on a
-      // fence you have to be able to read.
-      //
-      // Twice rather than once because the plate's height depends on the width
-      // the region has just been given (the name is set at 2.8cqi of it), and the
-      // write above is what makes that width real: 'geom' places nodes
-      // synchronously, so the measurement below is of the plate that will
-      // actually be drawn. Both writes land before the commit, so it is still
-      // one undo.
-      //
-      // Only here, and not where a fence is *made*. There the rectangle is one
-      // somebody drew, and taking it exactly as drawn is the promise fenceBox()
-      // makes; here the cards were put where they are by this function a moment
-      // ago, so where they sit under the plate is ours to answer for.
-      const plate = barHeight(enclosing.id);
-      if (plate > 0) {
-        // World y points up, so the top edge is y + h/2: the extra height is all
-        // added above, and nothing that was inside moves.
-        applyGeom([{
-          id: enclosing.id, x: box.x, y: box.y + plate / 2,
-          w: box.w, h: box.h + plate, rot: enclosing.rot, z: enclosing.z,
-        }]);
-      }
-      closing.push(enclosing.id);
-    }
-  }
   // driven = the free items only. Each was placed, none towed, so each of those
   // notes asks again what it landed on. Riders are left out on purpose: they kept
   // their host, so re-measuring them onto whatever they now sit beside would be
@@ -768,19 +757,17 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // are the whole of the rule; everything above this line is that rule being
   // worked out. See registerLayoutOps() in commands.ts.
   //
-  // Not declared for a region's rearrangement, and that is deliberate rather
-  // than an omission: `enclose` closes a fence around the result inside the same
-  // commit, so re-running the layout alone would move the cards and leave the
-  // region where it was. A fence rearrangement stays sealed until the op carries
-  // the enclosing too.
-  if (!options.enclose) {
+  // Not declared for a region's rearrangement: the op carries no `within`, so
+  // replaying it would lay the cards out about their own middle and ignore the
+  // walls. A fence rearrangement stays sealed until the op carries the room.
+  if (!options.within) {
     declareOp('arrange', {
       ids: items.map(i => i.id),
       name: options.name || board.arrangement,
     });
   }
   const done = commitGeom(options.label || (whole ? 'Rearrange' : `Rearrange ${items.length} items`),
-    beforeAll, [...free.map(g => g.id), ...closing], mobile ? { preservePresnap: true } : {});
+    beforeAll, free.map(g => g.id), mobile ? { preservePresnap: true } : {});
   // A receipt with an Undo, since a whole board laid out anew is the change
   // most worth taking back at once - and the view is about to fly off it.
   if (done) toast(`Rearranged ${free.length} item${free.length === 1 ? '' : 's'}`, '', undoAction());
@@ -791,6 +778,126 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // afterwards would move things on screen far more than the shake did -
   // hiding the change inside a much larger one.
   if (whole && (mobile || board.arrangement !== 'free')) vp!.fit(board.items, 80, travelMs());
+}
+
+// ---------------------------------------------------------------------------
+// Nudge
+// ---------------------------------------------------------------------------
+
+/** Most clearance a nudge leaves between cards. Spacing is a layout's rule,
+ *  and a wide one would turn a nudge into a spread. */
+const NUDGE_GAP_MAX = 24;
+
+/**
+ * Push every card off whatever it overlaps by as little as it takes, keeping
+ * the board's shape - unlike Rearrange, which lays it out anew.
+ *
+ * The same followers as rearrange(): a stuck note rides its host, a locked card
+ * stands still and is cleared off, and a fence is one object to its siblings.
+ * Inside a fence its contents are nudged among themselves first, innermost
+ * fence first, and a fence they no longer fit in grows to hold them - so the
+ * box its parent then clears is the one it will really have. A fence never
+ * shrinks, and a locked one never grows.
+ */
+export function nudgeBoard() {
+  if (board.layoutMode === 'mobile') { toast('The feed never overlaps'); return; }
+  const items = board.items.filter(it => it.type !== 'ghost' && !isRider(it));
+  if (items.length < 2) { toast('Nothing on this board overlaps'); return; }
+  const step = baseStep();
+  const snap = !!board.settings.snap;
+  const gap = snap ? 0 : Math.min(board.settings.spacing, NUDGE_GAP_MAX);
+
+  // Read once, before anything moves - fenceOf() measures live geometry.
+  const parentOf = new Map(items.map(it => [it.id, fenceOf(it)?.id ?? null]));
+  const groups = new Map<string | null, Item[]>();
+  for (const it of items) {
+    const p = parentOf.get(it.id) ?? null;
+    (groups.get(p) || groups.set(p, []).get(p)!).push(it);
+  }
+  const depth = (id: string | null): number => {
+    let d = 0;
+    for (let at = id; at; at = parentOf.get(at) ?? null) d++;
+    return d;
+  };
+  // Live boxes as the solve goes: a fence's carry moves its contents by the
+  // same amount, so the levels below it stay solved.
+  const box = new Map(items.map(it => [it.id, { x: it.x, y: it.y, w: it.w, h: it.h, rot: it.rot }]));
+  const carry = (id: string, dx: number, dy: number) => {
+    for (const child of groups.get(id) || []) {
+      const b = box.get(child.id)!;
+      b.x += dx; b.y += dy;
+      if (isFence(child)) carry(child.id, dx, dy);
+    }
+  };
+  const solveBox = (it: Item) => {
+    const b = box.get(it.id)!;
+    const room = snap ? latticeBox(b, step) : b;
+    const { hw, hh } = rotatedExtents({ ...room, rot: b.rot });
+    // The lattice box can sit off the card's own centre; it is solved there
+    // and the card takes the same move.
+    return { x: room.x, y: room.y, w: 2 * hw, h: 2 * hh, fixed: isLocked(it) };
+  };
+  const solve = (members: Item[]) => {
+    const boxes = members.map(solveBox);
+    const out = nudgeApart(boxes, { gap, step: snap ? step : 0 });
+    members.forEach((it, k) => {
+      const dx = out[k].x - boxes[k].x, dy = out[k].y - boxes[k].y;
+      if (!dx && !dy) return;
+      const b = box.get(it.id)!;
+      b.x += dx; b.y += dy;
+      if (isFence(it)) carry(it.id, dx, dy);
+    });
+  };
+
+  const fences = [...groups.keys()].filter((id): id is string => id !== null)
+    .sort((a, b) => depth(b) - depth(a));
+  for (const id of fences) {
+    const members = groups.get(id)!;
+    solve(members);
+    const fence = byId(id);
+    if (!fence || isLocked(fence)) continue;
+    const f = box.get(id)!;
+    const need = fenceBox(null, itemBounds(members.map(m => box.get(m.id)!)), step);
+    if (!need) continue;
+    const x0 = Math.min(f.x - f.w / 2, need.x - need.w / 2), x1 = Math.max(f.x + f.w / 2, need.x + need.w / 2);
+    const y0 = Math.min(f.y - f.h / 2, need.y - need.h / 2), y1 = Math.max(f.y + f.h / 2, need.y + need.h / 2);
+    Object.assign(f, { x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 });
+  }
+  solve(groups.get(null) || []);
+
+  const changed = items.filter(it => {
+    const b = box.get(it.id)!;
+    return b.x !== it.x || b.y !== it.y || b.w !== it.w || b.h !== it.h;
+  });
+  if (!changed.length) { toast('Nothing on this board overlaps'); return; }
+  const riders = board.items.filter(isRider);
+  // SAFETY: as in rearrange() - see GeomRow.
+  const before = snapshotGeom([...changed, ...riders].map(it => it.id)) as GeomRow[];
+  const seen = seenPlaces(before.map(g => g.id));
+  applyGeom(changed.map(it => {
+    const b = box.get(it.id)!;
+    return { id: it.id, x: b.x, y: b.y, w: b.w, h: b.h };
+  }));
+  // Each rider follows its host at the offset it had, in passes so a note on a
+  // note waits for its own host - the same walk rearrange() makes.
+  const beforeById = new Map(before.map(g => [g.id, g]));
+  const pending = new Set(riders.map(r => r.id));
+  for (let grew = true; grew && pending.size;) {
+    grew = false;
+    for (const note of riders) {
+      if (!pending.has(note.id)) continue;
+      const host = stuckTo(note);
+      if (!host) { pending.delete(note.id); continue; }
+      if (pending.has(host.id)) continue;
+      const pos = stuckPlacement(beforeById.get(note.id) || note, beforeById.get(host.id) || host, host);
+      applyGeom([{ id: note.id, x: pos.x, y: pos.y }]);
+      pending.delete(note.id);
+      grew = true;
+    }
+  }
+  const done = commitGeom('Nudge board', before, changed.map(it => it.id));
+  if (done) toast(`Nudged ${changed.length} item${changed.length === 1 ? '' : 's'} apart`, '', undoAction());
+  slideFrom(seen, travelMs());
 }
 
 /** The centre of what a set of items covers. */

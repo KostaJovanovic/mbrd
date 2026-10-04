@@ -5,7 +5,7 @@ import {
   isDoubleTap, needsSelectionBeforeMove, repeatsLongPressContextMenu,
   releasePointerSafely, capturePointerSafely, resizeHandleAction, shortcutsSuppressed,
   liftWithButtonsHeld, readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
-  carryFloor, drewRectangle, marqueeHit,
+  carryFloor, carryHold, carryPlace, drewRectangle, marqueeHit,
   GESTURE_MOVES, gestureTransition, pressIntent,
   resizeAxisOn, nudgeDelta,
 } from '../web/assets/js/canvas/input.ts';
@@ -84,62 +84,55 @@ test('a rectangle counts whichever corner it was dragged from', () => {
   assert.equal(drewRectangle({ x0: 200, y0: 200, x1: 0, y1: 0 }, 1), true);
 });
 
-// A fence keeps cards at the same fraction of the region rather than the same
-// size, so past a point they hang over the border anyway. carryFloor() is
-// where the region stops shrinking.
+// A fence keeps cards at the same fraction of the region until a wall reaches
+// one, and then the wall pushes it. carryPlace() is where a card goes;
+// carryFloor() is where the region stops shrinking.
 
-const BOX = { x: 0, y: 0, w: 1000, h: 1000 };
+const BOX = { x: 0, y: 0, w: 1000, h: 1000, plate: 0 };
+const hold = (card, box = BOX) => carryHold({ rot: 0, ...card }, box);
 
 test('a region with nothing in it has no floor', () => {
   assert.deepEqual(carryFloor(BOX, []), { w: 0, h: 0 });
   assert.deepEqual(carryFloor(BOX, null), { w: 0, h: 0 });
 });
 
-test('the floor is what it takes for the card to still fit', () => {
-  // A card at a quarter of the way out has a quarter of the width between it and
-  // the border, so 100 of half-width needs 100 / (0.5 - 0.25) = 400.
-  assert.equal(carryFloor(BOX, [{ fx: 0.25, fy: 0, hw: 100, hh: 10 }]).w, 400);
-  // Dead centre it only has to be as wide as the card itself.
-  assert.equal(carryFloor(BOX, [{ fx: 0, fy: 0, hw: 60, hh: 10 }]).w, 120);
-  // Both signs read the same - the fraction is a distance from the middle.
-  assert.equal(carryFloor(BOX, [{ fx: -0.25, fy: 0, hw: 100, hh: 10 }]).w, 400);
+test('a card keeps its fraction of the box until a wall reaches it', () => {
+  const h = hold({ x: 250, y: 0, w: 200, h: 100 });
+  // Halved from the west: the fraction alone puts it at 125 + 0, inside.
+  assert.deepEqual(carryPlace({ x: 250, y: 0, w: 500, h: 1000, plate: 0 }, h), { x: 375, y: 0 });
+  // Pulled in from the west to 800 wide: the fraction puts it at 300, still clear.
+  assert.deepEqual(carryPlace({ x: 100, y: 0, w: 800, h: 1000, plate: 0 }, h), { x: 300, y: 0 });
+  // Squeezed to 300 wide on the right: pushed to 400 - 100 by the east wall.
+  assert.deepEqual(carryPlace({ x: 350, y: 0, w: 300, h: 1000, plate: 0 }, h), { x: 400, y: 0 });
 });
 
-// 0.5 - 0.4 is not 0.1 in binary, and this is a division by it.
-const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} vs ${b}`);
-
-test('the two axes are answered independently', () => {
-  const floor = carryFloor(BOX, [{ fx: 0.25, fy: 0.4, hw: 100, hh: 50 }]);
-  near(floor.w, 400);
-  near(floor.h, 500);                       // 50 / (0.5 - 0.4)
+test('a pushed card goes back to its spot when the wall moves away', () => {
+  const h = hold({ x: 400, y: 0, w: 100, h: 100 });
+  const squeezed = carryPlace({ x: 0, y: 0, w: 400, h: 1000, plate: 0 }, h);
+  assert.equal(squeezed.x, 150);              // pushed off its 160 by the wall at 200
+  // The same grip, the wall back out where it was: the card is where it began.
+  assert.deepEqual(carryPlace(BOX, h), { x: 400, y: 0 });
 });
 
-test('the card with the least room to spare sets it', () => {
-  const holds = [
-    { fx: 0.1, fy: 0, hw: 40, hh: 10 },     // 50
-    { fx: 0.4, fy: 0, hw: 60, hh: 10 },     // 600
-    { fx: 0.2, fy: 0, hw: 30, hh: 10 },     // 100
-  ];
-  near(carryFloor(BOX, holds).w, 600);
+test('the top wall is the underside of the name plate', () => {
+  const box = { ...BOX, plate: 60 };
+  const h = hold({ x: 0, y: 380, w: 100, h: 100 }, box);
+  // Pulling the bottom edge up to 800 tall: the fraction says 404, but the
+  // plate's underside is still at 500 - 60, so it rests at 390.
+  assert.deepEqual(carryPlace({ x: 0, y: 100, w: 1000, h: 800, plate: 60 }, h), { x: 0, y: 390 });
 });
 
-test('a card already hanging out cannot prise the region open', () => {
-  // At or past the halfway fraction no width fits it, so the sum is an infinity -
-  // and the cap turns that into "this one does not shrink" rather than a grip
-  // that snaps the region open the moment it is touched.
-  assert.equal(carryFloor(BOX, [{ fx: 0.5, fy: 0, hw: 10, hh: 10 }]).w, 1000);
-  assert.equal(carryFloor(BOX, [{ fx: 0.9, fy: 0, hw: 10, hh: 10 }]).w, 1000);
-  // And an ordinary card that would ask for more than the region already is.
-  assert.equal(carryFloor(BOX, [{ fx: 0.45, fy: 0, hw: 400, hh: 10 }]).w, 1000);
+test('a card that already hung out keeps hanging out by as much, never jumping', () => {
+  const h = hold({ x: 480, y: 0, w: 100, h: 100 });
+  assert.equal(h.out.e, 30);
+  assert.deepEqual(carryPlace(BOX, h), { x: 480, y: 0 });
 });
 
-test('the floor never asks for growth', () => {
-  // Every case above is capped, so a grip can always be dragged outwards and a
-  // region can never widen on its own from being grabbed.
-  const holds = [{ fx: 0.49, fy: 0.49, hw: 500, hh: 500 }];
-  const floor = carryFloor(BOX, holds);
-  assert.ok(floor.w <= BOX.w);
-  assert.ok(floor.h <= BOX.h);
+test('the floor is the largest card, with the plate on top, capped at the start', () => {
+  const holds = [hold({ x: 0, y: 0, w: 300, h: 100 }), hold({ x: 200, y: 200, w: 100, h: 250 })];
+  assert.deepEqual(carryFloor({ ...BOX, plate: 40 }, holds), { w: 300, h: 290 });
+  // A card bigger than the region asks for no growth.
+  assert.deepEqual(carryFloor({ ...BOX, w: 200 }, holds).w, 200);
 });
 
 // A band catches a card by overlap but a fence only by covering it - one rule

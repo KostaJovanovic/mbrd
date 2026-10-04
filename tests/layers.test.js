@@ -154,6 +154,8 @@ const BASE = new Set([
   // Shortest-column-first packing, below the catalogue since ui/feed.ts also
   // packs by the same rule and needs it under both callers.
   'arrange/columns.ts',
+  // Overlap removal for Nudge board: pure, over the catalogue's Point type only.
+  'arrange/nudge.ts',
   // Folding one board into another - pure, over board-model.ts, geometry.ts
   // and util.ts only. state.ts imports its type to declare mergeBoard(),
   // which is downward.

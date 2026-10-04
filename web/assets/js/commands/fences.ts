@@ -128,7 +128,8 @@ export function fenceCommands() {
     isRolledFence: (id: string) => isRolled(byId(id)),
     setFenceRolled: (id: string, rolled: boolean) => setFenceRolled(id, rolled),
 
-    // Rearrange a fence's contents in masonry and close it around them.
+    // Rearrange a fence's contents in masonry inside it. The fence keeps its
+    // size; cards that do not fit overlap rather than spill out.
     rearrangeFence: (id: string) => {
       const fence = byId(id);
       if (!isFence(fence)) return;
@@ -140,8 +141,7 @@ export function fenceCommands() {
       }
       rearrange(inside, {
         name: 'masonry',
-        center: { x: fence.x, y: fence.y },
-        enclose: id,
+        within: id,
         label: 'Rearrange fence',
       });
     },

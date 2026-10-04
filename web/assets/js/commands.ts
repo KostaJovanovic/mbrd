@@ -55,7 +55,7 @@ import { composeNote, editNoteInComposer } from './canvas/notes.ts';
 import { editFontText } from './canvas/items.ts';
 import { editLinkProps } from './ui/link-props.ts';
 import { editTitleCard } from './ui/board-title.ts';
-import { armClear, rearrange } from './ui/board-actions.ts';
+import { armClear, nudgeBoard, rearrange } from './ui/board-actions.ts';
 import { fileCommands } from './commands/file.ts';
 import { connectionCommands } from './commands/connections.ts';
 import { fenceCommands, sharedFence } from './commands/fences.ts';
@@ -326,6 +326,8 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // Two commands (all vs selection) so each is honest about what it touches.
     // Ghosts excluded — they are about to leave and should not get slots.
     rearrange: () => rearrange(board.items.filter(i => i.type !== 'ghost')),
+    // Overlaps pushed apart, the board's shape kept - see nudgeBoard().
+    nudgeBoard: () => nudgeBoard(),
     // Set layout and rearrange in one press. Only the rearrange is on the undo
     // stack — the setting is intent, the positions are what you might regret.
     arrangement: () => board.arrangement,

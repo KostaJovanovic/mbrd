@@ -98,6 +98,8 @@ const KINDS: Record<string, { icon: string, said: string }> = {
   'Add': { icon: 'i-plus', said: 'Added' },
   'Move': { icon: 'i-move', said: 'Moved' },
   'Nudge': { icon: 'i-move', said: 'Nudged' },
+  // nudgeBoard() in ui/board-actions.ts.
+  'Nudge board': { icon: 'i-nudge', said: 'Nudged the board apart' },
   'Resize': { icon: 'i-expand', said: 'Resized' },
   'Reset': { icon: 'i-reset-size', said: 'Reset the size of' },
   'Delete': { icon: 'i-delete', said: 'Deleted' },

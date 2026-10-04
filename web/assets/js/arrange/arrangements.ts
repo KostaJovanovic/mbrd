@@ -68,6 +68,8 @@ export type ArrangeOpts = {
   cellStep?: number,
   seed?: number,
   obstacles?: Obstacle[],
+  /** Masonry only: the width the block should fit, which sets the column count. */
+  width?: number,
 };
 
 /** ArrangeOpts with defaults filled in. */
@@ -187,7 +189,13 @@ const LAYOUTS: Record<string, Layout> = {
     // Variation: add or remove a column.
     const rnd = variation(o);
     let cols = Math.max(1, Math.round(Math.sqrt(items.length * MASONRY_ASPECT)));
-    if (rnd) cols = reflow(cols, items.length, rnd);
+    if (o.width && o.width > 0) {
+      // As many columns of the average card as the width holds. A column is as
+      // wide as its widest card, so a mixed set can still run over; the caller
+      // decides what happens then.
+      const avg = items.reduce((s, it) => s + it.w + o.spacing, 0) / items.length;
+      cols = Math.max(1, Math.floor(o.width / avg));
+    } else if (rnd) cols = reflow(cols, items.length, rnd);
     cols = Math.min(cols, items.length);
 
     const { spots, height: tallest } = packColumns(items, { cols, gap: o.spacing });
