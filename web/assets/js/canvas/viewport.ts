@@ -165,9 +165,14 @@ const VIEW_SETTLE_MS = 140;
  */
 const PIN_OUT = 2;
 const PIN_IN = 4;
-/** In at Full, which spends a raster per quarter of zoom so a zoom-in sharpens
- *  as it goes rather than on release. The lower stops keep PIN_IN. */
+/** In at Full off a touch screen, which spends a raster per quarter of zoom so
+ *  a zoom-in sharpens as it goes rather than on release. Not on touch: a
+ *  re-raster mid-pinch is the phone's hitch, and sharpening on release is how
+ *  a pinch stays smooth there - at Full too, which is every phone's default. */
 const PIN_IN_FULL = 1.25;
+
+/** Whether the view may sharpen while it moves - see PIN_IN_FULL. */
+export const sharpensMidGesture = () => qualityLevel() === 'full' && !onTouch();
 
 /**
  * How far below the scale it was rastered at a gesture may zoom before the
@@ -1217,7 +1222,7 @@ export class Viewport {
       this.world.style.willChange = 'transform';
       return;
     }
-    const pinIn = qualityLevel() === 'full' ? PIN_IN_FULL : PIN_IN;
+    const pinIn = sharpensMidGesture() ? PIN_IN_FULL : PIN_IN;
     if (this._repin || (z > this._pinned / PIN_OUT && z < this._pinned * pinIn)) return;
     if (typeof requestAnimationFrame !== 'function') return;
     this.world.style.willChange = 'auto';

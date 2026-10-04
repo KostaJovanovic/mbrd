@@ -5,7 +5,7 @@
 
 import { bus } from '../state.ts';
 import { quality, qualityLevel } from '../quality.ts';
-import { stillZoom, thumbZoom } from './viewport.ts';
+import { stillZoom, thumbZoom, sharpensMidGesture } from './viewport.ts';
 import { surface, surfaceToBlob } from './surface.ts';
 import type { Viewport } from './viewport.ts';
 
@@ -96,11 +96,11 @@ export function initStills(world: HTMLElement, vp: ZoomSource): void {
     if (still || far) world.classList.toggle('is-stilled', far);
     // Photographs' thumbnails, on their own rung (thumbZoom()). Below Full it
     // is the rung above and is held the same way. Full keeps the picture to a
-    // far lower zoom and lands it back mid-gesture: the hitch above is the
-    // price that stop agreed to pay for never waiting on a release.
-    const full = qualityLevel() === 'full';
-    const pics = vp.zoom < thumbZoom(full);
-    if (full || still || pics) world.classList.toggle('is-thumbs', pics);
+    // far lower zoom, and off a touch screen lands it back mid-gesture rather
+    // than on release. On touch it waits, as above: the display copies landing
+    // mid-pinch is the hitch, and Full is every phone's default.
+    const pics = vp.zoom < thumbZoom(qualityLevel() === 'full');
+    if (sharpensMidGesture() || still || pics) world.classList.toggle('is-thumbs', pics);
     world.classList.toggle('is-held', held);
   };
 
