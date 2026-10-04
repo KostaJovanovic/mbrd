@@ -277,6 +277,14 @@ const SWATCH_ZOOM = 0.1 * BASE_ZOOM;
 const RESIZE_MIN_ZOOM = 0.155 * BASE_ZOOM;
 
 /**
+ * And under a finger, twice as far in. A fingertip covers a grip and much of
+ * the card at once, so from 30% down a press on a picked card means carry it,
+ * and a corner caught by accident does not resize what was meant to move.
+ * 0.295 by the same rounding as above: "30%" still resizes, "29%" does not.
+ */
+const RESIZE_MIN_ZOOM_TOUCH = 0.295 * BASE_ZOOM;
+
+/**
  * Where a corner grip stops lapping onto the card and clips to its outside half.
  *
  * Below this the card is small enough that a straddling corner would cover too
@@ -1251,8 +1259,9 @@ export class Viewport {
     this.world.classList.toggle('zoom-far', z < farZoom());
     // A second, lower rung just for the resize grips. Labels and the item bar
     // become noise once a card is a swatch (zoom-far, 40%), but the corners stay
-    // worth grabbing further out. From 15% down a card moves and does not resize.
-    this.world.classList.toggle('zoom-no-resize', z < RESIZE_MIN_ZOOM);
+    // worth grabbing further out. From 15% down a card moves and does not
+    // resize - from 30% under a finger (RESIZE_MIN_ZOOM_TOUCH).
+    this.world.classList.toggle('zoom-no-resize', z < (onTouch() ? RESIZE_MIN_ZOOM_TOUCH : RESIZE_MIN_ZOOM));
     this.world.classList.toggle('zoom-tiny', z < SWATCH_ZOOM);
     // Below this a corner grip clips to its outside half and the whole card face
     // becomes a move target - see the zoom-grab rules in the CSS. Its own rung
