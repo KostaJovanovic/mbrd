@@ -65,19 +65,39 @@ myboard.mbrd                    ZIP, renamed
 ├── timeline/steps-<k>.jsonl    the history in pieces of 500, one step to a line
 ├── assets/<slug>--<hash>.<ext> embedded bytes, deduped by content hash
 ├── notes/<slug>--<id>.md       one sticky note, as Markdown
-└── waveforms/<hash>.json       one audio file's measured readings
+├── waveforms/<hash>.json       one audio file's measured readings
+└── thumbnail.webp              the whole board, small, for a list of boards
 ```
 
 Only `manifest.json` and `board.json` are required. A reader that finds none of
 the last three directories is looking at a perfectly valid board — a board
 nobody has changed, with no sticky notes and no audio on it, has none of them.
 
-**There is no `thumbnails/`.** A `thumbnails/<hash>.webp` was reserved in the
-first draft of this format and nothing ever wrote one, so it is gone rather than
-still being promised. Nothing was lost by removing it: a reader cannot depend on
-a directory nothing writes, and the reservation was never what would have made
-adding it legal — the rule at the foot of this document already says a new
-top-level directory is free.
+### `thumbnail.webp`
+
+The board as a picture at most 360px on its long edge, so a list of boards can
+show each one without opening it. **`thumbnail.jpg`** instead where the engine
+that drew it cannot write WebP (no Safari can); never both. It is *derived*: it
+shows the board as it was when last drawn, which can be older than
+`board.json`, and a reader must never take anything about the board from it.
+
+- **Optional, and new.** Files written before it existed have none, and a reader
+  that ignores it loses nothing. Older builds already ignore it: every reader
+  skips a top-level name it does not know.
+- **Stored, never deflated, and the last entry** of a whole write, so it sits
+  just in front of the central directory. That is what lets the app read it
+  from the file's last few hundred KB. An append carries it again only when the
+  picture changed, so after many saves it can sit further back; the app reads
+  up to 4 MB from the end for it and gives up past that.
+- **Read by its bytes, not its name.** The app takes it only if it starts like
+  a WebP or a JPEG and is under 512 KB, and shows nothing otherwise.
+- The app draws it when a board is left, when the board list opens, and when
+  the desktop or Android app closes. The autosave never draws one; it writes
+  the last picture taken.
+
+It replaces the `thumbnails/<hash>.webp` reserved in the first draft, which
+nothing ever wrote: one picture per board is all a list needs, and a fixed name
+is what a reader looking only at the directory can find.
 
 ### ZIP details
 

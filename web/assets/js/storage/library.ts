@@ -72,6 +72,18 @@ export async function putLibraryBoard(
   });
 }
 
+/** A row's picture, and nothing else about it. A no-op for an id with no row.
+ *  Not putLibraryBoard(), which would drop a blob row's blob for want of one. */
+export async function setLibraryThumb(id: string, thumb: string) {
+  return inTurn(async () => {
+    const list = await libraryIndex();
+    const row = list.find(e => e.id === id);
+    if (!row || row.thumb === thumb) return;
+    row.thumb = thumb;
+    await writeIndex(list);
+  });
+}
+
 /** Write chain — serialises index writes. Never rejects, so one failed stash
  *  does not wedge the shelf for the session. */
 let writes: Promise<void> = Promise.resolve();

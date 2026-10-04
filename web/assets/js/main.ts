@@ -52,6 +52,7 @@ import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
   suspendCache, resetSessionLatches, failHandover, boardSafety, openSharedBoard,
   boardSyncState, pushBoardToCloud, adoptFolder, saveDocument, compactDocument,
+  refreshBoardThumb, boardFolder,
 } from './storage/storage.ts';
 import { looksLikeMbrd } from './storage/mbrd.ts';
 import { boardThumb } from './ui/snapshot.ts';
@@ -568,6 +569,9 @@ const flushEdits = async () => {
   // A document open in the editor, written into the board before the board is.
   await flushEditor();
   await autosave().catch(() => {});
+  // The board's picture as it is leaving, into its file, so the board list
+  // shows it next time. Apps only: a browser tab hides on every tab switch.
+  if (boardFolder()) await refreshBoardThumb().catch(() => {});
   // The board's file too, on a desktop with a boards folder. A no-op elsewhere.
   await saveDocument().catch(() => {});
   // Going away is the quietest moment there is: see compactDocument().

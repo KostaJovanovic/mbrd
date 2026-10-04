@@ -1,8 +1,8 @@
 // The .mbrd container — a ZIP holding manifest.json, board.json, the history
-// in timeline/, and content-addressed assets/, notes/, waveforms/. One
-// self-contained file. Items reference bytes as `asset: { hash, embedded: true }`.
+// in timeline/, and content-addressed assets/, notes/, waveforms/, and its
+// picture for a list of boards. One self-contained file. Items reference bytes as `asset: { hash, embedded: true }`.
 
-import { appendZip, readZip, readZipBlob, writeZip, writeZipLayout } from './zip.ts';
+import { appendZip, layoutFromTail, readZip, readZipBlob, writeZip, writeZipLayout } from './zip.ts';
 import type { ZipEntry, ZipLayout } from './zip.ts';
 import { getAsset, putAsset } from './assets.ts';
 import type { Asset } from './assets.ts';
@@ -173,12 +173,13 @@ function assetId(name: string): string | null {
   return isHash(hash) ? tail.toLowerCase() : null;
 }
 
-type PackOptions = { created?: string | null, allowMissing?: boolean };
+/** `thumb` is the board's picture as a data URL, boardThumb()'s answer. */
+type PackOptions = { created?: string | null, allowMissing?: boolean, thumb?: string | null };
 
 /** Every entry a .mbrd of this board holds, in the order they are written. */
 async function boardEntries(
   boardData: PackedBoard,
-  { created = null, allowMissing = false }: PackOptions = {},
+  { created = null, allowMissing = false, thumb = null }: PackOptions = {},
 ) {
   const now = new Date();
   const manifest = {
@@ -307,7 +308,100 @@ async function boardEntries(
     entries.push({ name: waveformFile(hash), data: enc.encode(waveformJSON(peaks)), compress: true });
   }
 
+  // The picture last, so a whole write puts it beside the directory and a list
+  // of boards reads it from the file's end (thumbnailFromTail()).
+  const picture = thumbnailEntry(thumb);
+  if (picture) entries.push(picture);
+
   return { entries, manifest, now };
+}
+
+// ---------------------------------------------------------------------------
+// The thumbnail: the board's own picture, for a list of boards to show
+// without opening one. Optional, and a reader that ignores it loses nothing.
+// ---------------------------------------------------------------------------
+
+/** The name the picture goes under, by its type. */
+const THUMB_NAMES: Record<string, string> = {
+  'image/webp': 'thumbnail.webp',
+  'image/jpeg': 'thumbnail.jpg',
+};
+
+/** A 360px picture is tens of KB. Past this it is not one, and is not read. */
+const THUMB_MAX = 512 * 1024;
+
+function thumbnailEntry(url: string | null): ZipEntry | null {
+  const m = /^data:(image\/(?:webp|jpeg));base64,([A-Za-z0-9+/]+={0,2})$/.exec(url || '');
+  if (!m) return null;
+  const bytes = fromBase64(m[2]);
+  if (bytes.length > THUMB_MAX || thumbType(bytes) !== m[1]) return null;
+  // Stored: a WebP or a JPEG does not deflate, and a stored entry is what
+  // thumbnailFromTail() can lift straight out of the bytes.
+  return { name: THUMB_NAMES[m[1]], data: bytes, compress: false };
+}
+
+/** The picture's type from its own first bytes, never from its name: the
+ *  answer becomes a data URL, and only these two are let through. */
+function thumbType(b: Uint8Array): string | null {
+  if (b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+    && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'image/webp';
+  if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  return null;
+}
+
+/** A picture out of a file as a data URL for an <img>, or null. */
+function thumbnailUrl(bytes: Uint8Array): string | null {
+  if (bytes.length > THUMB_MAX) return null;
+  const type = thumbType(bytes);
+  return type ? `data:${type};base64,${toBase64(bytes)}` : null;
+}
+
+function thumbnailIn(files: Map<string, Uint8Array>): string | null {
+  for (const name of Object.values(THUMB_NAMES)) {
+    const bytes = files.get(name);
+    if (bytes) return thumbnailUrl(bytes);
+  }
+  return null;
+}
+
+/**
+ * The picture out of a board's last bytes, for a list that must not read whole
+ * files. `tail` and `size` as layoutFromTail() takes them. Answers the picture;
+ * or, when `tail` does not reach it, how many bytes from the end it does; or
+ * null for a file with none, or one whose bytes do not add up. A stored entry
+ * only - this module writes it stored, and one rezipped deflated goes without.
+ */
+export function thumbnailFromTail(tail: Uint8Array, size: number): string | number | null {
+  const layout = layoutFromTail(tail, size);
+  if (layout === null || typeof layout === 'number') return layout;
+  for (const name of Object.values(THUMB_NAMES)) {
+    const rec = layout.records.get(name);
+    if (!rec) continue;
+    if (rec.method !== 0 || rec.csize > THUMB_MAX) return null;
+    const base = size - tail.length;
+    if (rec.offset < base) return size - rec.offset;
+    const at = rec.offset - base;
+    if (at + 30 > tail.length) return null;
+    const view = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+    if (view.getUint32(at, true) !== 0x04034b50) return null;
+    const start = at + 30 + view.getUint16(at + 26, true) + view.getUint16(at + 28, true);
+    if (start + rec.csize > tail.length) return null;
+    return thumbnailUrl(tail.subarray(start, start + rec.csize));
+  }
+  return null;
+}
+
+function toBase64(bytes: Uint8Array) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+function fromBase64(text: string) {
+  const s = atob(text);
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
 }
 
 /** The note's text from meta, narrowed once for the three readers below. */
@@ -745,7 +839,7 @@ export async function unpackBoard(blob: Blob, { owned = false }: { owned?: boole
     putAsset(hash, kept, { ext, mime: mimeFor(ext) });
   }
 
-  return { manifest, board };
+  return { manifest, board, thumb: thumbnailIn(files) };
 }
 
 /** Cheap sniff so a wrong-extension drop fails with a useful message. */

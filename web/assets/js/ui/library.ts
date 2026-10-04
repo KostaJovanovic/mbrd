@@ -1,10 +1,12 @@
 // Board switcher UI: a grid of saved boards (title + thumbnail) over the
 // library index. Storage logic is in storage/storage.ts and storage/library.ts.
-// Renders from the index alone — boards are unpacked only when opened.
+// Renders from the index; a card it has no picture for reads one from its
+// file's end. Boards are unpacked only when opened.
 
 import {
   listBoards, switchBoard, newBoard, deleteLibraryBoard, ensureCurrentOnShelf,
   openCloudBoard, relocateLibraryBoard, boardFolder, revealBoardFolder,
+  refreshBoardThumb, boardFileThumb,
 } from '../storage/storage.ts';
 import type { BoardEntry } from '../storage/storage.ts';
 import { platform, fileNameOf } from '../platform/platform.ts';
@@ -164,6 +166,13 @@ async function render() {
 
   panel.append(head, grid, foot());
   root.append(panel);
+
+  // The board on screen, drawn as it is now rather than as it was when last
+  // left. After the paint: the list is already right, and only its card waits.
+  void refreshBoardThumb().then(url => {
+    const at = grid.querySelector<HTMLElement>('.library-card.is-current .library-thumb');
+    if (url && at && mine === renderToken) showThumb(at, url);
+  }, () => {});
 
   // And the cloud, after the paint rather than before it. Deliberately not
   // awaited: this is a round trip to somebody else's server, and the shelf is
@@ -378,6 +387,14 @@ function removal(b: BoardEntry) {
   };
 }
 
+/** Put a board's picture in its card, over whatever was there. */
+function showThumb(at: HTMLElement, url: string) {
+  const img = document.createElement('img');
+  img.alt = '';
+  img.src = url;
+  at.replaceChildren(img);
+}
+
 function card(b: BoardEntry) {
   const el = document.createElement('div');
   el.className = 'library-card' + (b.current ? ' is-current' : '');
@@ -392,11 +409,12 @@ function card(b: BoardEntry) {
 
   const thumb = document.createElement('div');
   thumb.className = 'library-thumb';
-  if (b.thumb) {
-    const img = document.createElement('img');
-    img.alt = '';
-    img.src = b.thumb;
-    thumb.append(img);
+  if (b.thumb) showThumb(thumb, b.thumb);
+  else if (b.path) {
+    // Out of the file, after the card is up: the board carries its own picture.
+    void boardFileThumb(b.id, b.path, b.at).then(url => {
+      if (url && thumb.isConnected) showThumb(thumb, url);
+    }, () => {});
   }
   const name = document.createElement('div');
   name.className = 'library-name';

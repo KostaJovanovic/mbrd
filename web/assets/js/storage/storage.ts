@@ -13,7 +13,7 @@ import { idbGet, idbSet, idbKeys, idbGetMany } from './idb.ts';
 import type { StoreName } from './idb.ts';
 import {
   libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard, hasLibraryBoard,
-  trimLibrary, sweepLibrary, wouldTrim, SHELF_MAX,
+  trimLibrary, sweepLibrary, wouldTrim, setLibraryThumb, SHELF_MAX,
 } from './library.ts';
 import type { LibraryEntry } from './library.ts';
 import {
@@ -22,7 +22,7 @@ import {
 } from '../state.ts';
 import { normalizeBoard } from '../board-schema.ts';
 import { planMerge } from '../merge.ts';
-import { packBoard, packBoardFile, unpackBoard, MIME } from './mbrd.ts';
+import { packBoard, packBoardFile, unpackBoard, thumbnailFromTail, MIME } from './mbrd.ts';
 import type { PackedBoard } from './mbrd.ts';
 import { layoutFromTail, deadBytes } from './zip.ts';
 import type { ZipLayout } from './zip.ts';
@@ -59,6 +59,55 @@ type ThumbMaker = () => Promise<string | null>;
 let makeThumb: ThumbMaker = async () => null;
 export function setBoardThumb(fn: ThumbMaker | null | undefined) {
   makeThumb = typeof fn === 'function' ? fn : async () => null;
+}
+
+/**
+ * The board on screen's picture: what its file carries and its shelf row
+ * shows. `gen` is `edits` when it was taken, so a board nobody has touched
+ * since is not drawn again. `shotFiled` is whether the board's file holds this
+ * picture, which is what makes a write worth doing on an unchanged board.
+ *
+ * Emptied by every load. The doors that bring a picture with the board put it
+ * back after (carryShot()); one that does not leaves the next write without
+ * one until the board is next drawn, which is a blank card and not a wrong one.
+ */
+let shot: { url: string, gen: number } | null = null;
+let shotFiled = true;
+bus.on('board:load', () => { shot = null; shotFiled = true; });
+
+/** The picture a board arrived with, as the one its file already holds. */
+function carryShot(url: string | null) {
+  shot = url ? { url, gen: edits } : null;
+  shotFiled = true;
+}
+
+/** The board's picture, drawn again only if it has changed since the last.
+ *  A failed drawing keeps the last one: an old picture beats a blank. */
+async function takeThumb() {
+  if (shot && shot.gen === edits) return shot.url;
+  const gen = edits;
+  const url = await makeThumb().catch(() => null);
+  if (url) {
+    if (url !== shot?.url) shotFiled = false;
+    shot = { url, gen };
+  }
+  return shot?.url ?? null;
+}
+
+/**
+ * Draw the board on screen for its picture, if it has changed since the last
+ * one, and put that on its shelf row and into its file. For the moments a
+ * picture is wanted and nobody is waiting on a gesture: the board list opening,
+ * the app going away. The autosave never draws; it carries the last picture.
+ */
+export async function refreshBoardThumb() {
+  if (notUsersBoard()) return null;
+  const id = await ensureBoardId();
+  const url = await takeThumb();
+  if (!url) return null;
+  await setLibraryThumb(id, url).catch(() => {});
+  if (folder && !shotFiled) await saveDocument();
+  return url;
 }
 
 /** File picker spec for .mbrd. Two accept lists because iOS UTI resolution
@@ -303,7 +352,7 @@ export async function shareBoard({ history = true } = {}) {
     const data = serializeBoard();
     // Share is the one path that asks about history (file goes to someone else).
     if (!history) delete data.timeline;
-    const { blob, manifest } = await packBoard(data, { created });
+    const { blob, manifest } = await packBoard(data, { created, thumb: shot?.url });
     created = manifest.created;
     const file = new File([blob], fileNameFor(board.title), { type: MIME });
     // canShare({files}) is the real probe — a browser can have share() for
@@ -329,7 +378,7 @@ export async function packForShare({ history, viewing = false }: { history: bool
   let data = serializeBoard();
   if (!history) delete data.timeline;
   if (viewing) data = viewingCopy(data, hash => !!getAsset(hash));
-  const { blob, manifest } = await packBoard(data, { created });
+  const { blob, manifest } = await packBoard(data, { created, thumb: shot?.url });
   created = manifest.created;
   return { blob, name: fileNameFor(data.title) };
 }
@@ -370,11 +419,12 @@ export async function openFile(file: File, ref: DocumentRef | null = null) {
       return await withFreshAssets(async () => {
         // A file the shell read is the app's own copy, and its pictures stay
         // where they are in it (readZipBlob()). A picked or dropped File is not.
-        const { manifest, board: data } = await unpackBoard(file, { owned: isDesktop() && !!ref?.path });
+        const { manifest, board: data, thumb } = await unpackBoard(file, { owned: isDesktop() && !!ref?.path });
         // manifest.app decides whether the stored title needs its underscores
         // decoding - see titleForOpenedBoard(). The field was documented as
         // informational; this is the one thing that reads it.
         loadBoard({ ...data, title: titleForOpenedBoard(data.title, file.name, manifest.app) });
+        carryShot(thumb);
         doc = ref;
         reportDocument();
         // The manifest is a file's, so its stamp is only a stamp if it is text.
@@ -887,7 +937,8 @@ export async function stashCurrent() {
   // The id is the user's board's, and the board on screen is not: filing it
   // would put the benchmark's pictures over their row. Nothing to file.
   if (isBenchBoard()) return id;
-  const thumb = await makeThumb().catch(() => null);
+  // Into the file too: saveDocument() below writes it there.
+  const thumb = await takeThumb();
   // With a boards folder the file is brought up to date first, and made if the
   // board has none, so the row below is always a pointer. A board that could
   // not be written is not filed, and the caller keeps it on screen. The wait
@@ -917,7 +968,7 @@ export async function stashCurrent() {
   // or exported either. The only escape the interface offered was Clear
   // everything. See the allowMissing note in storage/mbrd.ts: the shelf is the
   // app's own working copy, and one that is a picture short beats none.
-  const { blob, manifest } = await packBoard(data, { created, allowMissing: true });
+  const { blob, manifest } = await packBoard(data, { created, allowMissing: true, thumb });
   created = manifest.created;
   await putLibraryBoard(id, blob, { title: board.title, at: Date.now(), thumb });
   return id;
@@ -1155,8 +1206,12 @@ export async function switchBoard(id: string) {
       file = new File([blob], 'board.mbrd', { type: MIME });
     }
     await withFreshAssets(async () => {
-      const { manifest, board: data } = await unpackBoard(file, { owned: isDesktop() });
+      const { manifest, board: data, thumb } = await unpackBoard(file, { owned: isDesktop() });
       loadBoard(data);
+      // A board filed before boards carried their picture has it on its row,
+      // and its file is given it at the next write.
+      carryShot(thumb ?? row?.thumb ?? null);
+      if (!thumb && shot) shotFiled = false;
       // A string or nothing, as in openFile() above and for the same reason:
       // this manifest came out of a packed blob rather than out of this run.
       created = (typeof manifest.created === 'string' && manifest.created) || null;
@@ -1335,14 +1390,15 @@ async function rowForFile(ref: DocumentRef | null) {
   return (await libraryIndex()).find(e => e.path === ref.path)?.id;
 }
 
-/** Point the board's shelf row at its file. The picture stays what it was:
- *  taking one costs a render, and the timer runs while somebody works. */
+/** Point the board's shelf row at its file. The picture is the last one taken
+ *  and is not taken here: that costs a render, and the timer runs while
+ *  somebody works. */
 async function fileRow() {
   if (!doc?.path) return;
   const id = await ensureBoardId();
   const row = (await libraryIndex()).find(e => e.id === id);
   await putLibraryBoard(id, null, {
-    title: board.title, at: Date.now(), thumb: row?.thumb ?? null, path: doc.path,
+    title: board.title, at: Date.now(), thumb: shot?.url ?? row?.thumb ?? null, path: doc.path,
   });
 }
 
@@ -1375,7 +1431,9 @@ async function writeBoardFile(
   let prior = append && !whole ? await priorLayout(ref) : null;
   // A Save somebody waits for anyway: the moment to drop what appends left.
   if (prior && compact && worthCompacting(deadBytes(prior), prior.size)) prior = null;
-  let packed = await packBoardFile(data, { created, allowMissing, prior });
+  // Every write carries the picture: one without it drops it from the file.
+  const thumb = shot?.url ?? null;
+  let packed = await packBoardFile(data, { created, allowMissing, prior, thumb });
   created = packed.manifest.created;
   writing?.();
   if (packed.appended && append && prior) {
@@ -1383,7 +1441,7 @@ async function writeBoardFile(
     try { await append(ref, packed.blob, prior.size); }
     catch (err) {
       console.warn('[mbrd] could not append to the board file, writing it whole:', err);
-      packed = await packBoardFile(data, { created, allowMissing });
+      packed = await packBoardFile(data, { created, allowMissing, thumb });
       await platform.files.write(ref, packed.blob);
     }
   } else {
@@ -1391,6 +1449,7 @@ async function writeBoardFile(
   }
   fileLayout = ref.path ? { path: ref.path, layout: packed.layout } : null;
   writeWhole = false;
+  if (ref === doc && (shot?.url ?? null) === thumb) shotFiled = true;
 }
 
 /**
@@ -1438,7 +1497,8 @@ function writeDocument(): Promise<boolean> {
   const port = platform.files.folder;
   if (!folder || !port || notUsersBoard()) return Promise.resolve(true);
   return inTurn(async () => {
-    if (doc?.path && !isDirty()) return true;
+    // A clean board is written for a picture its file does not hold yet.
+    if (doc?.path && !isDirty() && shotFiled) return true;
     const gen = edits;
     try {
       // A board a picture short still goes to its file, as it goes to the
@@ -1447,9 +1507,11 @@ function writeDocument(): Promise<boolean> {
       if (doc?.path) {
         await writeBoardFile(doc, data, { allowMissing: true });
       } else {
-        const packed = await packBoardFile(data, { created, allowMissing: true });
+        const thumb = shot?.url ?? null;
+        const packed = await packBoardFile(data, { created, allowMissing: true, thumb });
         created = packed.manifest.created;
         doc = await port.create(fileNameFor(board.title), packed.blob);
+        if ((shot?.url ?? null) === thumb) shotFiled = true;
         fileLayout = doc.path ? { path: doc.path, layout: packed.layout } : null;
         namedTitle = board.title;
         reportDocument();
@@ -1580,8 +1642,9 @@ async function reopenFile(path: string): Promise<boolean> {
     }
     const file = await platform.files.read(ref);
     await withFreshAssets(async () => {
-      const { manifest, board: data } = await unpackBoard(file, { owned: true });
+      const { manifest, board: data, thumb } = await unpackBoard(file, { owned: true });
       loadBoard(data);
+      carryShot(thumb);
       created = (typeof manifest.created === 'string' && manifest.created) || null;
     });
     doc = ref;
@@ -1658,6 +1721,48 @@ export async function listBoards(): Promise<BoardEntry[]> {
     });
   }
   return out.sort((a, b) => (b.at || 0) - (a.at || 0));
+}
+
+/** Pictures read out of files, by path and the file's `at`, so the list asks
+ *  each file once a run until it changes. Null is a file with none. */
+const fileThumbs = new Map<string, { at: number, url: string | null }>();
+
+/** How far from a file's end its picture may be and still be read. A whole
+ *  write puts it beside the directory; appends can leave it further back. */
+const THUMB_REACH = 4 * 1024 * 1024;
+
+/**
+ * A board's picture out of its file, for a card the shelf has none for: a file
+ * in the folder with no row, or a row from before boards carried their picture.
+ * Read from the file's end, never the whole file. A row that had no picture
+ * keeps the one found, so the next list is drawn with it.
+ */
+export async function boardFileThumb(id: string, path: string, at = 0): Promise<string | null> {
+  const tail = platform.files.tail;
+  if (!tail) return null;
+  const key = pathKey(path);
+  const known = fileThumbs.get(key);
+  if (known && known.at === at) return known.url;
+  const ref: DocumentRef = { name: fileNameOf(path), path };
+  let url: string | null = null;
+  try {
+    let read = await tail(ref, TAIL_READ);
+    let found = thumbnailFromTail(read.bytes, read.size);
+    // Read again at most twice: once to reach the directory, once the picture.
+    for (let i = 0; i < 2 && typeof found === 'number' && found <= THUMB_REACH; i++) {
+      read = await tail(ref, found);
+      found = thumbnailFromTail(read.bytes, read.size);
+    }
+    url = typeof found === 'string' ? found : null;
+  } catch {
+    // Gone, or not readable: the card stays blank, as it was.
+  }
+  fileThumbs.set(key, { at, url });
+  if (url && !id.startsWith(FILE_ID)) {
+    const row = (await libraryIndex()).find(e => e.id === id);
+    if (row && !row.thumb) await setLibraryThumb(id, url).catch(() => {});
+  }
+  return url;
 }
 
 /** Open the boards folder in the file manager. */
