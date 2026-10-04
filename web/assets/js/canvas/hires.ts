@@ -5,6 +5,7 @@
 // sharpens photos when they are large - and per card, since a big card crosses
 // the threshold before a small one does. The original is the asset's own shared
 // URL (assetURL), so a swap creates no blob URL and there is nothing to revoke.
+// It is decoded off screen first and the copy stays up until it has been.
 
 import { byId } from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
@@ -111,17 +112,50 @@ function sweep(zoom: number): void {
     // (times the margin) the copy is upscaling and the original earns its memory.
     const longEdge = Math.max(item.w, item.h) * zoom * dpr;
     const wantOriginal = allow && longEdge > swapEdge() * TRIGGER;
-    const isHi = img.dataset.hires === 'on';
-    if (wantOriginal && !isHi) {
+    const state = img.dataset.hires;
+    if (wantOriginal && !state) {
       const orig = assetURL(hash);
       if (!orig || orig === img.src) continue;
-      img._copyUrl = img.src;       // the copy to return to when zoomed back out
-      img.dataset.hires = 'on';
-      img.src = orig;
-    } else if (!wantOriginal && isHi) {
+      img.dataset.hires = 'wait';
+      void land(img, orig);
+    } else if (!wantOriginal && state === 'wait') {
+      // Zoomed back out before it decoded: land() sees this and stands down.
+      img.dataset.hires = '';
+    } else if (!wantOriginal && state === 'on') {
       img.dataset.hires = '';
       // Swapping back frees the original's bitmap: nothing else holds it.
       if (img._copyUrl && img.src !== img._copyUrl) img.src = img._copyUrl;
     }
   }
+}
+
+/**
+ * Put the original on the card once it is decoded, never before.
+ *
+ * Setting `src` straight to a 48 MB camera frame left the card blank from that
+ * frame until the decode finished, which on a phone is long enough to see:
+ * the flash that the note on PRESETS in quality.ts names. Decoded through a
+ * detached image instead, the same URL is then an available image and the
+ * swap paints on the next frame, with the copy on screen until it does.
+ *
+ * A zoom out in the meantime clears the mark and this stands down. One that
+ * will not decode is marked 'no' and not asked again for this card, or every
+ * zoom frame would start the same failing load.
+ */
+async function land(img: HiresImage, orig: string) {
+  const probe = new Image();
+  probe.decoding = 'async';
+  probe.src = orig;
+  try {
+    await probe.decode();
+  } catch {
+    if (img.dataset.hires === 'wait') img.dataset.hires = 'no';
+    return;
+  }
+  if (img.dataset.hires !== 'wait') return;
+  // Culled while it decoded: unmarked, so the sweep asks again on remount.
+  if (!img.isConnected) { img.dataset.hires = ''; return; }
+  img._copyUrl = img.src;       // the copy to return to when zoomed back out
+  img.dataset.hires = 'on';
+  img.src = orig;
 }
