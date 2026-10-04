@@ -54,6 +54,10 @@ The changelog source is `patch-notes.md` at the repository root, not in here.
   board on screen, saved as a JSON file, with real frame timings on Android.
   Built on 2026-09-24 except the lab page; not yet run on a phone. Its last
   section is what was built and where it differs from the plan.
+- `qol-2026-10-04.md` — the second quality-of-life round: 23 picked changes
+  in six batches (align carrying notes, drops avoiding cards, Nudge and fence
+  scopes, selection and join rows, the viewer, Alt+drag), with three open
+  questions. Not yet built.
 - `patch-notes-full.md` — **an archive, not open work.** It holds every release
   at the length it was first written, internal work included. Nothing generates
   anything from it.
