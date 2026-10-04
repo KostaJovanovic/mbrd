@@ -359,7 +359,9 @@ test('the zoomed-out twin is swapped in for the model as it is for a photograph'
   // items.css against `.item-body`, so the model gets the swap just by
   // mounting a sibling `<img class="still">`. A rule narrowed to
   // photographs would silently leave a model card decoding a 900px still
-  // at a hundred-pixel zoom.
-  assert.match(css, /#world\.is-stilled \.item-body img\.still\.is-ready\s*\{\s*display:\s*block/);
-  assert.match(css, /#world\.is-stilled \.item-body img:not\(\.still\):has\(\+ \.still\.is-ready\)/);
+  // at a hundred-pixel zoom. Narrowed only *away from* a photograph's
+  // thumbnail twin (`[data-thumb]`), which has a rung of its own (is-thumbs);
+  // the model's twin carries no such mark.
+  assert.match(css, /#world\.is-stilled \.item-body img\.still\.is-ready:not\(\[data-thumb\]\)\s*\{\s*display:\s*block/);
+  assert.match(css, /#world\.is-stilled \.item-body img:not\(\.still\):has\(\+ \.still\.is-ready:not\(\[data-thumb\]\)\)/);
 });

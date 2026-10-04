@@ -899,6 +899,8 @@ const RENDERERS = {
     // sources alike: the attribute lands at once but the bytes still have to
     // decode, and swapping early shows a blank square where the picture was.
     if (thumb) {
+      // A photograph's twin swaps on its own rung (is-thumbs), not the GIFs'.
+      still.dataset.thumb = '';
       still.addEventListener('load', () => still.classList.add('is-ready'), { once: true });
       still.src = thumb;
     }

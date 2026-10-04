@@ -4,8 +4,8 @@
 // so it inherits the same sizing/object-fit rules.
 
 import { bus } from '../state.ts';
-import { quality } from '../quality.ts';
-import { stillZoom } from './viewport.ts';
+import { quality, qualityLevel } from '../quality.ts';
+import { stillZoom, thumbZoom } from './viewport.ts';
 import { surface, surfaceToBlob } from './surface.ts';
 import type { Viewport } from './viewport.ts';
 
@@ -52,8 +52,8 @@ export function initStills(world: HTMLElement, vp: ZoomSource): void {
 
   const update = () => {
     // Two reasons to hold a GIF, and two classes. The rung (matching
-    // viewport.ts's `<`) is is-stilled, which also swaps every photograph to
-    // its hundred-pixel thumbnail (items.css). quality.motion off - the only
+    // viewport.ts's `<`) is is-stilled; photographs swap to their
+    // hundred-pixel thumbnails on is-thumbs, below. quality.motion off - the only
     // way to reach Mobile boards - is is-held, which touches GIFs alone: it
     // used to set is-stilled too, and Light drew every photo from its thumbnail
     // at every zoom, blinking each card as the swap landed.
@@ -94,6 +94,13 @@ export function initStills(world: HTMLElement, vp: ZoomSource): void {
     // under a :has() rule since removed). The other way stays held: the display
     // copies are the expensive raster, and landing them mid-gesture is that hitch.
     if (still || far) world.classList.toggle('is-stilled', far);
+    // Photographs' thumbnails, on their own rung (thumbZoom()). Below Full it
+    // is the rung above and is held the same way. Full keeps the picture to a
+    // far lower zoom and lands it back mid-gesture: the hitch above is the
+    // price that stop agreed to pay for never waiting on a release.
+    const full = qualityLevel() === 'full';
+    const pics = vp.zoom < thumbZoom(full);
+    if (full || still || pics) world.classList.toggle('is-thumbs', pics);
     world.classList.toggle('is-held', held);
   };
 

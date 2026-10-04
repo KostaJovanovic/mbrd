@@ -4,6 +4,7 @@
 // Items lay out at cssY = -worldY, so the vertical translate is +panY*zoom.
 
 import { clamp, rafThrottle, emitter, readToken } from '../util.ts';
+import { qualityLevel } from '../quality.ts';
 import type { Emitter } from '../util.ts';
 import { itemBounds } from '../geometry.ts';
 import type { Box, Bounds, Point } from '../geometry.ts';
@@ -164,6 +165,9 @@ const VIEW_SETTLE_MS = 140;
  */
 const PIN_OUT = 2;
 const PIN_IN = 4;
+/** In at Full, which spends a raster per quarter of zoom so a zoom-in sharpens
+ *  as it goes rather than on release. The lower stops keep PIN_IN. */
+const PIN_IN_FULL = 1.25;
 
 /**
  * How far below the scale it was rastered at a gesture may zoom before the
@@ -406,10 +410,12 @@ export const farZoom = () => lodZoom();
 export const stillZoom = () => lodZoom();
 /**
  * And below this a photograph is drawn from its hundred-pixel thumbnail
- * instead of its full-size self, which is the same swap by the same mechanism -
- * see the image renderer and the is-stilled rules in the CSS.
+ * instead of its full-size self - the is-thumbs rules in the CSS, set by
+ * canvas/stills.ts. The rung everywhere but Full, which keeps the picture down
+ * to FULL_THUMB_ZOOM: the stop that asked for fidelity over speed.
  */
-export const thumbZoom = () => lodZoom();
+const FULL_THUMB_ZOOM = 0.2 * BASE_ZOOM;
+export const thumbZoom = (full = false) => (full ? FULL_THUMB_ZOOM : lodZoom());
 // There is no webZoom. The connections used to leave on this rung with the
 // labels and the grips, and they no longer leave at all - the far view is the
 // one that shows the whole graph at once, which is where a drawn line earns the
@@ -1211,7 +1217,8 @@ export class Viewport {
       this.world.style.willChange = 'transform';
       return;
     }
-    if (this._repin || (z > this._pinned / PIN_OUT && z < this._pinned * PIN_IN)) return;
+    const pinIn = qualityLevel() === 'full' ? PIN_IN_FULL : PIN_IN;
+    if (this._repin || (z > this._pinned / PIN_OUT && z < this._pinned * pinIn)) return;
     if (typeof requestAnimationFrame !== 'function') return;
     this.world.style.willChange = 'auto';
     this._repin = requestAnimationFrame(() => {

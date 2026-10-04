@@ -216,8 +216,12 @@
 /* Zoomed-out stand-in (frozen GIF / thumbnail). is-ready guards against
    a blank swap while the bytes are still decoding. */
 .item-body img.still { display: none; }
-#world.is-stilled .item-body img.still.is-ready { display: block; }
-#world.is-stilled .item-body img:not(.still):has(+ .still.is-ready) { display: none; }
+#world.is-stilled .item-body img.still.is-ready:not([data-thumb]) { display: block; }
+#world.is-stilled .item-body img:not(.still):has(+ .still.is-ready:not([data-thumb])) { display: none; }
+/* A photograph's thumbnail twin, on its own rung: the same as the GIFs' below
+   Full, further out at Full (thumbZoom() in viewport.ts). */
+#world.is-thumbs .item-body img.still.is-ready[data-thumb] { display: block; }
+#world.is-thumbs .item-body img:not(.still):has(+ .still.is-ready[data-thumb]) { display: none; }
 /* Animated GIFs off (the quality dial, stills.ts): the same swap for GIFs
    only, at every zoom. Photographs keep their display copy until the rung. */
 #world.is-held .item-body img[data-gif] + img.still.is-ready { display: block; }
