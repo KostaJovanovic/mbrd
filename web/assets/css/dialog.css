@@ -647,10 +647,10 @@ textarea.lp-url {
 }
 /* display:flex on [open] only — see #compose for why. */
 #darkroom[open] { display: flex; flex-direction: column; gap: 12px; }
+/* Tint only, no blur, unlike its siblings: the blur was redone on every frame
+   of a crop drag, about 7ms of a 26ms frame on a Galaxy S22+. */
 #darkroom::backdrop {
   background: color-mix(in srgb, var(--ink) 42%, transparent);
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
 }
 
 #darkroom-head { display: flex; align-items: baseline; gap: 12px; }
@@ -773,18 +773,24 @@ textarea.lp-url {
   #darkroom.dk-busy #darkroom-plate { animation: none; opacity: 0.62; }
 }
 
-/* Thirds grid — decoration only, nothing snaps to them. */
+/* Thirds grid — decoration only, nothing snaps to them. Drawn as the borders
+   of two boxes, not four gradients: the frame resizes on every frame of a
+   crop drag, and the gradients were rastered afresh each time (about 5ms a
+   frame on a Galaxy S22+, where borders cost nothing measurable). */
 .dk-grid {
   position: absolute;
   inset: 0;
   pointer-events: none;
   opacity: 0.5;
-  background:
-    linear-gradient(to right,  transparent calc(33.333% - 0.5px), var(--paper) calc(33.333% - 0.5px), var(--paper) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px)),
-    linear-gradient(to right,  transparent calc(66.666% - 0.5px), var(--paper) calc(66.666% - 0.5px), var(--paper) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px)),
-    linear-gradient(to bottom, transparent calc(33.333% - 0.5px), var(--paper) calc(33.333% - 0.5px), var(--paper) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px)),
-    linear-gradient(to bottom, transparent calc(66.666% - 0.5px), var(--paper) calc(66.666% - 0.5px), var(--paper) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px));
 }
+.dk-grid::before,
+.dk-grid::after {
+  content: '';
+  position: absolute;
+  border: 0 solid var(--paper);
+}
+.dk-grid::before { inset: 0 33.333%; border-left-width: 1px; border-right-width: 1px; }
+.dk-grid::after { inset: 33.333% 0; border-top-width: 1px; border-bottom-width: 1px; }
 
 /* Crop handles. The drawn square is 10px; the grab area is 22px via ::before,
    because a 10px target misses on trackpads and touchscreens. */
