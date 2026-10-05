@@ -86,6 +86,7 @@ export interface MenuCommands {
   nudgeBoard: () => void;
   nudgeSelection: () => void;
   nudgeFence: (id: string) => void;
+  fitFence: (id: string) => void;
   rearrangeFence: (id: string) => void;
   // The touch multi-select mode: whether it is on, and the one way in or out.
   multiSelect: () => boolean;
@@ -778,6 +779,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: 'Nudge fence', icon: 'i-nudge',
       hidden: mobile || many || !cmds!.isFenceItem(id),
       action: () => cmds!.nudgeFence(id) },
+    { label: 'Fit to contents', icon: 'i-fence',
+      hidden: mobile || many || !cmds!.isFenceItem(id),
+      action: () => cmds!.fitFence(id) },
     // Mirrored pair — a fence folds down to its name bar, its cards out of sight.
     { label: 'Roll up', icon: 'i-arrow-up', hidden: !fenceItem || rolled,
       action: () => cmds!.setFenceRolled(id, true) },

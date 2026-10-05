@@ -29,6 +29,18 @@ test('Nudge these moves only the selection', () => {
   assert.ok(apart(byId(a.id), byId(c.id)) && apart(byId(b.id), byId(c.id)), 'and is cleared off');
 });
 
+test('Fit to contents closes a fence round what is in it, in one undo step', async () => {
+  const { undo } = await import('../web/assets/js/state.ts');
+  const [f] = addItems([fence({ x: 0, y: 0, w: 2000, h: 2000 })]);
+  const [a] = addItems([photo({ x: 100, y: 100 })]);
+  commands().fitFence(f.id);
+  const fen = byId(f.id), card = byId(a.id);
+  assert.ok(fen.w < 2000 && fen.h < 2000);
+  assert.ok(fen.x - fen.w / 2 < card.x - card.w / 2 && fen.x + fen.w / 2 > card.x + card.w / 2);
+  undo();
+  assert.equal(byId(f.id).w, 2000);
+});
+
 test('Nudge fence moves only what is inside, and grows the fence', () => {
   const [f] = addItems([fence({ x: 0, y: 0, w: 500, h: 500 })]);
   const [a, b] = addItems([photo({ x: 0, y: 0 }), photo({ x: 40, y: 0 })]);

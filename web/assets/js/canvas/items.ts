@@ -1374,6 +1374,8 @@ export function ensureMounted(id: string) {
  * first row *under the name*. This is how much room to leave it.
  */
 export function barHeight(id: string) {
+  // No page to measure in a test with no browser: no plate.
+  if (typeof document === 'undefined') return 0;
   const el = ensureMounted(id);
   const bar = el?.querySelector<HTMLElement>(':scope > .item-bar');
   return bar ? bar.offsetHeight : 0;

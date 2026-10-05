@@ -213,10 +213,37 @@ function paintClear() {
 // Size, scale, and putting the board back together
 // ---------------------------------------------------------------------------
 
+/**
+ * Close a fence around what is in it: a step of margin on every side and room
+ * under the name plate, in one undo step. Its contents are driven, since
+ * membership is measured from the edges. Twice, as the old enclose in
+ * rearrange() did: the plate's height follows the width the fence has just
+ * been given (its name is set in cqi of it), and the first write is what makes
+ * that width real, so the second measures the plate that will be drawn.
+ */
+export function fitFence(id: string) {
+  const fence = byId(id);
+  if (!fence || !isFence(fence)) return;
+  if (isLocked(fence)) { toast('That fence is anchored'); return; }
+  const inside = fenceFollowers([id]).map(byId).filter((it): it is Item => !!it);
+  const box = fenceBox(null, itemBounds(inside), baseStep());
+  if (!box) { toast('There is nothing in that fence to fit'); return; }
+  const before = snapshotGeom([id]);
+  applyGeom([{ id, ...box }]);
+  const plate = barHeight(id);
+  // World y points up, so the extra height all goes above and nothing moves.
+  if (plate > 0) applyGeom([{ id, x: box.x, y: box.y + plate / 2, w: box.w, h: box.h + plate }]);
+  if (!commitGeom('Fit fence', before, [id, ...inside.map(it => it.id)])) {
+    toast('That fence already fits');
+  }
+}
+
 // Reset selected items to their born-at size (measureSize, not pixel dims).
 // Centres and rotations are kept. Async because it reads bytes for aspect.
+// A fence's own size is the one its contents give it - see fitFence().
 export async function resetSize() {
-  // Fences have no natural size; locked items must not move.
+  for (const f of board.items.filter(i => selection.has(i.id) && isFence(i) && !isLocked(i))) fitFence(f.id);
+  // Locked items must not move.
   const items = board.items.filter(i => selection.has(i.id) && !isFence(i) && !isLocked(i));
   if (!items.length) return;
 

@@ -58,7 +58,7 @@ import { composeNote, editNoteInComposer } from './canvas/notes.ts';
 import { editFontText, mountedIds, seenPlaces, slideFrom } from './canvas/items.ts';
 import { editLinkProps } from './ui/link-props.ts';
 import { editTitleCard } from './ui/board-title.ts';
-import { armClear, nudgeBoard, rearrange } from './ui/board-actions.ts';
+import { armClear, fitFence, nudgeBoard, rearrange } from './ui/board-actions.ts';
 import { fileCommands } from './commands/file.ts';
 import { connectionCommands } from './commands/connections.ts';
 import { fenceCommands, sharedFence } from './commands/fences.ts';
@@ -388,6 +388,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // or one fence's contents among themselves.
     nudgeSelection: () => nudgeBoard({ ids: [...selection] }),
     nudgeFence: (id: string) => nudgeBoard({ fence: id }),
+    fitFence: (id: string) => fitFence(id),
     // Set layout and rearrange in one press. Only the rearrange is on the undo
     // stack — the setting is intent, the positions are what you might regret.
     arrangement: () => board.arrangement,
