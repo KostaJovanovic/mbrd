@@ -19,6 +19,7 @@ import {
   snapshotGeom, applyGeom, commitGeom,
   declareOp, registerOp,
   stuckFollowers, stuckTo, stuckPlacement, fenceOf, fenceBox, baseStep,
+  lastCommand, undoAction,
   isContent, rolledAway, rolledFences, fenceFollowers, connectedTo, travelling,
 } from './state.ts';
 import { kindName } from './canvas/item-dom.ts';
@@ -516,9 +517,15 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // seenPlaces() keeps the ones on screen and gives up past its cap.
     undo: () => slid(mountedIds(), undo),
     redo: () => slid(mountedIds(), redo),
+    // The receipt Cut gives (state.ts), with the same Undo.
     deleteSelection: () => {
       if (!selection.size) return;
+      const n = selection.size;
+      const was = lastCommand();
       removeItems([...selection]);
+      // Nothing could go (the title card alone, say): no receipt for nothing.
+      if (lastCommand() === was) return;
+      toast(`Deleted ${n} item${n === 1 ? '' : 's'}`, '', undoAction());
     },
     // Closes all three panels (sidebar, header, toolbar drawer), and answers
     // whether any was open or the connector armed, for Escape's mark.

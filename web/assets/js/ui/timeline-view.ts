@@ -18,7 +18,7 @@ import {
   board,
   timelineSteps, timelineAt, timelineStale, goTo, editStep, stepEditable,
   timelineBytes, trimmable, trimTimeline, describeStep, nameStep, deleteTimeline,
-  deleteStep, deleteAhead, setTimelinePlaying,
+  deleteStepUndoably, deleteAhead, setTimelinePlaying,
 } from '../state.ts';
 
 /**
@@ -686,8 +686,15 @@ function stepEntries(position: number): MenuEntry[] {
       label: 'Delete this step',
       danger: true,
       action: () => {
+        // At once, as Remove stop is in the tour editor, with the way back on the
+        // toast; the two larger deletes ask first instead.
         const index = timelineSteps().indexOf(step);
-        if (index >= 0 && deleteStep(index)) toast('Step deleted');
+        const back = index >= 0 ? deleteStepUndoably(index) : null;
+        if (back) {
+          toast('Step deleted', '', { label: 'Undo', run: () => {
+            if (!back()) toast('The timeline has changed since. The step stays deleted');
+          } });
+        }
       },
     },
   );

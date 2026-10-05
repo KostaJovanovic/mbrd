@@ -875,6 +875,30 @@ export function deleteStep(index: number): boolean {
 }
 
 /**
+ * Delete the step at `index` and answer a way to take that back, or null when
+ * nothing was deleted. The way back holds what deleteStep() changes - the
+ * steps, the marker, and the board, which a step behind the marker replays -
+ * and puts them back only while the board and history are still as the delete
+ * left them; afterwards it answers false and touches nothing.
+ */
+export function deleteStepUndoably(index: number): (() => boolean) | null {
+  const kept = serializeTimeline();
+  const was = snapshot();
+  if (!deleteStep(index)) return null;
+  const left = fingerprint() + JSON.stringify(serializeTimeline());
+  return () => {
+    if (fingerprint() + JSON.stringify(serializeTimeline()) !== left) return false;
+    restore(was);
+    adoptTimeline(kept);
+    dropStacks?.();
+    announce();
+    markDirty();
+    bus.emit('history');
+    return true;
+  };
+}
+
+/**
  * Delete every step past the marker. The board does not change. Returns how
  * many went: 0 on a stale history or with nothing ahead.
  */
