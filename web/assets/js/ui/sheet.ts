@@ -25,9 +25,16 @@ export function hideSheet(el: HTMLElement): void {
   clearTimeout(exits.get(el));
   // Its own slide, not the fade that ends first or a child's bubbling up. Not
   // `{ once: true }`: that spent the listener on the fade, the transform never
-  // got through, and every sheet waited out the timer below.
+  // got through, and every sheet waited out the timer below. Under reduced
+  // motion the closed state has no transform, so no slide starts and the fade
+  // is the end to wait for (quality.css).
+  // SAFETY: only a CSSTransition has transitionProperty; on any other kind it
+  // reads undefined and the comparison is false.
+  const isSlide = (a: Animation) => (a as CSSTransition).transitionProperty === 'transform';
+  const sliding = typeof el.getAnimations !== 'function' || el.getAnimations().some(isSlide);
+  const last = sliding ? 'transform' : 'opacity';
   const onEnd = (e: TransitionEvent) => {
-    if (e.target === el && e.propertyName === 'transform') done();
+    if (e.target === el && e.propertyName === last) done();
   };
   const done = () => {
     clearTimeout(exits.get(el));

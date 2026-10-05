@@ -1350,7 +1350,8 @@ function flyHome(id: ToolId) {
   // Nothing flies under a finger: there was no tool drawn over the board to fly
   // from, and a tool sailing out of a point nobody's hand is at reads as the
   // mode having put something down somewhere else. The slot simply lights down.
-  if (touching) { markSlot(id, false); return; }
+  // Nor under reduced motion or the Quality dial: the flight's end, at once.
+  if (touching || !moving()) { markSlot(id, false); return; }
   const seat = slotSeat(id);
   const ghost = toolSvg(id);
   ghost.className = 'clean-cursor is-ghost';
@@ -1415,7 +1416,7 @@ function showCursor(id: ToolId) {
   }
   const seat = slotSeat(id);
   moveCursor(at.x, at.y);
-  if (!seat) return;
+  if (!seat || !moving()) return;
   cursor.animate(
     [
       {
@@ -2934,6 +2935,7 @@ function sweepWebs(lx: number, ly: number, radius: number): number {
     // it, rather than fading where it hangs.
     const len = w.node.getTotalLength?.() ?? 400;
     for (const path of [w.shade, w.node]) {
+      if (!moving()) { path.remove(); continue; }
       path.style.strokeDasharray = String(len);
       path.animate(
         [{ strokeDashoffset: '0' }, { strokeDashoffset: String(len) }],
@@ -3766,6 +3768,8 @@ function tossIn(node: SVGGElement, to: { x: number, y: number }) {
 }
 
 function tossNode(host: SVGSVGElement, to: { x: number, y: number }) {
+  // Held still, the piece is simply in the bin: its end state is gone.
+  if (!moving()) return;
   host.style.left = at.x.toFixed(1) + 'px';
   host.style.top = at.y.toFixed(1) + 'px';
   document.body.append(host);
@@ -4390,7 +4394,8 @@ function dealCard() {
     x: vp.pan.x, y: vp.pan.y, w: size.w, h: size.h,
     meta,
   }], 'Add spotless card');
-  if (!item) return;
+  // Held still, the card is simply on the board where the fall would land it.
+  if (!item || !moving()) return;
 
   const real = document.querySelector<HTMLElement>(`.item[data-id="${CSS.escape(item.id)}"]`);
   const copy = div('clean-drop');

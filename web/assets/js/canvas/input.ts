@@ -14,7 +14,7 @@ import {
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
   baseStep, timelinePlaying, fenceAt, lastCommand,
 } from '../state.ts';
-import { zoomMs } from './viewport.ts';
+import { baseMs, reducedMotion, zoomMs } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 import {
   itemInRect, itemWithinRect, rotatedExtents,
@@ -23,7 +23,7 @@ import {
 import type { Box, Bounds, Point } from '../geometry.ts';
 import {
   itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName, showStickTarget,
-  setDragging, barHeight, refreshRings,
+  setDragging, barHeight, refreshRings, setPressing, seenPlaces, slideFrom,
 } from './items.ts';
 import { noteFloor } from './notes.ts';
 import { linkURL } from './renderers.ts';
@@ -49,6 +49,9 @@ const TAP_BURST = 7;
 // Long enough not to fire on a slow tap, short enough to feel deliberate;
 // it is the interval both mobile platforms use for the same gesture.
 const LONG_PRESS_MS = 480;
+// How long a held card waits before it starts to shrink: past a quick tap, so
+// a tap never twitches. .item.is-pressing's 360ms scale is the rest of the hold.
+const PRESS_SHOW_MS = 120;
 const LONG_PRESS_CONTEXT_GUARD_MS = 900;
 const LONG_PRESS_CONTEXT_GUARD_PX = 24;
 
@@ -485,9 +488,12 @@ export type WheelSample = {
  * `undo` is the pan this burst already made before it turned out to be a hi-res
  * wheel, in the same sign as `dx` / `dy`. The caller gives it back before the
  * zoom, in the same frame, so the board never shows the in-between position.
+ *
+ * `notch` is a zoom from a burst read as a wheel: one discrete step, which the
+ * caller glides as the +/- keys do. A pinch or a pad's stream never has it.
  */
 export type WheelAction = {
-  kind: WheelKind, dx: number, dy: number, factor: number, undo?: Delta,
+  kind: WheelKind, dx: number, dy: number, factor: number, undo?: Delta, notch?: boolean,
 };
 
 /** The device this burst of wheel events is being read as, and when it last spoke. */
@@ -714,7 +720,7 @@ export function readWheel(
   // of single figures and the wheel's coefficient would move almost nothing.
   if (e.ctrlKey) {
     return prefs.mode === 'scroll'
-      ? { kind: 'zoom', dx, dy,
+      ? { kind: 'zoom', dx, dy, notch: kind === 'zoom',
           factor: zoom(kind === 'zoom' ? WHEEL_ZOOM_RATE : PINCH_ZOOM_RATE, prefs.reverse) }
       : { kind: 'pan', dx: 0, dy: dy || dx, factor: 1 };
   }
@@ -724,15 +730,15 @@ export function readWheel(
   // and keeps doing exactly that, unrail and all. `zoom-all` is the other place
   // the two come apart: it overrides the device, which is all it is for.
   if (prefs.mode === 'zoom-all') {
-    return { kind: 'zoom', dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
+    return { kind: 'zoom', dx, dy, notch: kind === 'zoom', factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
   }
   if (kind === 'zoom') {
     if (prefs.mode === 'scroll') return { kind: 'pan', dx, dy, factor: 1 };
-    if (!relatched) return { kind, dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
+    if (!relatched) return { kind, dx, dy, notch: true, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
     // The whole detent so far is the zoom, and what it already panned goes back.
     const undo = { dx: panX, dy: panY };
     panX = panY = 0;
-    return { kind, dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse, burstDy), undo };
+    return { kind, dx, dy, notch: true, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse, burstDy), undo };
   }
   const moved = unrail(dx, dy);
   panX += moved.dx;
@@ -1053,7 +1059,8 @@ type PanGesture = {
   track?: PanSample[],
 };
 
-type PinchGesture = { mode: 'pinch', dist: number, mid: Point };
+/** `raw` is the zoom the fingers are asking for, unclamped - see Viewport.pinchTo(). */
+type PinchGesture = { mode: 'pinch', dist: number, mid: Point, raw: number };
 
 type MarqueeGesture = {
   mode: 'marquee',
@@ -1161,6 +1168,8 @@ type MidPaste = { down: boolean, at: Point | null, dragged: boolean };
 
 type Hold = {
   timer: ReturnType<typeof setTimeout> | 0,
+  /** Puts the held card's shrink on after a moment's stillness - setPressing(). */
+  press: ReturnType<typeof setTimeout> | 0,
   at: (Point & { id: string | null }) | null,
   menu: TapPoint | null,
 };
@@ -1363,7 +1372,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   //
   // `menu` is the menu a hold opened, kept so the native contextmenu some touch
   // engines fire afterwards can be told from a fresh right-click.
-  const hold: Hold = { timer: 0, at: null, menu: null };
+  const hold: Hold = { timer: 0, press: 0, at: null, menu: null };
   // The pointer id of a touch press on bare board that owes the selection a
   // clear, spent on the lift. Null on a mouse, which clears on the press as it
   // always has.
@@ -1448,7 +1457,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   //                 the same reason the masthead reads its taps directly (see
   //                 editBoardName in main.ts).
   const taps: Taps = { arm: null, card: null, empty: null, lastEmpty: null, lastTitle: null };
-  const cancelPress = () => { clearTimeout(hold.timer); hold.timer = 0; hold.at = null; };
+  const cancelPress = () => {
+    clearTimeout(hold.timer);
+    clearTimeout(hold.press);
+    hold.timer = hold.press = 0;
+    hold.at = null;
+    setPressing(null);
+  };
 
   /**
    * A tap on a playing video stops it.
@@ -2068,6 +2083,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       enter('pinch', {
         dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
         mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+        raw: vp.zoom,
       });
       return;
     }
@@ -2446,6 +2462,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         hold.menu = { x: p.x, y: p.y, at: performance.now() };
         openMenuAt(p.x, p.y, p.id, true);
       }, LONG_PRESS_MS);
+      // A finger resting on a card shows nothing until the menu, so a hold that
+      // is working looks like one that missed. After a moment of stillness the
+      // card starts to shrink, landing as the menu opens; cancelPress() lets it
+      // go. Not under reduced motion or with Quality's motion off.
+      if (id && baseMs() > 0 && !reducedMotion()) {
+        hold.press = setTimeout(() => { hold.press = 0; setPressing(id); }, PRESS_SHOW_MS);
+      }
     }
     setPanCursor();
   });
@@ -2531,7 +2554,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       vp.panByScreen(mid.x - gesture.mid.x, mid.y - gesture.mid.y);
-      vp.zoomAt(mid.x, mid.y, dist / gesture.dist);
+      // The fingers' own total, so past a limit the board gives a little and
+      // comes back as they do, rather than stopping dead under them.
+      gesture.raw *= dist / gesture.dist;
+      vp.pinchTo(mid.x, mid.y, gesture.raw);
       gesture.dist = dist;
       gesture.mid = mid;
       return;
@@ -2975,6 +3001,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     cancelPress();
     pointers.delete(e.pointerId);
     releasePointerSafely(el, e.pointerId);
+    // A pinch let go past a zoom limit comes back to it, once the last finger is
+    // off: the survivor of a pinch pans, and its first move would stop a settle.
+    if (!pointers.size) vp.settleZoom(e.clientX, e.clientY);
     // Every clause above is about the *pointer* and holds whatever the gesture
     // is - including when there is none, which is why they run before this.
     if (gesture.mode === 'idle') return;
@@ -3137,7 +3166,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // The snapshot is the gesture's own `before`, which is what commitGeom()
       // would have used as the undo state; applyGeom() writes it back live and
       // records nothing, so the history is left exactly as the press found it.
+      // Slid home rather than cut there, since a card that teleports out from
+      // under the finger reads as lost. Short, as the way back is.
+      const seen = seenPlaces(gesture.before.map(b => b.id));
       applyGeom(gesture.before);
+      slideFrom(seen, reducedMotion() ? 0 : baseMs());
     }
     if (gesture.mode === 'marquee') marquee.hidden = true;
     // Both modes that carry a node: `resize`, and the `press` that was on its way
@@ -3261,7 +3294,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // A hi-res wheel that panned for a moment before it was recognised - see
     // detent(). Undone in the same frame as the zoom, so it is never painted.
     if (w.undo) vp.panByScreen(w.undo.dx, w.undo.dy);
-    vp.zoomAt(e.clientX, e.clientY, w.factor);
+    // A wheel notch is a discrete step, as + and - are, and glides like them so
+    // the eye can follow which way the board went. Short, since notches come in
+    // runs; zoomAnimAt() builds each on where the last was heading. A pinch or a
+    // pad's stream stays 1:1.
+    if (w.notch) vp.zoomAnimAt(e.clientX, e.clientY, w.factor, Math.round(zoomMs() * 0.6));
+    else vp.zoomAt(e.clientX, e.clientY, w.factor);
   }, { passive: false });
 
   // ---- double click -----------------------------------------------------

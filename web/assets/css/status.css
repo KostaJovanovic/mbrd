@@ -192,12 +192,16 @@
 @keyframes rise { from { opacity: 0; transform: translateY(10px) rotate(-3deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-  /* One lap too - an `infinite` loop cut in duration alone strobes. See the
-     quality block in quality.css. */
+  /* Reduced motion means a fade in place of a movement, not a cut (audit
+     10-05 #8), so durations are left alone here: the movement is taken out of
+     the things that move instead - the lift tokens, the entrance keyframes and
+     the panels' closed transforms, in the reduced-motion block at the foot of
+     quality.css, which is last in the cascade so its keyframes win. Loops
+     still run one lap at most, and the ones that would show that lap are
+     stopped beside their own rules - an `infinite` loop cut in duration alone
+     strobes. See the quality block in quality.css. */
   * {
-    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
   }
 
   /* The canvas at 0s, not 0.01ms, and the argument is written out beside the
@@ -213,6 +217,9 @@
     opacity: 0.4;
     animation: none;
   }
+
+  /* The strip fades where it rests instead of dropping in from above it. */
+  #busy { translate: -50% 0; }
 }
 
 /* Fallback for WebKit below 16.2, which lacks color-mix(). */

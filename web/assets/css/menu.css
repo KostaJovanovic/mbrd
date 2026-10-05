@@ -356,6 +356,15 @@
   -webkit-user-select: none;
   user-select: none;
 }
+/* Above its line it travels up out of it, as a flipped #ctx-menu does, and it
+   leaves back into the line (ui/conn-chip.ts removes it on animationend). */
+#conn-chip.is-above { animation-name: ctx-in-up; }
+#conn-chip.is-leaving {
+  animation-name: ctx-out;
+  animation-fill-mode: forwards;
+  pointer-events: none;
+}
+#conn-chip.is-above.is-leaving { animation-name: ctx-out-up; }
 #conn-chip button {
   display: flex;
   align-items: center;

@@ -12,9 +12,10 @@ import {
   byId, bus, markDirty, setNoteContent, retypeItem, board, NOTE_SHEET_MAX,
   lastCommand, takeBack, removeItems,
 } from '../state.ts';
-import { nodeFor, onViewChange, screenBoxOf, viewportClientRect } from './items.ts';
+import { nodeFor, onViewChange, refreshRings, screenBoxOf, viewportClientRect } from './items.ts';
 import { travelMs } from './viewport.ts';
-import { makeEditable, markClosed } from '../util.ts';
+import { makeEditable, markClosed, readToken } from '../util.ts';
+import { rotatedExtents } from '../geometry.ts';
 import { linkURL, linkDraft } from './renderers.ts';
 import {
   flattenNoteRich, buildNoteLine, normalizeRun, tidyRuns, styleOf, styleAt, locate, cutRuns,
@@ -1128,6 +1129,8 @@ export function composeNote(make: () => Item | null | undefined) {
 
 /** `added` is whatever lastCommand() answered - the entry composeNote() made. `into`: see NoteEntrance. */
 function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?: number, into?: NoteEntrance) {
+  // The last note still flying home lands now: the dialog is about to be this one.
+  landing?.();
   // SAFETY: #compose is a <dialog> in index.html. If not, the showModal test below falls back
   // to inline editNote().
   const dlg = document.getElementById('compose') as HTMLDialogElement | null;
@@ -1150,10 +1153,16 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   const boardW = byId(id)?.w || EDIT_W;
   const zoom = Math.min(Math.max(EDIT_W / boardW, 1), EDIT_ZOOM_MAX, (innerWidth - 48) / boardW);
 
+  // Where the card is on the board, for the composer to grow out of. Read
+  // before it leaves: a sticky becoming a document back has its own entrance.
+  const from = into ? null : cardOnScreen(id);
+
   // Bookmark the card's position in the world layer for restoration.
   const home = node.parentElement;
   const after = node.nextSibling;
   mount.append(node);
+  // Its selection ring stays on the board, outlining a hole, unless told.
+  refreshRings();
 
   node.style.width = boardW + 'px';
   // --half-w must match — margins are width-dependent (cards.css).
@@ -1209,6 +1218,11 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
       // Going on into the editor, a still copy of the sheet as it is now stays
       // in the mount (NoteStay) - taken before the styles below go back.
       const still = becameFile && opening ? stillOf(node) : null;
+      // Going back onto the board, saved or cancelled, the same copy flies
+      // home in the mount while the card itself is put straight back under it.
+      // Not a new note cancelled, which is taken away rather than put back.
+      const goesBack = !becameFile && (text ? !!text.trim() : text === null && !added);
+      const flying = goesBack && travelMs() > 0 ? stillOf(node) : null;
       // Restore stashed styles before returning the card to the world layer.
       standIn = null;
       node.style.width = prevWidth;
@@ -1233,22 +1247,34 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
           bar.inert = true;
           dlg.append(bar);
         }
-      } else close();
+      } else if (!flying) close();
       // Sibling may have been detached by culling — append as fallback.
       if (home) {
         if (after && after.parentNode === home) home.insertBefore(node, after);
         else home.appendChild(node);
       } else node.remove();
+      refreshRings();
       // Outgrown: a document is replacing this note, so it is not grown or
       // landed - the document's own card arrives instead.
       if (becameFile) return still ? { host: dlg, go: fadeComposer(dlg, () => { still.remove(); bar?.remove(); close(); }) } : undefined;
       if (text?.trim()) {
         // Re-grow at board width — dialog grows went to the stand-in.
         growNote(id);
-        // Landing animation.
+        // Back into its own box on the board, the way it came out; with
+        // nowhere on screen to go, it lands from above where it is instead.
+        if (flying) {
+          if (flyHome(dlg, mount, flying, bar, id, close)) return;
+          close();
+        }
         node.classList.add('is-landing');
-        node.addEventListener('animationend', () => node.classList.remove('is-landing'), { once: true });
+        node.addEventListener('animationend', () => { node.classList.remove('is-landing'); refreshRings(); }, { once: true });
+        // The ring takes the class too, so the card drops into it rather than through it.
+        refreshRings();
         return;
+      }
+      if (flying) {
+        if (flyHome(dlg, mount, flying, bar, id, close)) return;
+        close();
       }
       // Empty note: if we just created it (`added`), take it back; existing
       // empty notes are left alone — emptying is not deleting.
@@ -1266,9 +1292,13 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   // which computes the backdrop: after, the dim is drawn at full and then
   // fades out under its own transition, only to fade back in.
   if (into) dlg.classList.add('is-arriving');
+  // Growing out of the card, the dim comes up with it rather than being there first.
+  const grows = !!from && travelMs() > 0;
+  if (grows) dlg.classList.add('is-leaving');
   dlg.showModal();
   // Open, the sheet can be measured: a note longer than a square is that tall from its first frame.
   fit();
+  if (from && grows) growOut(dlg, mount, from);
   // The room it has is the window's: a resize, or a phone keyboard, changes it.
   addEventListener('resize', fit);
   globalThis.visualViewport?.addEventListener('resize', fit);
@@ -1369,6 +1399,111 @@ function showComposer(dlg: HTMLDialogElement): Promise<void> {
   const parts = dlg.querySelectorAll<HTMLElement>('.note-toolbar, .ask-row, .note-rich, .note-count');
   return Promise.all([...parts].map(el => el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing: 'ease-out' })
     .finished.catch(() => {}))).then(() => {});
+}
+
+/** A card on screen: its centre and its unturned width, in client pixels. */
+type CardBox = { cx: number, cy: number, w: number };
+
+/**
+ * Where a card is on screen, from the item and the camera, so it is known
+ * while the node is in the composer too. Null when it is not on screen to fly
+ * to or from, or the board is not what is showing (the Feed).
+ */
+function cardOnScreen(id: string): CardBox | null {
+  const item = byId(id);
+  const box = screenBoxOf(item);
+  const view = viewportClientRect();
+  if (!item || !box || !view || board.layoutMode === 'mobile') return null;
+  if (box.right < view.left || box.left > view.right || box.bottom < view.top || box.top > view.bottom) return null;
+  const { hw } = rotatedExtents(item);
+  if (!(hw > 0)) return null;
+  return { cx: box.cx, cy: box.cy, w: item.w * (box.right - box.left) / (2 * hw) };
+}
+
+const ease = () => readToken('--ease') || 'ease-out';
+
+/**
+ * The composer growing out of the note: the mount flown from the card's box
+ * on the board to its own, by `translate` and `scale` so it composes with the
+ * tilt the soft tier puts on `transform`. The bar and buttons fade in behind
+ * it and the dim comes up by its transition (dialog.css, is-leaving).
+ */
+function growOut(dlg: HTMLDialogElement, mount: HTMLElement, from: CardBox) {
+  // The dim's start committed, so taking the class away fades it in.
+  void getComputedStyle(dlg, '::backdrop').opacity;
+  dlg.classList.remove('is-leaving');
+  const ms = travelMs() * 0.6;
+  if (!(ms > 0) || typeof mount.animate !== 'function' || !mount.offsetWidth) return;
+  // The grow is the entrance: ask-in would be scaling the dialog under it.
+  for (const a of dlg.getAnimations()) a.cancel();
+  const to = mount.getBoundingClientRect();
+  const dx = from.cx - (to.left + to.width / 2);
+  const dy = from.cy - (to.top + to.height / 2);
+  mount.animate([
+    { translate: `${dx}px ${dy}px`, scale: `${from.w / mount.offsetWidth}` },
+    { translate: '0px 0px', scale: '1' },
+  ], { duration: ms, easing: ease() });
+  for (const el of dlg.querySelectorAll<HTMLElement>('.note-toolbar, .ask-row')) {
+    el.animate([{ opacity: 0 }, { opacity: 0, offset: 0.4 }, { opacity: 1 }], { duration: ms, easing: 'ease-out' });
+  }
+}
+
+/** A note flying home (flyHome), brought to its end at once. */
+let landing: (() => void) | null = null;
+
+/**
+ * The composer going back into the card: `copy`, a still of the sheet, flies
+ * from the mount to the card's box on the board, where the card itself has
+ * already been put back, and gives way to it over the last stretch. The bar
+ * and buttons go first and the dim with it. `close` shuts the dialog after.
+ * False, having done nothing, when the card is not on screen to go to.
+ */
+function flyHome(dlg: HTMLDialogElement, mount: HTMLElement, copy: HTMLElement, bar: HTMLElement | null, id: string, close: () => void): boolean {
+  const to = cardOnScreen(id);
+  const ms = travelMs() * 0.6;
+  if (!to || !dlg.open || !(ms > 0) || typeof mount.animate !== 'function') return false;
+  // Caught mid-grow, it goes back from where it is.
+  const live = getComputedStyle(mount);
+  const at = { translate: live.translate === 'none' ? '0px 0px' : live.translate, scale: live.scale === 'none' ? '1' : live.scale };
+  for (const a of mount.getAnimations()) a.cancel();
+  mount.append(copy);
+  // Back in, unseen and inert, or the dialog would re-centre without it and the sheet jump.
+  if (bar) {
+    bar.inert = true;
+    dlg.append(bar);
+  }
+  if (!mount.offsetWidth) {
+    copy.remove();
+    bar?.remove();
+    return false;
+  }
+  const r = mount.getBoundingClientRect();
+  const dx = to.cx - (r.left + r.width / 2);
+  const dy = to.cy - (r.top + r.height / 2);
+  const hold = { fill: 'forwards' as const, duration: ms };
+  // The dim goes by its transition (dialog.css).
+  dlg.classList.add('is-leaving');
+  const anims = [
+    mount.animate([at, { translate: `${dx}px ${dy}px`, scale: `${to.w / mount.offsetWidth}` }], { ...hold, easing: ease() }),
+    mount.animate([{ opacity: 1 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], hold),
+    ...[...dlg.querySelectorAll<HTMLElement>('.note-toolbar, .ask-row')].map(el =>
+      el.animate([{ opacity: 1 }, { opacity: 0 }], { ...hold, duration: ms * 0.4, easing: 'ease-out' })),
+  ];
+  const end = () => {
+    if (landing !== end) return;
+    landing = null;
+    dlg.removeEventListener('close', end);
+    copy.remove();
+    bar?.remove();
+    close();
+    for (const a of anims) a.cancel();
+    dlg.classList.remove('is-leaving');
+  };
+  landing = end;
+  // Shut some other way (Escape still reaches the dialog), it is over too.
+  dlg.addEventListener('close', end);
+  anims[0].finished.then(end, end);
+  return true;
 }
 
 /** Composer sheet width a note is magnified up to: a default note at 2x. */

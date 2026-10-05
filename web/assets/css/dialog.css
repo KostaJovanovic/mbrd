@@ -322,7 +322,9 @@ textarea.lp-url {
 /* A note outgrown into a document, and one going back: the dim goes with the
    composer as the page grows out over it, and comes with it as the page lands
    back as the note (fadeComposer() and showComposer() in canvas/notes.ts fade
-   the rest). Unseen while arriving, till the page is there. */
+   the rest). Unseen while arriving, till the page is there. The same class
+   holds the dim down while the composer grows out of its card and fades it as
+   the sheet flies home (growOut() and flyHome()). */
 #compose.is-leaving::backdrop,
 #compose.is-arriving::backdrop { opacity: 0; }
 #compose.is-arriving { opacity: 0; }
@@ -384,7 +386,8 @@ textarea.lp-url {
   transform: none;
 }
 
-/* Landing: the card settles onto the board from slightly above. */
+/* Landing: the card settles onto the board from slightly above. Only when it
+   cannot fly home from the composer: off screen, or motion reduced (flyHome(), canvas/notes.ts). */
 .item.is-landing { animation: note-land var(--dur-base) var(--ease-back); }
 @keyframes note-land {
   from { transform: translateY(-10px) scale(1.06); }

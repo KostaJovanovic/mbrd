@@ -331,8 +331,8 @@ function bind(sound: HTMLMediaElement) {
   const follow = () => { paint(); frame = sound.paused ? 0 : requestAnimationFrame(follow); };
   const setIcon = () => {
     const playing = !sound.paused;
-    // .is-paused stops the wave scrolling and flattens it; CSS animates both
-    // back when it comes off.
+    // .is-paused stops the wave scrolling and cross-fades it into the straight
+    // line (chrome.css); the fade runs back when it comes off.
     bar!.classList.toggle('is-paused', !playing);
     playBtn!.innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
     playBtn!.setAttribute('aria-label', playing ? 'Pause' : 'Play');

@@ -17,7 +17,8 @@
   background-repeat: repeat;
   contain: layout paint;
   /* Taking the band back, eased, so the board's edge slides up under the
-     Timeline as it fades in rather than cutting the cards off in one frame. */
+     Timeline as it fades in rather than cutting the cards off in one frame.
+     A layout per frame on the board: still to be measured (audit 10-05 #2). */
   transition: bottom var(--dur-base) var(--ease);
 }
 /* Wherever the Timeline fades (chrome.css: idle, a tour, cleaning) the board
@@ -102,7 +103,7 @@
   --own-radius: min(var(--shape-radius), var(--half-min, 9999px));
   border-radius: var(--own-radius);
   box-shadow: var(--item-shadow);
-  rotate: calc(var(--item-tilt, 0) * var(--tilt-max));
+  rotate: calc(var(--item-tilt, 0) * var(--tilt-max) + var(--sh-tilt, 0deg));
   /* Mirrors the card's hover/drag lift so the shadow never slides out. */
   translate: 0 calc(var(--sh-lift, 0px) * var(--iz));
   scale: var(--sh-grow, 1);
@@ -116,13 +117,19 @@
 .item-shadow.is-hover { --sh-lift: calc(var(--lift-hover) / var(--iz)); --sh-grow: var(--grow-hover); }
 /* Selected card holds still (grips must not move). */
 .item-shadow.is-hover.is-selected { --sh-lift: 0px; --sh-grow: 1; }
-.item-shadow.is-dragging { --sh-lift: var(--lift-drag); --sh-grow: var(--grow-hover); }
+/* The drag lean too, or a leaning card shows its square shadow's corners. */
+.item-shadow.is-dragging {
+  --sh-lift: var(--lift-drag);
+  --sh-grow: var(--grow-hover);
+  --sh-tilt: var(--tilt-drag);
+}
 .item-shadow[data-type="note"] {
   --item-shadow: var(--note-shadow);
   --shape-radius: var(--note-radius);
 }
-:root[data-snap] .item-shadow,
-:root[data-no-tilt] .item-shadow { rotate: 0deg; }
+/* As the card (items.css): snapped stands straight, Tilt off keeps the drag lean. */
+:root[data-snap] .item-shadow { rotate: 0deg; }
+:root[data-no-tilt] .item-shadow { rotate: var(--sh-tilt, 0deg); }
 
 /* The selection overlay - a twin of every selected card, above the complete
    item stack, so no card stacked higher can cover the outline of one that is
@@ -136,8 +143,8 @@
   overflow: visible;
   pointer-events: none;
 }
-/* The card's own box, corner and motion, as .item has them (items.css). A
-   selected card does not lift on hover, so only the drag pickup is mirrored. */
+/* The card's own box, corner and motion, as .item has them (items.css),
+   hover and drag pickup included, so the ring settles with its card. */
 .item-ring {
   position: absolute;
   pointer-events: none;
@@ -158,10 +165,25 @@
               scale var(--dur-base) var(--ease-back),
               opacity var(--dur-base) var(--ease);
 }
+/* The hover lift a press drops a card out of: paintRing() starts a new ring
+   here when its card was lifted, so the two settle together. */
+.item-ring.is-hover { --lift: calc(var(--lift-hover) / var(--iz)); --grow: var(--grow-hover); }
 .item-ring.is-dragging {
   --lift: var(--lift-drag);
   --tilt: var(--tilt-drag);
   --grow: var(--grow-hover);
+}
+.item-ring.is-selected:not(.is-dragging).is-hover { --lift: 0px; --grow: 1; }
+/* The note composer's landing (.item.is-landing, dialog.css), played on the
+   ring as well or the card drops into a ring standing still. */
+.item-ring.is-landing { animation: note-land var(--dur-base) var(--ease-back); }
+/* A long press shrinking towards its menu, as .item.is-pressing (items.css). */
+.item-ring.is-pressing {
+  --grow: max(0.96, calc(1 - (1 - var(--btn-press)) * 1.67));
+  transition: translate var(--dur-base) var(--ease-back),
+              rotate var(--dur-base) var(--ease-back),
+              scale 360ms var(--ease),
+              opacity var(--dur-base) var(--ease);
 }
 :root[data-snap] .item-ring { rotate: 0deg; }
 :root[data-no-tilt] .item-ring { rotate: var(--tilt); }

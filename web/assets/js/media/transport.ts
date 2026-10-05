@@ -19,7 +19,8 @@ function wavePath(width: number): string {
 }
 
 /** Scrubber inner HTML. `p` is the class prefix (`np-`, `pw-`, `vt-`).
- *  Wave group is separate — path carries scroll animation, group carries the flatten transition. */
+ *  The path carries the scroll animation; a pause cross-fades the wave's svg into the
+ *  straight one on opacity (chrome.css). The group no longer carries a flatten. */
 export function seekInnerHTML(p: string): string {
   return (
     `<svg class="${p}-svg" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">`
@@ -54,6 +55,8 @@ export function bindScrub(el: HTMLElement, seekTo: (clientX: number) => void): v
     // Before capture — setPointerCapture can throw NotFoundError for a dead pointer.
     seekTo(e.clientX);
     e.stopPropagation();
+    // The line thickens while held (chrome.css): under a thumb nothing else shows it caught.
+    el.classList.add('is-scrubbing');
     try { el.setPointerCapture(e.pointerId); } catch { /* the pointer has gone */ }
   });
   el.addEventListener('pointermove', e => {
@@ -62,6 +65,10 @@ export function bindScrub(el: HTMLElement, seekTo: (clientX: number) => void): v
     e.stopPropagation();
     seekTo(e.clientX);
   });
+  const release = () => el.classList.remove('is-scrubbing');
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
+  el.addEventListener('lostpointercapture', release);
 }
 
 /* Play/pause glyphs as strings — swapped via innerHTML, not <use> (avoids fetch on first press). */

@@ -529,7 +529,7 @@
 /* ---------------------------------------------------------------------------
    A board on tour, or having its tour built, is looked at rather than worked
    on: no card lifts under the pointer, and in the editor none is grabbed. */
-:root:is(.is-touring, .is-tour-edit) :is(.item, .item-shadow).is-hover {
+:root:is(.is-touring, .is-tour-edit) :is(.item, .item-shadow, .item-ring).is-hover {
   --lift: 0px;
   --grow: 1;
   --sh-lift: 0px;
@@ -543,8 +543,9 @@
 :root.is-touring .item:not(.is-spot) *,
 :root.is-touring .item.is-spot a { pointer-events: none; }
 /* In the editor, a stop chip or a card's number under the pointer leaves that
-   stop lit and fades the rest. */
-:root.is-stop-peek .item:not(.is-spot) { opacity: 0.25; }
+   stop lit and fades the rest. The shadow and ring twins fade with their
+   card, or the faded cards stand on full-strength slabs. */
+:root.is-stop-peek :is(.item, .item-shadow, .item-ring):not(.is-spot) { opacity: 0.25; }
 
 /* Fallback without color-mix() (WebKit < 16.2). */
 @supports not (color: color-mix(in srgb, red, blue)) {

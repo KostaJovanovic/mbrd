@@ -20,7 +20,8 @@ import {
 } from './fountain.ts';
 import { keepsLocked, advance, superLock, lockAtEnd, clampToLock, clock, SUPER_MS, VOMIT_MINUTES, VOMIT_INFO } from './vomit.ts';
 import { ask } from '../dialog.ts';
-import { makeEditable, markClosed } from '../../util.ts';
+import { makeEditable, markClosed, readToken } from '../../util.ts';
+import { baseMs, fastMs, reducedMotion } from '../../canvas/viewport.ts';
 import { toast } from '../../notify.ts';
 import { menuButton, openAnchored } from '../menu.ts';
 import type { MenuEntry } from '../menu.ts';
@@ -1134,12 +1135,46 @@ export function mountEditor(opts: EditorOptions): Editor {
     if (matchMedia('(max-width: 600px)').matches) toggleOutline();
   };
 
-  function toggleOutline() {
-    aside.hidden = !aside.hidden;
-    root.classList.toggle('has-outline', !aside.hidden);
-    outlineBtn.classList.toggle('is-active', !aside.hidden);
-    outlineBtn.setAttribute('aria-pressed', String(!aside.hidden));
+  /** The outline's exit while it plays, so a second press can turn it round. */
+  let outlineLeaving: Animation | null = null;
+  const still = () => reducedMotion() || typeof aside.animate !== 'function';
+
+  /**
+   * The outline in or out. The sheet is centred in what the outline leaves, so
+   * it is slid from where it stood rather than leaping sideways under the words.
+   */
+  function setOutline(open: boolean) {
+    const was = sheet.getBoundingClientRect().left;
+    aside.hidden = !open;
+    root.classList.toggle('has-outline', open);
+    outlineBtn.classList.toggle('is-active', open);
+    outlineBtn.setAttribute('aria-pressed', String(open));
     paintOutline();
+    if (still()) return;
+    const easing = readToken('--ease') || 'ease';
+    const dx = was - sheet.getBoundingClientRect().left;
+    const ms = baseMs();
+    if (Math.abs(dx) >= 1 && ms > 0) sheet.animate([{ translate: `${dx}px 0` }, { translate: '0 0' }], { duration: ms, easing });
+    if (open && fastMs() > 0) {
+      aside.animate([{ opacity: 0, translate: '-12px 0' }, { opacity: 1, translate: '0 0' }], { duration: fastMs(), easing });
+    }
+  }
+
+  function toggleOutline() {
+    // Pressed again while it leaves: the exit turns round and it stays.
+    if (outlineLeaving) { outlineLeaving.reverse(); outlineLeaving = null; return; }
+    if (aside.hidden) { setOutline(true); return; }
+    const ms = still() ? 0 : fastMs();
+    if (!(ms > 0)) { setOutline(false); return; }
+    const run = aside.animate([{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: '-12px 0' }],
+      { duration: ms, easing: readToken('--ease') || 'ease', fill: 'forwards' });
+    outlineLeaving = run;
+    run.addEventListener('finish', () => {
+      if (outlineLeaving !== run) { run.cancel(); return; }
+      outlineLeaving = null;
+      setOutline(false);
+      run.cancel();
+    });
   }
 
   /** Is `key` on across the selection, or for what is typed next at the caret? */
@@ -1392,11 +1427,24 @@ export function mountEditor(opts: EditorOptions): Editor {
     tally.textContent = `${n.toLocaleString()} replaced`;
   };
 
+  /**
+   * The find bar stays instant, a keyboard surface; what must not move is the
+   * line being read. The room above the page changes, so the scroll changes by
+   * the same amount in the same task. At the very top there is no room to give.
+   */
+  function holdPage(change: () => void) {
+    const was = sheet.getBoundingClientRect().top;
+    change();
+    if (scroller.scrollTop > 0) scroller.scrollTop += sheet.getBoundingClientRect().top - was;
+  }
+
   function openFind() {
     // Replace would rewrite locked text, and a session has nothing to look back for.
     if (vomit) return;
-    find.hidden = false;
-    root.classList.add('is-finding');
+    holdPage(() => {
+      find.hidden = false;
+      root.classList.add('is-finding');
+    });
     const [a, z] = range();
     // A selection within one block is what to look for.
     if (a.b === z.b && !samePos(a, z)) q.value = blockText(doc.blocks[a.b]).slice(a.o, z.o);
@@ -1408,8 +1456,10 @@ export function mountEditor(opts: EditorOptions): Editor {
 
   function closeFind(): boolean {
     if (find.hidden) return false;
-    find.hidden = true;
-    root.classList.remove('is-finding');
+    holdPage(() => {
+      find.hidden = true;
+      root.classList.remove('is-finding');
+    });
     highlights?.delete('ed-find');
     highlights?.delete('ed-find-now');
     const m = matches[current];

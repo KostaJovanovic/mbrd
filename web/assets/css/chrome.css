@@ -390,8 +390,11 @@
               transform var(--dur-base) var(--ease),
               visibility 0s linear var(--dur-base);
 }
+/* Reduced motion keeps the fade and drops the slide: hidden where it rests. The
+   bar's own hidden state is the same, and :not() lets it come before that rule. */
 @media (prefers-reduced-motion: reduce) {
-  :root.playlist-transport #nowplaying { transition: none; }
+  :root.playlist-transport #nowplaying,
+  #nowplaying:not(.is-up) { transform: none; }
 }
 
 /* The lead, down the left of both rows: play/pause, and Next behind it while
@@ -599,6 +602,13 @@
   stroke-width: 2;
   stroke-linecap: round;
 }
+/* Caught: the line thickens under the finger (media/transport.ts bindScrub),
+   the iOS sign that the scrubber has it, since on a phone the thumb covers the
+   playhead. A scale, so it stays on the compositor. */
+#nowplaying .np-line.is-scrubbing .np-line-svg { scale: 1 2; }
+@media (prefers-reduced-motion: no-preference) {
+  #nowplaying .np-line-svg { transition: scale var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease); }
+}
 #nowplaying .np-line-base { stroke: color-mix(in srgb, var(--ink) 22%, transparent); }
 /* The base (unplayed) line is clipped to the part *past* the playhead, so the
    grey does not sit under the played wave - the two meet at --np-progress and the
@@ -621,7 +631,7 @@
 /* view-box, so the scroll below translates in the wave's own user units (which
    sizeWave has made one-to-one with pixels) rather than in the path's bounding box. */
 #nowplaying .np-line-fill-wave { display: none; transform-box: view-box; }
-:root[data-whimsy="0"] #nowplaying .np-line-fill-line { display: none; }
+:root[data-whimsy="0"] #nowplaying .np-line-fill > .np-line-svg:not(.np-line-wave-svg) { opacity: 0; }
 :root[data-whimsy="0"] #nowplaying .np-line-fill-wave {
   display: block;
   /* Slowly leftward by exactly one period. WAVE_HALF is 7px and one whole period is
@@ -632,30 +642,18 @@
   animation: seek-wave 3s linear infinite;
 }
 @keyframes seek-wave { to { transform: translateX(-14px); } }
-/* Paused: the scroll stops, and the wave flattens all the way to a straight line -
-   scaleY(0) about the centre collapses every crest onto the centre line, and the
-   non-scaling stroke draws that line at full width. On a transition so it eases both
-   ways (flat when paused, swelling back into a wave when it plays again). Not a
-   near-zero scale: a sliver of a scale left a shallow ripple standing, which read as
-   a paused wave rather than the still line it should be. The scale lives on the
-   wrapping group so it does not fight the path's scroll animation. */
-#nowplaying .np-line-wave-scale {
-  transform-box: view-box;
-  transform-origin: 50% 50%;
-  transform: scaleY(1);
-  transition: transform var(--dur-base) var(--ease);
-}
 #nowplaying.is-paused .np-line-fill-wave { animation-play-state: paused; }
-/* Paused, at the soft end: the wave becomes a plain straight line. Done by swapping
-   the wavy fill for the straight one (which is hidden while playing) rather than by
-   scaling the wave to nothing - a scaled-to-zero group left no line at all on some
-   engines, so the played part of the scrubber vanished on pause. The straight fill
-   is the played portion at full ink; the grey base carries the rest. */
-:root[data-whimsy="0"] #nowplaying.is-paused .np-line-fill-wave { display: none; }
-:root[data-whimsy="0"] #nowplaying.is-paused .np-line-fill-line { display: block; }
+/* Paused, at the soft end: the scroll stops and the wave becomes a plain straight
+   line. Both fills stay drawn and cross-fade on opacity (--dur-fast, the
+   transition on .np-line-svg above), so the wave settles into the line and
+   swells back out of it on play. Not by scaling the wave to nothing: a
+   scaled-to-zero group left no line at all on some engines, so the played part
+   of the scrubber vanished on pause. The straight fill is the played portion at
+   full ink; the grey base carries the rest. */
+:root[data-whimsy="0"] #nowplaying.is-paused .np-line-wave-svg { opacity: 0; }
+:root[data-whimsy="0"] #nowplaying.is-paused .np-line-fill > .np-line-svg:not(.np-line-wave-svg) { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
   :root[data-whimsy="0"] #nowplaying .np-line-fill-wave { animation: none; }
-  #nowplaying .np-line-wave-scale { transition: none; }
 }
 /* Play reads a touch stronger than its neighbours - it is the one reached for. */
 #nowplaying .np-play { color: var(--ink); }
@@ -829,9 +827,9 @@
   transition: opacity var(--dur-base) var(--ease),
               transform var(--dur-base) var(--ease-back);
 }
+/* Reduced motion: a fade where it rests rather than a rise from under the edge. */
 @media (prefers-reduced-motion: reduce) {
-  #tour { transition: none; }
-  #tour.is-up { transition: none; }
+  #tour { transform: none; }
 }
 
 /* Two rows. The top one is what this stop is and what is said about it, the
@@ -864,17 +862,22 @@
    about it, how far through you are - and in the ink the name is not, so the
    two are told apart at a glance rather than by position alone. Two lines at
    most: a caption is a sentence under a name, and one that ran to five would
-   push the counter off a bar this size. */
+   push the counter off a bar this size.
+   Both lines are held even for a short caption or none, so stepping between
+   stops never moves the bar's top edge (it is anchored at the foot). Shown only
+   on a tour with a caption somewhere in it (ui/tour.ts paint). */
 #tour .tour-caption {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
+  min-height: calc(2 * 1.35 * var(--t-tiny));
   margin-top: 1px;
   font-size: var(--t-tiny);
   line-height: 1.35;
   color: var(--ink-2);
 }
+#tour .tour-caption:empty { visibility: hidden; }
 #tour .tour-caption[hidden] { display: none; }
 #tour .tour-count {
   flex: none;
@@ -1104,8 +1107,7 @@
               transform var(--dur-base) var(--ease-back);
 }
 @media (prefers-reduced-motion: reduce) {
-  #tour-editor { transition: none; }
-  #tour-editor.is-up { transition: none; }
+  #tour-editor { transform: none; }
 }
 
 /* The three rows. Heights and not paddings, so what is in them cannot make them
@@ -1394,18 +1396,29 @@
   list-style: none;
 }
 /* The corner is the chip's, because the only thing this element draws is the
-   drop edge below - a wrapper rounded differently from the thing inside it
+   lifted shadow below - a wrapper rounded differently from the thing inside it
    would put a second curve a pixel outside the first. */
 #tour-editor .tour-chips > li { flex: none; border-radius: var(--leaf); }
-/* Where a dragged chip would land. On the side of the neighbour rather than in
-   the gap: there is four pixels of gap to draw in, and an edge is what the eye
-   reads as "between these two" anyway. */
-#tour-editor .tour-chips > li.drop-before {
-  box-shadow: inset var(--sel-line) 0 0 var(--select);
+/* Reordering (ui/tour-edit.ts), the Playlist's gesture on a wrapping row. The
+   held chip follows the pointer on `translate`, set from script and so never
+   eased; the chips it passes slide into each other's slots on theirs. The slide
+   is on only while sorting: the drop rebuilds the row, and the settle is script. */
+#tour-editor .tour-chips.is-sorting > li { cursor: grabbing; }
+@media (prefers-reduced-motion: no-preference) {
+  #tour-editor .tour-chips.is-sorting > li:not(.is-dragging) { transition: translate var(--dur-base) var(--ease); }
+  #tour-editor .tour-chips > li.is-dragging {
+    transition: scale var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+  }
 }
-#tour-editor .tour-chips > li.drop-after {
-  box-shadow: inset calc(var(--sel-line) * -1) 0 0 var(--select);
+#tour-editor .tour-chips > li.is-dragging {
+  position: relative;
+  z-index: 2;
+  scale: 1.1;
+  box-shadow: var(--shadow-2);
 }
+#tour-editor .tour-chips > li.is-dragging .tour-chip { cursor: grabbing; }
+/* The drop: above the chips it lands among until it settles. */
+#tour-editor .tour-chips > li.is-settling { position: relative; z-index: 2; }
 
 /* One stop: a square with the stop's *name* on it, and nothing else.
 
@@ -1446,6 +1459,8 @@
   font-variant-numeric: tabular-nums;
   line-height: 1;
   cursor: grab;
+  /* A finger on a chip drags it rather than scrolling the block. */
+  touch-action: none;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 #tour-editor .tour-chip:active { cursor: grabbing; }

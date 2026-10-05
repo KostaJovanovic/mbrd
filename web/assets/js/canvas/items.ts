@@ -15,7 +15,7 @@ import type { Bounds } from '../geometry.ts';
 import type { Item } from '../board-model.ts';
 import { TITLE_ID, shownName } from '../board-model.ts';
 import type { Viewport } from './viewport.ts';
-import { cullMargin } from './viewport.ts';
+import { cullMargin, fastMs, reducedMotion } from './viewport.ts';
 import {
   buildContent, fontFamilyOf, paintStyleTileFaces, releaseImages, retitleContent,
 } from './renderers.ts';
@@ -76,6 +76,8 @@ let hoverGroup = new Set<string>();
 function setHoverLift(id: string, on: boolean) {
   nodes.get(id)?.classList.toggle('is-hover', on);
   shadows.get(id)?.classList.toggle('is-hover', on);
+  // Same frame as the card, so the ring runs the card's transition with it.
+  if (ringLayerEl) paintRing(id);
 }
 
 /** Most cards a rearrangement slides; past it the board simply changes. */
@@ -121,11 +123,14 @@ export function slideFrom(was: ReadonlyMap<string, { x: number, y: number }>, ms
     // World y runs up and the page's runs down - see place().
     const dx = from.x - item.x, dy = item.y - from.y;
     if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
-    const frames = [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }];
     const opts = { duration: ms, delay: i++ * step, easing: 'cubic-bezier(0.77, 0, 0.175, 1)', fill: 'backwards' as const };
-    el.animate(frames, opts);
-    shadows.get(id)?.animate(frames, opts);
-    rings.get(id)?.animate(frames, opts);
+    for (const node of [el, shadows.get(id), rings.get(id)]) {
+      // Over the node's own inline transform (the card's rot and device snap),
+      // or a turned card would stand up straight for the length of the slide.
+      const rest = node?.style.transform || 'none';
+      const from = `translate(${dx}px, ${dy}px)${rest === 'none' ? '' : ' ' + rest}`;
+      node?.animate([{ transform: from }, { transform: rest }], opts);
+    }
   }
 }
 
@@ -141,6 +146,25 @@ export function setDragging(ids: readonly string[], on: boolean) {
   }
   paintRings();
 }
+/**
+ * The card a finger is holding down on, shrinking towards the long-press menu
+ * (.item.is-pressing, items.css), or null to let it spring back. One at a
+ * time; canvas/input.ts sets it after a moment of stillness and clears it on
+ * every path that ends the hold.
+ */
+let pressingId: string | null = null;
+export function setPressing(id: string | null) {
+  if (id === pressingId) return;
+  for (const was of [pressingId, id]) {
+    if (!was) continue;
+    const on = was === id;
+    nodes.get(was)?.classList.toggle('is-pressing', on);
+    shadows.get(was)?.classList.toggle('is-pressing', on);
+    if (ringLayerEl) paintRing(was);
+  }
+  pressingId = id;
+}
+
 /**
  * Told which cards the pointer is on, whenever that changes.
  *
@@ -351,6 +375,7 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
     if (!delta) redrawChanged();
     sync();
     paintGrips();
+    if (delta?.added) enterAdded(delta.added);
   });
   bus.on('geom', ids => {
     for (const id of ids) {
@@ -461,6 +486,14 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
 }
 
 export function nodeFor(id: string) { return nodes.get(id); }
+
+/** Every card with a node on the board now, for a change that cannot name what
+ *  it will move (undo, redo) to hand seenPlaces(). Bounded by the screen. */
+export function mountedIds(): string[] {
+  const out: string[] = [];
+  for (const [id, el] of nodes) if (el.isConnected) out.push(id);
+  return out;
+}
 
 /**
  * The item something being dropped would stick to, wearing the selection ring
@@ -579,7 +612,14 @@ export function paintTourMarks() {
 let spot: Set<string> | null = null;
 export function setSpot(ids: Iterable<string> | null) {
   spot = ids ? new Set(ids) : null;
-  for (const [id, el] of nodes) el.classList.toggle('is-spot', !!spot?.has(id));
+  // The twins too, since the peek fades whatever is not lit and a shadow or
+  // ring left at full strength reads as a slab where the card was.
+  for (const [id, el] of nodes) {
+    const on = !!spot?.has(id);
+    el.classList.toggle('is-spot', on);
+    shadows.get(id)?.classList.toggle('is-spot', on);
+  }
+  paintRings();
   hoverWatcher?.(spot ?? hoverGroup);
 }
 
@@ -978,7 +1018,7 @@ function reconcile(delta?: ItemsDelta) {
     // board swap never animates. Animate before dropNode discards the node -
     // flyOut clones it, so the snapshot survives the discard on the next line.
     if (delta.removed.length <= EXIT_ANIM_CAP) {
-      for (const id of delta.removed) { const el = nodes.get(id); if (el) flyOut(el); }
+      for (const id of delta.removed) { const el = nodes.get(id); if (el) flyOut(el, vp?.zoom); }
     }
     for (const id of delta.removed) dropNode(id);
   } else {
@@ -988,6 +1028,36 @@ function reconcile(delta?: ItemsDelta) {
   // Non-null: every caller of this is either initItems(), which set it two lines
   // earlier, or a path that runs after it. See the note on the declaration.
   worldEl!.classList.toggle('is-empty', board.items.length === 0);
+}
+
+/**
+ * The mirror of the exit: cards that have just arrived (paste, duplicate, a
+ * drop, an undone delete) grow in rather than appearing in one frame, where a
+ * pasted card under the pointer is easy to miss.
+ *
+ * Only for a delta's `added`, so a load or a Timeline replay (no delta) and a
+ * card the cull mounts never play it. On screen only, and not at all past
+ * EXIT_ANIM_CAP, with Quality's motion off, or when --dur-fast is 0. The
+ * keyframe has no end, so it settles on whatever the node is styled to be
+ * (the hover grow, a filter's fade), and `scale` is the individual property, so
+ * the rot and device snap on `transform` stand untouched.
+ */
+function enterAdded(ids: readonly string[]) {
+  if (!quality.anim || ids.length > EXIT_ANIM_CAP || typeof innerWidth !== 'number') return;
+  const ms = fastMs();
+  if (!(ms > 0)) return;
+  const opts = { duration: ms, easing: readToken('--ease') || 'ease-out' };
+  // Reduced motion keeps the fade and drops the growth, as fastMs() is meant.
+  const from = reducedMotion() ? { opacity: 0, offset: 0 } : { opacity: 0, scale: '0.94', offset: 0 };
+  for (const id of ids) {
+    const el = nodes.get(id);
+    if (el?.parentElement !== worldEl || typeof el.animate !== 'function') continue;
+    const r = el.getBoundingClientRect();
+    if (r.right < 0 || r.bottom < 0 || r.left > innerWidth || r.top > innerHeight) continue;
+    for (const node of [el, shadows.get(id), rings.get(id)]) {
+      node?.animate([from], opts);
+    }
+  }
 }
 
 /**
@@ -1394,7 +1464,10 @@ function build(item: Item) {
   // above applyTourMark(). A card panned off screen and back is a new node, and
   // the editor is a mode somebody spends minutes in doing exactly that.
   applyTourMark(el, item.id);
-  if (spot?.has(item.id)) el.classList.add('is-spot');
+  if (spot?.has(item.id)) {
+    el.classList.add('is-spot');
+    shadows.get(item.id)?.classList.add('is-spot');
+  }
   return el;
 }
 
@@ -2091,11 +2164,22 @@ function paintRing(id: string) {
     rings.delete(id);
     return;
   }
+  let fresh = false;
   if (!ring) {
     ring = buildRing();
     rings.set(id, ring);
+    fresh = true;
   }
   if (!ring.isConnected) ringLayerEl!.append(ring);
+  // A press on a hover-lifted card selects it and the card settles from the
+  // lift. A ring born at rest would show the card sinking through it, so it is
+  // born lifted, as the card was, and both settle on the one transition.
+  if (fresh && el.classList.contains('is-hover') && !el.classList.contains('is-dragging')) {
+    ring.className = 'item-ring is-hover';
+    placeBox(ring, item);
+    ring.style.setProperty('--item-tilt', el.style.getPropertyValue('--item-tilt'));
+    void getComputedStyle(ring).scale;   // commit the lifted start before the classes below
+  }
   let cls = 'item-ring';
   for (const c of el.classList) if (c.startsWith('is-')) cls += ' ' + c;
   if (ring.className !== cls) ring.className = cls;

@@ -288,16 +288,26 @@ function slideDock(opening: boolean, h: number): boolean {
   const root = document.documentElement;
   const s = strip;
   if (!s || !(h > 0) || reducedMotion() || typeof root.animate !== 'function') return false;
+  // A press mid-way turns the slide round from where it is (audit 10-05 #2);
+  // a restart from the far end would snap the strip and the dock first.
+  if (sliding.length && sliding.every((a) => a.playState === 'running')) {
+    if (opening) s.hidden = false;
+    for (const a of sliding) a.reverse();
+    if (!opening) sliding[1].finished.then(() => { if (!open) s.hidden = true; }, () => {});
+    return true;
+  }
   for (const a of sliding) a.cancel();
   const easing = getComputedStyle(root).getPropertyValue('--ease').trim() || 'ease-out';
   const opts = { duration: baseMs(), easing };
   const [shut, up] = [{ translate: '0 100%' }, { translate: '0 0' }];
   sliding = [
+    // Animating an inherited property on :root restyles the document and
+    // resizes #viewport every frame; still to be measured (audit 10-05 #2).
     root.animate([{ '--dock': opening ? '0px' : `${h}px` }, { '--dock': opening ? `${h}px` : '0px' }], opts),
     s.animate(opening ? [shut, up] : [up, shut], opts),
   ];
   // Hidden only if it is still meant to be shut when the slide lands - a
-  // press mid-way cancels this and the promise never resolves.
+  // press mid-way reverses it and the check finds the bar open again.
   if (!opening) sliding[1].finished.then(() => { if (!open) s.hidden = true; }, () => {});
   return true;
 }

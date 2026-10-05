@@ -106,16 +106,46 @@ export function syncConnChip(): void {
   place(at);
 }
 
+/** A chip playing its exit, kept so a new one can take its id at once. */
+let leaving: HTMLDivElement | null = null;
+/** Fallback for the exit, when animationend never comes (a hidden tab). */
+const LEAVE_MS = 400;
+/** Whether the chip has been placed since it was built - see place(). */
+let placed = false;
+
 /** Take the chip away. Nothing to remember: the next one is built from the board. */
 function closeConnChip(): void {
-  node?.remove();
+  if (node) leave(node);
   node = null;
   pair = '';
   dirBtn = styleBtn = labelBtn = null;
 }
 
+/** Out the way it came, as every menu-cloth panel goes (ctx-out, menu.css).
+ *  Inert at once, so nothing is pressed on a chip that is already closed. */
+function leave(el: HTMLDivElement): void {
+  flushLeaving();
+  leaving = el;
+  el.setAttribute('inert', '');
+  el.classList.add('is-leaving');
+  const done = () => {
+    clearTimeout(timer);
+    el.remove();
+    if (leaving === el) leaving = null;
+  };
+  const timer = setTimeout(done, LEAVE_MS);
+  el.addEventListener('animationend', done, { once: true });
+}
+
+function flushLeaving(): void {
+  leaving?.remove();
+  leaving = null;
+}
+
 function build(conn: Conn): void {
   node?.remove();
+  flushLeaving();
+  placed = false;
   node = document.createElement('div');
   node.id = 'conn-chip';
   // Not a toolbar and not a menu: a small group of buttons about one thing.
@@ -203,10 +233,20 @@ function place(at: { x: number; y: number }): void {
   const gap = 16;
   const pad = 8;
   let y = p.y - gap - size.h;
-  if (y < pad) y = p.y + gap;
+  const above = y >= pad;
+  if (!above) y = p.y + gap;
   const x = Math.min(Math.max(pad, p.x - size.w / 2), innerWidth - size.w - pad);
   node.style.left = Math.round(x) + 'px';
   node.style.top = Math.round(y) + 'px';
+  // The entrance grows out of the line, from the edge that faces it. Decided at
+  // the first placing only: a flip during a pan would change the animation's
+  // name, and a new name replays the entrance.
+  if (!placed) {
+    placed = true;
+    const ox = size.w > 0 ? Math.round(Math.max(0, Math.min(100, ((p.x - x) / size.w) * 100))) : 50;
+    node.style.transformOrigin = `${ox}% ${above ? '100%' : '0%'}`;
+    node.classList.toggle('is-above', above);
+  }
   // Hidden when the line it belongs to is not on screen. The clamp above keeps
   // the chip inside the window whatever the anchor is - which is right while
   // the line is visible and wrong the moment it is not: panning the marked line

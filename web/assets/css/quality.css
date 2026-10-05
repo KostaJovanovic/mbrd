@@ -276,6 +276,80 @@
   }
 }
 
+/* prefers-reduced-motion: a gentler equivalent, not none (audit 10-05 #8). The
+   duration flatten in status.css used to cut every fade along with every
+   movement, so menus, sheets, toasts and the panels blinked on and off. That
+   block now cuts only loops; this one takes the movement out and leaves the
+   opacity to fade at its usual pace. Here because this sheet is last: a later
+   @keyframes of the same name wins, and ask-in and note-land are dialog.css's.
+   A transition that is not a fade and is not listed below now plays. */
+@media (prefers-reduced-motion: reduce) {
+  /* Nothing lifts, leans, grows or overshoots. !important because the whimsy
+     slider can write these inline on :root. */
+  :root {
+    --lift-hover: 0px !important;
+    --lift-drag: 0px !important;
+    --tilt-drag: 0deg !important;
+    --grow-hover: 1 !important;
+    --btn-lift: 0px !important;
+    --btn-grow: 1 !important;
+    --ease-back: var(--ease) !important;
+  }
+
+  /* Entrances and exits as fades in place. */
+  @keyframes ctx-in { from { opacity: 0; } }
+  @keyframes ctx-in-side { from { opacity: 0; } }
+  @keyframes ctx-in-up { from { opacity: 0; } }
+  @keyframes ctx-in-left { from { opacity: 0; } }
+  @keyframes ctx-out { to { opacity: 0; } }
+  @keyframes ctx-out-side { to { opacity: 0; } }
+  @keyframes ctx-out-up { to { opacity: 0; } }
+  @keyframes ctx-out-left { to { opacity: 0; } }
+  @keyframes ask-in { from { opacity: 0; } }
+  @keyframes rise { from { opacity: 0; } }
+  @keyframes rise-plain { from { opacity: 0; } }
+  @keyframes bloom { from { opacity: 0; } }
+  @keyframes note-land { from { opacity: 0; } }
+  @keyframes toolbar-relaid { from { opacity: 0; } }
+  @keyframes exit-dissolve { to { opacity: 0; } }
+  @keyframes exit-fall { to { opacity: 0; } }
+  @keyframes exit-shatter { to { opacity: 0; } }
+  @keyframes exit-chip-fall {
+    0%, 100% { opacity: 0; }
+    20%, 70% { opacity: 1; }
+  }
+
+  /* The sliding panels wait where they rest, so only their opacity travels.
+     Each keeps its closed state: opacity 0 and visibility hidden. #nowplaying,
+     #tour, #tour-editor (chrome.css) and #busy (status.css) do the same beside
+     their own rules. */
+  #sidebar,
+  #header-panel,
+  #drawer-window,
+  .sticker-window,
+  .player-window,
+  #toolbar-tools { transform: none; }
+
+  /* Things that slide to make room take it at once. Each list follows its own
+     rule's transition list in order: the fades keep their time, the move none. */
+  #toolbar { transition-duration: var(--dur-base), 0s, 0s; }
+  #mobile-find-btn { transition-duration: var(--dur-fast), var(--dur-fast), var(--dur-base), 0s; }
+  #mobile-playlist { transition-duration: 0s; }
+
+  /* Ornament that is only movement. */
+  :is(#side-close, #header-close):hover { transform: none; }
+  :root[data-whimsy="0"] #menu-btn:hover span { animation: none; }
+
+  /* Clean mode is a game made of flights and stays as it was: every duration
+     cut. Its own script holds the flights still (ui/clean/clean.ts). */
+  :root.is-cleaning *,
+  :is([class*="clean-"], [id^="clean-"]),
+  :is([class*="clean-"], [id^="clean-"]) * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* prefers-contrast: more — scrims from 42% to 78%. Not opaque, so the board
    behind is still communicated. color-mix() only — below WebKit 16.2 the
    42% scrim stands (less contrast, still working). */

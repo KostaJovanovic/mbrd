@@ -7,9 +7,10 @@ import {
   board, bus, selection, removeItems, restoreItems, emptyTrash, select,
   restoreTitleCard, isTitleHidden, titleCardShape, clipHomeId, stuckHostId, isKeepsake,
 } from '../state.ts';
-import { formatBytes, div, el, markClosed, wasClosed } from '../util.ts';
+import { formatBytes, div, el, markClosed, readToken, wasClosed } from '../util.ts';
 import { buildItem, restingTilt, kindName } from '../canvas/item-dom.ts';
-import { releaseCardContent } from '../canvas/items.ts';
+import { releaseCardContent, screenBoxOf } from '../canvas/items.ts';
+import { baseMs, fastMs, travelMs } from '../canvas/viewport.ts';
 import { startEdgePan } from '../canvas/edge-pan.ts';
 import { noteWords } from '../canvas/note-model.ts';
 import { toast } from '../notify.ts';
@@ -758,6 +759,10 @@ function startDrag(e: PointerEvent) {
   let at = { x: e.clientX, y: e.clientY };
   let stopEdge: (() => void) | null = null;
   const overWindow = () => !!win?.contains(document.elementFromPoint(at.x, at.y));
+  // Where in the slot it was taken hold of, kept for the carry: the card stays
+  // under the finger where it was gripped rather than jumping to centre on it.
+  const box = slot.getBoundingClientRect();
+  const grab = { x: e.clientX - (box.left + box.width / 2), y: e.clientY - (box.top + box.height / 2) };
 
   const lift = (ev: PointerEvent) => {
     lifted = true;
@@ -767,7 +772,10 @@ function startDrag(e: PointerEvent) {
     // one shape and is done). Faded, not hidden - a drop over it is still a
     // cancel, and it needs to stay visible enough to aim away from.
     win?.classList.add('is-lifting');
+    dropGhost();
     ghost = makeGhost(slot);
+    // Swelling out of the slot to its carried size, rather than appearing at it.
+    if (travelMs() > 0) ghost.animate([{ scale: `${SLOT_W / GHOST_W}` }, { scale: '1' }], { duration: fastMs(), easing: ease() });
     // Not until the pointer has come out onto the board: this window stands on
     // the edge of the screen.
     if (vp) {
@@ -781,7 +789,7 @@ function startDrag(e: PointerEvent) {
       if (Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) <= TAP_SLOP) return;
       lift(ev);
     }
-    moveGhost(ev.clientX, ev.clientY);
+    moveGhost(ev.clientX - grab.x, ev.clientY - grab.y);
   };
 
   // Taken off the window - see the note at the foot of this function.
@@ -797,7 +805,6 @@ function startDrag(e: PointerEvent) {
 
   const onUp = (ev: PointerEvent) => {
     unwire();
-    dropGhost();
 
     // A press that never went anywhere, on a slot that knows where it
     // belongs - the click. Written here, not as a `click` listener, since
@@ -811,20 +818,28 @@ function startDrag(e: PointerEvent) {
     // it's the tap (press and release in the same place, always over the
     // window).
     if (win?.contains(document.elementFromPoint(ev.clientX, ev.clientY))) {
-      if (lifted || !home) return;
+      // Put back on its shelf: the ghost goes home to the slot.
+      if (lifted || !home) return void dropGhost(boxOf(slot));
     }
 
-    const where = vp!.toWorld(ev.clientX, ev.clientY);
+    // Where the ghost's middle is, which is where the card's goes.
+    const where = lifted ? vp!.toWorld(ev.clientX - grab.x, ev.clientY - grab.y) : vp!.toWorld(ev.clientX, ev.clientY);
     // Dropped onto the board, and there is no bin entry to take it out of.
-    if (isTitle) { landTitle(where); return; }
+    if (isTitle) {
+      landTitle(where);
+      return void dropGhost(cardBox(board.items.find(i => i.type === 'title')));
+    }
     // A clip going home ignores the drop point - restoreItems() puts it
     // back on its own card, wherever that is now.
     land([id], home ? null : where);
+    // The card's own entrance plays where it lands (canvas/items.ts); the
+    // ghost only settles into that box and gives way to it.
+    dropGhost(cardBox(board.items.find(i => i.id === id)));
   };
 
   const onCancel = () => {
     unwire();
-    dropGhost();
+    dropGhost(boxOf(slot));
   };
 
   // On the window, not the slot: fill() rebuilds the whole body on 'trash',
@@ -884,14 +899,49 @@ function makeGhost(slot: HTMLElement) {
   return node;
 }
 
-function moveGhost(x: number, y: number) {
+/** Put the ghost's middle at this screen point, by `translate`: the compositor moves it, not layout. */
+function moveGhost(cx: number, cy: number) {
   if (!ghost) return;
-  ghost.style.left = x + 'px';
-  ghost.style.top = y + 'px';
+  ghost.style.translate = `${cx - ghost.offsetWidth / 2}px ${cy - ghost.offsetHeight / 2}px`;
 }
 
-function dropGhost() {
-  if (ghost) releaseCardContent(ghost);
-  ghost?.remove();
+/** Where a ghost settles: a box's middle on screen, and its width. */
+type GhostBox = { cx: number, cy: number, w: number };
+
+/** A slot's box, if it is still on screen to go back to. */
+function boxOf(el: HTMLElement): GhostBox | null {
+  if (!el.isConnected) return null;
+  const r = el.getBoundingClientRect();
+  return r.width ? { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: r.width } : null;
+}
+
+/** A card's box on screen, from the item and the camera, or null off screen. */
+function cardBox(item: Item | undefined): GhostBox | null {
+  const box = vp && screenBoxOf(item);
+  if (!vp || !item || !box) return null;
+  if (box.right < 0 || box.bottom < 0 || box.left > innerWidth || box.top > innerHeight) return null;
+  return { cx: box.cx, cy: box.cy, w: item.w * vp.zoom };
+}
+
+const ease = () => readToken('--ease') || 'ease-out';
+
+/**
+ * The ghost let go of: settled into `to` - the slot it came from, or the card
+ * it became - and faded as it arrives, so it hands over rather than vanishing.
+ * Without somewhere to go, or with motion reduced, simply gone.
+ */
+function dropGhost(to: GhostBox | null = null) {
+  const g = ghost;
   ghost = null;
+  if (!g) return;
+  const gone = () => { releaseCardContent(g); g.remove(); };
+  // The interface's pace rather than a fade's: the way home can be the width of the window.
+  const ms = baseMs();
+  if (!to || !(travelMs() > 0) || !(ms > 1) || typeof g.animate !== 'function' || !g.offsetWidth) return gone();
+  const opacity = getComputedStyle(g).opacity;
+  g.animate([
+    { translate: g.style.translate || '0px 0px', scale: '1', opacity },
+    { opacity, offset: 0.6 },
+    { translate: `${to.cx - g.offsetWidth / 2}px ${to.cy - g.offsetHeight / 2}px`, scale: `${to.w / g.offsetWidth}`, opacity: 0 },
+  ], { duration: ms, easing: ease(), fill: 'forwards' }).finished.then(gone, gone);
 }

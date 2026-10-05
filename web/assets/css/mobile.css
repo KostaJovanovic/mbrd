@@ -1045,6 +1045,9 @@
 .pl-eq i:nth-child(2) { animation-delay: -0.55s; }
 .pl-eq i:nth-child(3) { animation-delay: -0.10s; }
 .pl-eq i:nth-child(4) { animation-delay: -0.70s; }
+/* Paused or ended: the bars hold where they were. A meter moving over silence
+   says the opposite of what is happening (ui/playlist.ts refreshActions). */
+.pl-row.is-paused .pl-eq i { animation-play-state: paused; }
 @keyframes pl-eq {
   0%, 100% { transform: scaleY(0.25); }
   50% { transform: scaleY(1); }
@@ -1215,6 +1218,11 @@
   stroke-width: 2;
   stroke-linecap: round;
 }
+/* Caught: the line thickens under the finger, as #nowplaying's does (chrome.css). */
+.pw-line.is-scrubbing .pw-line-svg { scale: 1 2; }
+@media (prefers-reduced-motion: no-preference) {
+  .pw-line-svg { transition: scale var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease); }
+}
 /* The unplayed line is clipped to the part *past* the playhead, so the grey does
    not sit under the played wave and the two meet at --pw-progress. The base svg
    is the direct child; the fill's are inside .pw-line-fill. */
@@ -1231,7 +1239,7 @@
    sizeSeekWave has made one-to-one with pixels - rather than in the path's
    bounding box. */
 .pw-line-fill-wave { display: none; transform-box: view-box; }
-:root[data-whimsy="0"] .pw-line-fill-line { display: none; }
+:root[data-whimsy="0"] .pw-line-fill > .pw-line-svg:not(.pw-line-wave-svg) { opacity: 0; }
 :root[data-whimsy="0"] .pw-line-fill-wave {
   display: block;
   /* One period is 2 * WAVE_HALF = 14 user units, and sizeSeekWave makes a user
@@ -1239,18 +1247,18 @@
      one period and looping is seamless. Keep the 14 in step with WAVE_HALF. */
   animation: seek-wave 3s linear infinite;
 }
-/* Paused: the scroll stops, and at the soft end the wave flattens to the straight
-   line - the same swap #nowplaying makes (chrome.css), which this scrubber was
-   drawn to match and did not have. Swapping the wavy fill for the straight one
-   rather than scaling the wave to nothing, for the reason stated there: a
-   scaled-to-zero group leaves no line at all on some engines, and the played part
-   of the scrubber then vanishes on pause.
+/* Paused: the scroll stops, and at the soft end the wave cross-fades into the
+   straight line - the same cross-fade #nowplaying makes (chrome.css), on the
+   opacity transition above. Both fills stay drawn rather than the wave being
+   scaled to nothing, for the reason stated there: a scaled-to-zero group leaves
+   no line at all on some engines, and the played part of the scrubber then
+   vanishes on pause.
 
    .is-paused is on the transport, not on the line, because the line is the same
    element in both homes and what is paused is the player. */
 .pw-player.is-paused .pw-line-fill-wave { animation-play-state: paused; }
-:root[data-whimsy="0"] .pw-player.is-paused .pw-line-fill-wave { display: none; }
-:root[data-whimsy="0"] .pw-player.is-paused .pw-line-fill-line { display: block; }
+:root[data-whimsy="0"] .pw-player.is-paused .pw-line-wave-svg { opacity: 0; }
+:root[data-whimsy="0"] .pw-player.is-paused .pw-line-fill > .pw-line-svg:not(.pw-line-wave-svg) { opacity: 1; }
 @media (prefers-reduced-motion: reduce) {
   :root[data-whimsy="0"] .pw-line-fill-wave { animation: none; }
 }

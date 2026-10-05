@@ -15,7 +15,9 @@ import { openAnchored } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 import { openExternal } from './leaving.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
-import { travelMs, fastMs } from '../canvas/viewport.ts';
+import { travelMs, fastMs, baseMs } from '../canvas/viewport.ts';
+// The card a picture closes back into, measured live: the board may have moved since it opened.
+import { nodeFor } from '../canvas/items.ts';
 import { addFile, assetURL, getAsset, readText } from '../storage/assets.ts';
 import { fileKey, lift } from '../consent.ts';
 import { mountEditor } from './editor/view.ts';
@@ -164,6 +166,8 @@ let pdfDoc: { destroy: () => void } | null = null;
 
 /** The item this viewing shows, or null. What the right-click acts on. */
 let shownId: string | null = null;
+/** The box the picture on show grew out of, kept for a close that cannot find its card again. */
+let shownFrom: { id: string, rect: DOMRect } | null = null;
 
 /** The one camera command the right-click needs. Injected: commands.ts imports this module. */
 export interface ViewerCommands {
@@ -213,14 +217,20 @@ export function initViewer(commands?: ViewerCommands) {
   // Escape reaches the dialog as a close request whatever had focus; the
   // teardown must run too, or the next viewing inherits a video still playing.
   dlg.addEventListener('close', teardown);
+  // However it shut, a close still animating is over, and its held frames go with it.
+  dlg.addEventListener('close', () => { if (closing) finishClose(); });
+  // A press while a picture shrinks home is somebody already back at the board.
+  dlg.addEventListener('pointerdown', () => { if (closing) finishClose(); }, true);
   // In a document, Escape (and Android's Back, which sends this) closes the
   // find bar before it closes the document.
   // A document otherwise goes the way it came, the paper dropping away (leave()).
   // Taken at the keydown, in the bubble phase so the find bar and the name
   // field have had their Escape first: a cancel event may only be refused
   // after a user activation, so refusing it there is not enough on its own.
+  // A picture is taken here too, so Escape shrinks it home rather than cutting.
   dlg.addEventListener('keydown', e => {
-    if (e.key !== 'Escape' || !editing || e.defaultPrevented || wasClosed(e)) return;
+    if (e.key !== 'Escape' || e.defaultPrevented || wasClosed(e)) return;
+    if (!editing && !('media' in dlg!.dataset)) return;
     e.preventDefault();
     markClosed(e);
     closeViewer();
@@ -286,20 +296,127 @@ function wireSteps(d: HTMLDialogElement) {
     if (t instanceof HTMLElement && (t.isContentEditable || t.closest('input, textarea, select, video, audio'))) return;
     if (step(e.key === 'ArrowLeft' ? -1 : 1)) e.preventDefault();
   });
-  let swipe: { id: number, x: number, y: number } | null = null;
+  // `on` once the finger has gone sideways and the picture follows it; `shown`
+  // is where it was put, `v` the finger's speed in px/ms.
+  let swipe: Swipe | null = null;
+  const pictureOf = () => {
+    const pic = bodyEl?.querySelector<HTMLImageElement>('img.viewer-media');
+    return pic && !pic.classList.contains('is-zoomed') ? pic : null;
+  };
   d.addEventListener('pointerdown', e => {
-    swipe = e.pointerType === 'touch' && e.isPrimary ? { id: e.pointerId, x: e.clientX, y: e.clientY } : null;
+    // A second finger is a pinch: the picture goes back to the middle first.
+    if (swipe?.on) swipeBack(pictureOf());
+    swipe = e.pointerType === 'touch' && e.isPrimary
+      ? { id: e.pointerId, x: e.clientX, y: e.clientY, on: false, dead: false, shown: 0, dx: 0, v: 0, t: e.timeStamp, prev: null, next: null }
+      : null;
+  });
+  d.addEventListener('pointermove', e => {
+    const s = swipe;
+    if (!s || s.id !== e.pointerId || s.dead || editing || closing) return;
+    const pic = pictureOf();
+    if (!pic) return;
+    const dx = e.clientX - s.x, dy = e.clientY - s.y;
+    if (!s.on) {
+      if (Math.hypot(dx, dy) < DRAG_SLOP) return;
+      if (Math.abs(dx) < 2 * Math.abs(dy)) { s.dead = true; return; }
+      s.on = true;
+      s.prev = neighbour(-1);
+      s.next = neighbour(1);
+      // Caught mid-slide: from where it is, not from where it was going.
+      const at = parseFloat(getComputedStyle(pic).translate) || 0;
+      for (const a of pic.getAnimations()) a.cancel();
+      s.x -= at;
+      s.dx = dx + at;
+      s.shown = at;
+      s.t = e.timeStamp;
+      pic.style.translate = `${at}px 0`;
+      return;
+    }
+    const now = e.clientX - s.x;
+    const dt = e.timeStamp - s.t;
+    if (dt > 0) s.v = 0.8 * ((now - s.dx) / dt) + 0.2 * s.v;
+    s.dx = now;
+    s.t = e.timeStamp;
+    // Nothing that way: it gives, and says the row ends here.
+    s.shown = (now > 0 ? s.prev : s.next) ? now : give(now, innerWidth);
+    pic.style.translate = `${s.shown}px 0`;
+  });
+  d.addEventListener('pointercancel', e => {
+    if (swipe?.id !== e.pointerId) return;
+    if (swipe.on) swipeBack(pictureOf());
+    swipe = null;
   });
   d.addEventListener('pointerup', e => {
     const s = swipe;
     swipe = null;
     if (!s || s.id !== e.pointerId || editing) return;
+    const pic = pictureOf();
+    if (s.on && pic) {
+      const dir = s.dx > 0 ? -1 : 1;
+      // A flick counts if the finger was still moving, and the same way, as it lifted.
+      const flick = Math.abs(s.v) > SWIPE_FLICK && Math.sign(s.v) === Math.sign(s.dx) && e.timeStamp - s.t < 80;
+      if ((Math.abs(s.dx) >= SWIPE_MIN || flick) && (dir < 0 ? s.prev : s.next)) slide(dir, pic, s.shown);
+      else swipeBack(pic);
+      return;
+    }
     // A zoomed picture's drag is its pan (attachZoomPan), never a step.
-    if (bodyEl?.querySelector('.viewer-media.is-zoomed')) return;
+    if (s.on || bodyEl?.querySelector('.viewer-media.is-zoomed')) return;
     const dx = e.clientX - s.x, dy = e.clientY - s.y;
     if (Math.abs(dx) < SWIPE_MIN || Math.abs(dx) < 2 * Math.abs(dy)) return;
     step(dx > 0 ? -1 : 1);
   });
+}
+
+type Swipe = {
+  id: number, x: number, y: number, on: boolean, dead: boolean, shown: number,
+  dx: number, v: number, t: number, prev: string | null, next: string | null,
+};
+
+/** A lift faster than this, in px/ms, steps however short the swipe. */
+const SWIPE_FLICK = 0.5;
+
+/**
+ * How far something follows a finger that has gone `over` past where it can
+ * go: diminishing, never stopping dead and never keeping up. The board's own
+ * curve (canvas/viewport.ts), copied rather than exported, since it is two lines.
+ */
+const RUBBER_K = 0.55;
+const give = (over: number, dim: number) => (over * dim * RUBBER_K) / (dim + RUBBER_K * Math.abs(over));
+
+/** A swipe that did not go far enough, the picture eased back to the middle. */
+function swipeBack(pic: HTMLElement | null) {
+  if (!pic) return;
+  const from = pic.style.translate || '0px 0';
+  pic.style.translate = '';
+  const ms = travelMs() > 0 ? baseMs() : 0;
+  if (ms > 0 && typeof pic.animate === 'function') {
+    pic.animate([{ translate: from }, { translate: '0px 0' }], { duration: ms, easing: cssEase() });
+  }
+}
+
+/**
+ * The swipe carried through: the picture under the finger carries on out of
+ * the stage and the next one comes in behind it, the two edge to edge, as a
+ * strip of photographs. The old <img> is kept for the one animation, laid
+ * over the stage where it was; step() has already put the rest of it down.
+ */
+function slide(dir: number, old: HTMLImageElement, shown: number) {
+  const box = dlg!.getBoundingClientRect();
+  const r = old.getBoundingClientRect();
+  if (!step(dir)) return void swipeBack(old);
+  const ms = travelMs() > 0 ? baseMs() : 0;
+  const next = bodyEl!.firstElementChild;
+  if (!(ms > 0) || typeof old.animate !== 'function' || !('media' in dlg!.dataset) || !(next instanceof HTMLElement)) return;
+  const opts = { duration: ms, easing: cssEase() };
+  old.className = 'viewer-slide';
+  Object.assign(old.style, {
+    left: `${r.left - shown - box.left}px`, top: `${r.top - box.top}px`,
+    width: `${r.width}px`, height: `${r.height}px`,
+  });
+  dlg!.append(old);
+  old.animate([{ translate: `${shown}px 0` }, { translate: `${-dir * box.width}px 0` }], { ...opts, fill: 'forwards' })
+    .finished.then(() => old.remove(), () => old.remove());
+  next.animate([{ translate: `${shown + dir * box.width}px 0` }, { translate: '0px 0' }], opts);
 }
 
 /** The nearest viewable item from the one on show, going `dir`, or null. */
@@ -393,6 +510,7 @@ export function openViewer(id: string, open: OpenOptions = {}) {
   // A text read is a page: readOnlyText() says so. Every other viewing keeps its own shape.
   delete dlg.dataset.page;
   shownId = id;
+  shownFrom = open.thumb ? { id, rect: open.thumb } : null;
   view(item, bodyEl!, open);
   // The picture, once mounted - a clip is left out deliberately: wheel/drag
   // over its controls should press them, not zoom.
@@ -438,9 +556,11 @@ function growPicture(dlg: HTMLDialogElement, pic: HTMLImageElement, from: DOMRec
   const dx = (from.left + from.width / 2) - (to.left + to.width / 2);
   const dy = (from.top + from.height / 2) - (to.top + to.height / 2);
   const long = ms * 0.8;
+  // The mirror rides along underneath, or a flipped picture would turn over as it lands.
+  const base = pic.style.transform;
   pic.animate([
-    { transform: `translate(${dx}px, ${dy}px) scale(${s})` },
-    { transform: 'none' },
+    { transform: `translate(${dx}px, ${dy}px) scale(${s}) ${base}`.trimEnd() },
+    { transform: base || 'none' },
   ], { duration: long, easing: cssEase() });
   dlg.animate([{ backgroundColor: 'transparent' }, { backgroundColor: getComputedStyle(dlg).backgroundColor }],
     { duration: long, easing: 'ease-out' });
@@ -667,7 +787,85 @@ function closeViewer(now = false) {
   if (closing) { if (now) finishClose(); return; }
   const shut = () => { if (dlg?.open) dlg.close(); };   // 'close' runs teardown
   if (editing && !now) leave(shut);
+  else if (!now && 'media' in dlg.dataset) shrinkPicture(shut);
   else shut();
+}
+
+/**
+ * Where the item on show is now, on the board or in the Feed: its card if
+ * that is laid out, else its tile. Asked at close, not kept from the open,
+ * since the board may have moved underneath.
+ */
+function thumbOf(id: string): DOMRect | null {
+  const tile = document.querySelector<HTMLElement>(`.feed-tile[data-id="${CSS.escape(id)}"]`);
+  const card = nodeFor(id);
+  // On a phone the Feed is what is showing, whatever the board has laid out underneath.
+  for (const el of board.layoutMode === 'mobile' ? [tile, card] : [card, tile]) {
+    const r = el?.isConnected ? el.getBoundingClientRect() : null;
+    if (r?.width && r.height) return r;
+  }
+  return shownFrom?.id === id ? shownFrom.rect : null;
+}
+
+const onScreen = (r: DOMRect) => r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight;
+
+/**
+ * A picture going back the way it came: the open's grow (growPicture) played
+ * the other way, from wherever the zoom has it into the card's box, while the
+ * stage and the head fade from around it. A card off screen has nowhere to be
+ * flown to, and the viewing fades instead, as it does with motion reduced.
+ * Not shielded from presses: one during the close finishes it (initViewer).
+ */
+function shrinkPicture(done: () => void) {
+  const d = dlg!;
+  if (typeof d.animate !== 'function') return done();
+  const ms = travelMs();
+  const pic = bodyEl?.querySelector<HTMLImageElement>('img.viewer-media');
+  const to = shownId ? thumbOf(shownId) : null;
+  const hold = { fill: 'forwards' as const, easing: 'ease-out' };
+  // The dimmed board behind goes with it; an engine that cannot animate a pseudo-element just cuts it at the end.
+  const backdrop = (duration: number) => {
+    try { return [d.animate([{ opacity: 1 }, { opacity: 0 }], { ...hold, duration, pseudoElement: '::backdrop' })]; }
+    catch { return []; }
+  };
+  let anims: Animation[];
+  if (pic && to && ms > 0 && onScreen(to)) {
+    const long = ms * 0.6;
+    // Where the zoom has it now, and where it sits unzoomed: the flight starts at one and is measured from the other.
+    const live = getComputedStyle(pic).transform;
+    const was = pic.style.transform;
+    const item = shownId ? byId(shownId) : null;
+    const base = (item && flipTransform(item)) || '';
+    pic.style.transition = '';
+    pic.style.transform = base;
+    const r = pic.getBoundingClientRect();
+    pic.style.transform = was;
+    if (!r.width || !r.height) return done();
+    const s = Math.max(to.width / r.width, to.height / r.height);
+    const dx = (to.left + to.width / 2) - (r.left + r.width / 2);
+    const dy = (to.top + to.height / 2) - (r.top + r.height / 2);
+    anims = [
+      pic.animate([
+        { transform: live },
+        { transform: `translate(${dx}px, ${dy}px) scale(${s}) ${base}`.trimEnd() },
+      ], { ...hold, duration: long, easing: cssEase() }),
+      // Out over the last stretch, so the photograph hands over to the card rather than covering it.
+      pic.animate([{ opacity: 1 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { ...hold, duration: long }),
+      d.animate([
+        { backgroundColor: getComputedStyle(d).backgroundColor, boxShadow: getComputedStyle(d).boxShadow },
+        { backgroundColor: 'transparent', boxShadow: 'none' },
+      ], { ...hold, duration: long * 0.8 }),
+      ...[...d.querySelectorAll<HTMLElement>('#viewer-head, .viewer-step')].map(part =>
+        part.animate([{ opacity: 1 }, { opacity: 0 }], { ...hold, duration: long * 0.4 })),
+      ...backdrop(long),
+    ];
+  } else {
+    const fast = fastMs();
+    if (!(fast > 1)) return done();
+    anims = [d.animate([{ opacity: 1 }, { opacity: 0 }], { ...hold, duration: fast }), ...backdrop(fast)];
+  }
+  closing = { anims, done };
+  anims[0].finished.then(() => { if (closing?.anims === anims) finishClose(); }, () => {});
 }
 
 /**
@@ -749,10 +947,12 @@ function teardown() {
     void saveEdit(s);
   }
   shownId = null;
+  shownFrom = null;
   bodyEl?.replaceChildren();
   // Typing held for a document that never opened goes with the viewing.
   dlg!.querySelector('.viewer-hold')?.remove();
   dlg!.querySelector('.viewer-grow')?.remove();
+  for (const ghost of dlg!.querySelectorAll('.viewer-slide')) ghost.remove();
   arriving?.over?.();
   arriving = null;
   dlg!.classList.remove('is-arriving');
@@ -776,6 +976,10 @@ const ZOOM_MAX = 8;
 const ZOOM_CLICK = 2.5;
 /** Movement past this, in screen pixels, makes a press a drag and not a click. */
 const DRAG_SLOP = 6;
+/** The thrown pan's decay, its least throw and its stop, in seconds and px/s: the board's glide (canvas/viewport.ts). */
+const GLIDE_TAU = 0.34;
+const GLIDE_MIN = 120;
+const GLIDE_STOP = 8;
 
 /**
  * Wheel, pinch and drag over an open picture. Fitting to the window handles
@@ -789,10 +993,11 @@ const DRAG_SLOP = 6;
  *
  * **The zoom goes to the pointer, not the middle** - keeps the point under
  * the cursor fixed; zooming to centre is what makes other viewers feel like
- * they're fighting you. **The pan is clamped, not free**: half the scaled
+ * they're fighting you. **The pan is bounded, not free**: half the scaled
  * picture past the window edge plus a margin, so a fling can't lose it
- * off-screen. Returns its own detach, since two of the four listeners
- * aren't on the picture and would outlive it.
+ * off-screen. A finger may pull past that bound against a rubber band, and
+ * the picture settles back when let go. Returns its own detach, since two of
+ * the listeners aren't on the picture and would outlive it.
  */
 function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
   let scale = 1, tx = 0, ty = 0;
@@ -812,17 +1017,60 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
     img.classList.toggle('is-zoomed', scale > 1);
   };
   const reset = () => { scale = 1; tx = 0; ty = 0; paint(); };
-  zoomReset = reset;
 
-  const clampPan = () => {
+  // A click's zoom and fit are a step the eye has to follow, so they travel
+  // for one paint; wheel, pinch and drag stay 1:1, as on the board.
+  const eased = (move: () => void) => {
+    const ms = travelMs() * 0.5;
+    if (ms > 0) img.style.transition = `transform ${ms}ms ${cssEase()}`;
+    move();
+  };
+  const still = () => { img.style.transition = ''; };
+  const onSettled = (e: TransitionEvent) => { if (e.target === img && e.propertyName === 'transform') still(); };
+  zoomReset = () => eased(reset);
+
+  // The furthest the pan may sit from the middle, either way.
+  const bounds = () => {
     // offsetWidth is the laid-out (fitted) size - the transform doesn't
     // touch it, which is what keeps this stable while scale changes.
     const w = img.offsetWidth || 1;
     const h = img.offsetHeight || 1;
-    const maxX = Math.max(0, (w * scale - innerWidth) / 2) + 40;
-    const maxY = Math.max(0, (h * scale - innerHeight) / 2) + 40;
-    tx = Math.min(maxX, Math.max(-maxX, tx));
-    ty = Math.min(maxY, Math.max(-maxY, ty));
+    return {
+      x: Math.max(0, (w * scale - innerWidth) / 2) + 40,
+      y: Math.max(0, (h * scale - innerHeight) / 2) + 40,
+    };
+  };
+  const clampPan = () => {
+    const m = bounds();
+    tx = Math.min(m.x, Math.max(-m.x, tx));
+    ty = Math.min(m.y, Math.max(-m.y, ty));
+  };
+  /** A pan past its edge, given way to rather than stopped dead. */
+  const band = (v: number, max: number, dim: number) =>
+    (Math.abs(v) <= max ? v : Math.sign(v) * (max + give(Math.abs(v) - max, dim)));
+
+  // The throw after a pan: the release speed decaying the way the board's
+  // glide does, stopped at the edges rather than carried past them.
+  let glide = 0;
+  const stopGlide = () => { cancelAnimationFrame(glide); glide = 0; };
+  const throwPan = (vx: number, vy: number) => {
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const decay = Math.exp(-dt / GLIDE_TAU);
+      tx += vx * dt;
+      ty += vy * dt;
+      vx *= decay;
+      vy *= decay;
+      const m = bounds();
+      if (Math.abs(tx) > m.x) vx = 0;
+      if (Math.abs(ty) > m.y) vy = 0;
+      clampPan();
+      paint();
+      glide = Math.hypot(vx, vy) > GLIDE_STOP ? requestAnimationFrame(tick) : 0;
+    };
+    glide = requestAnimationFrame(tick);
   };
 
   const zoomTo = (next: number, cx: number, cy: number) => {
@@ -843,6 +1091,8 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
 
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
+    still();
+    stopGlide();
     zoomTo(scale * Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY);
   };
 
@@ -850,8 +1100,13 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
   const points = new Map<number, { x: number, y: number }>();
   let pinchFrom = 0, pinchScale = 1, lastX = 0, lastY = 0;
   let downX = 0, downY = 0, dragging = false, moved = false;
+  // The pan the finger asked for, before the edges gave, and its speed in px/ms.
+  let rx = 0, ry = 0, vx = 0, vy = 0, lastT = 0;
 
   const onDown = (e: PointerEvent) => {
+    // Caught: whatever was travelling stops where it is, under the finger.
+    still();
+    stopGlide();
     img.setPointerCapture(e.pointerId);
     points.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (points.size === 1) { downX = e.clientX; downY = e.clientY; moved = false; }
@@ -866,6 +1121,10 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
       dragging = true;
       lastX = e.clientX;
       lastY = e.clientY;
+      rx = tx;
+      ry = ty;
+      vx = vy = 0;
+      lastT = e.timeStamp;
       img.classList.add('is-panning');
     }
   };
@@ -881,29 +1140,45 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
       return;
     }
     if (!dragging) return;
-    tx += e.clientX - lastX;
-    ty += e.clientY - lastY;
+    const ddx = e.clientX - lastX, ddy = e.clientY - lastY;
+    rx += ddx;
+    ry += ddy;
+    const dt = e.timeStamp - lastT;
+    if (dt > 0) {
+      vx = 0.8 * (ddx / dt) + 0.2 * vx;
+      vy = 0.8 * (ddy / dt) + 0.2 * vy;
+    }
     lastX = e.clientX;
     lastY = e.clientY;
-    clampPan();
+    lastT = e.timeStamp;
+    const m = bounds();
+    tx = band(rx, m.x, innerWidth);
+    ty = band(ry, m.y, innerHeight);
     paint();
   };
 
   const onUp = (e: PointerEvent) => {
     points.delete(e.pointerId);
     if (points.size < 2) pinchFrom = 0;
-    if (!points.size) {
-      dragging = false;
-      img.classList.remove('is-panning');
-    }
+    if (points.size) return;
+    const panned = dragging;
+    dragging = false;
+    img.classList.remove('is-panning');
+    if (!panned || scale <= 1) return;
+    const m = bounds();
+    // Let go past an edge: back inside, eased. A finger that had stopped throws nothing.
+    if (Math.abs(tx) > m.x || Math.abs(ty) > m.y) eased(() => { clampPan(); paint(); });
+    else if (travelMs() > 0 && e.timeStamp - lastT < 80 && Math.hypot(vx, vy) * 1000 > GLIDE_MIN) throwPan(vx * 1000, vy * 1000);
   };
 
   // A plain click zooms in to the pointer, or back out - guarded by `moved`,
   // or the lift at the end of every pan would toggle it.
   const onClick = (e: MouseEvent) => {
     if (moved) { moved = false; return; }
-    if (scale > 1) reset();
-    else zoomTo(ZOOM_CLICK, e.clientX, e.clientY);
+    eased(() => {
+      if (scale > 1) reset();
+      else zoomTo(ZOOM_CLICK, e.clientX, e.clientY);
+    });
   };
 
   // The ground around the picture is the way out - only the stage itself; a
@@ -912,7 +1187,7 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
 
   // A resized window re-fits the picture under a transform computed against
   // the old one; resetting is the one answer that can't be subtly wrong.
-  const onResize = () => { if (scale !== 1) reset(); };
+  const onResize = () => { stopGlide(); if (scale !== 1) reset(); };
 
   img.addEventListener('wheel', onWheel, { passive: false });
   img.addEventListener('pointerdown', onDown);
@@ -920,10 +1195,14 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
   img.addEventListener('pointerup', onUp);
   img.addEventListener('pointercancel', onUp);
   img.addEventListener('click', onClick);
+  img.addEventListener('transitionend', onSettled);
+  img.addEventListener('transitioncancel', onSettled);
   stage.addEventListener('click', onStageClick);
   addEventListener('resize', onResize);
 
   return () => {
+    stopGlide();
+    still();
     stage.removeEventListener('click', onStageClick);
     removeEventListener('resize', onResize);
     // Back to the base, not to nothing - this may already be a mirrored

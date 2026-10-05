@@ -277,10 +277,12 @@ function paint() {
     // Tooltip carries the full names + caption.
     nameEl.title = stop.caption ? `${full}\n${stop.caption}` : full;
   }
-  // Caption hidden when empty — no blank line on uncaptioned stops.
+  // A tour with any caption keeps the caption's room on every stop, empty ones
+  // included (chrome.css), so the bar's top edge holds still as the camera flies.
+  // A tour with none has no caption line at all.
   if (captionEl) {
     captionEl.textContent = stop.caption;
-    captionEl.hidden = !stop.caption;
+    captionEl.hidden = !list.some(s => s.caption);
   }
   if (countEl) countEl.textContent = `${at + 1} of ${list.length}`;
   if (prevBtn) prevBtn.disabled = at <= 0;

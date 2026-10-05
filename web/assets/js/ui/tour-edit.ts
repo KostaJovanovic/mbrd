@@ -11,6 +11,9 @@ import { toast } from '../notify.ts';
 import { openAnchored } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 import { paintTourMarks, setSpot, setTourMarks } from '../canvas/items.ts';
+import { baseMs, reducedMotion } from '../canvas/viewport.ts';
+import { cue } from '../cuelume/engine.ts';
+import { markClosed, readToken } from '../util.ts';
 import { previewStop, startTour, tourActive } from './tour.ts';
 
 /** The bar, built once by initTourEdit(). */
@@ -26,8 +29,32 @@ let editing = false;
  */
 let current = -1;
 
-/** The chip being dragged, or -1. One at a time, like every gesture in the app. */
-let dragging = -1;
+/**
+ * A chip being pressed or dragged, or null. One at a time, like every gesture
+ * in the app. Positions are viewport boxes measured once at the lift, when the
+ * list scrolled `scroll` - see placeHeld() for how a scroll since is folded in.
+ */
+type ChipDrag = {
+  list: HTMLElement;
+  li: HTMLElement;
+  pointerId: number;
+  from: number;
+  to: number;
+  // The press point, less any offset the chip was drawn at when it was caught.
+  x0: number;
+  y0: number;
+  lastX: number;
+  lastY: number;
+  lifted: boolean;
+  boxes: DOMRect[];
+  bounds: DOMRect | null;
+  scroll: number;
+};
+let drag: ChipDrag | null = null;
+/** Set by a drag's release, so the click that follows does not also preview the stop. */
+let swallowClick = false;
+/** How far a press travels before it is a drag: under it, a press is a click. */
+const DRAG_SLOP = 4;
 
 /**
  * What each stop is *called*: card id -> number, and the next number to give.
@@ -267,9 +294,14 @@ function paint() {
     btn.setAttribute('aria-pressed', String(editing));
   }
   paintTourMarks();
+  // The chips a drag holds are about to be thrown away: it ends where it is.
+  if (drag) abandonDrag();
   if (!editing) { shut(); return; }
 
   const caret = readCaret();
+  // A long tour scrolls its chips; a press selects and repaints, which would
+  // put the block back at its start and the pressed chip maybe out of sight.
+  const scroll = host.querySelector('.tour-chips')?.scrollTop ?? 0;
   host.textContent = '';
   host.hidden = false;
   if (current >= board.tour.length) current = board.tour.length - 1;
@@ -277,6 +309,8 @@ function paint() {
   // Named once for the whole bar, so chips and the caption number agree - see stopNames().
   const names = stopNames();
   host.append(headRow(), stripRow(names), footRow(names));
+  const chipList = host.querySelector('.tour-chips');
+  if (chipList && scroll) chipList.scrollTop = scroll;
 
   if (caret) {
     const cap = host.querySelector<HTMLInputElement>('.tour-cap');
@@ -557,36 +591,12 @@ function stopNames(): number[] {
 function chips(names: number[]): HTMLElement {
   const list = document.createElement('ol');
   list.className = 'tour-chips';
-  board.tour.forEach((stop, i) => list.append(chip(stop.cards, i, names[i])));
-  // One listener for the whole row, not three per chip - chips are rebuilt every paint.
-  list.addEventListener('dragover', e => {
-    if (dragging < 0) return;
-    e.preventDefault();
-    markDrop(list, e.clientX, e.clientY);
-  });
-  list.addEventListener('drop', e => {
-    if (dragging < 0) return;
-    e.preventDefault();
-    const from = dragging;
-    dragging = -1;
-    // dropAt() answers a *boundary* as drawn; moveTourStop() takes an index
-    // with the dragged stop already removed. Dragging forward those differ
-    // by one - handing the boundary straight to moveTourStop() would drop
-    // one slot too far.
-    const to = dropAt(list, e.clientX, e.clientY);
-    const at = to > from ? to - 1 : to;
-    // The foot row follows whatever it was pointed at.
-    if (current === from) current = at;
-    else if (current > from && current <= at) current -= 1;
-    else if (current < from && current >= at) current += 1;
-    moveTourStop(from, at);
-  });
-  list.addEventListener('dragend', () => { dragging = -1; paint(); });
+  board.tour.forEach((stop, i) => list.append(chip(stop.cards, i, names[i], list)));
   return list;
 }
 
 /** One stop: the name it was given when it was made, and where it now sits. */
-function chip(cards: string[], i: number, name: number): HTMLLIElement {
+function chip(cards: string[], i: number, name: number, list: HTMLElement): HTMLLIElement {
   const li = document.createElement('li');
   const b = document.createElement('button');
   b.type = 'button';
@@ -600,14 +610,8 @@ function chip(cards: string[], i: number, name: number): HTMLLIElement {
   b.title = `Stop ${i + 1} of ${board.tour.length}: ${what}`
     + '\nDrag to reorder, right-click to split or join';
   b.setAttribute('aria-label', `Stop ${i + 1}: ${what}`);
-  // On the button, not the <li>: a draggable button is the thing under the
-  // pointer saying so itself, which the drop arithmetic below relies on.
-  b.draggable = true;
-  b.addEventListener('dragstart', e => {
-    dragging = i;
-    // Firefox needs data on the drag; the payload itself is never read.
-    e.dataTransfer?.setData('text/plain', String(i));
-  });
+  // The chip itself is what is held - see armDrag().
+  b.addEventListener('pointerdown', e => armDrag(e, list, li, i));
   // Pressing a stop flies the camera to it without starting a tour - the
   // only way to check a stop frames what it should while still building it -
   // and points the foot row at it.
@@ -615,6 +619,7 @@ function chip(cards: string[], i: number, name: number): HTMLLIElement {
   // It also *selects* its cards, which is what makes one verb enough: taking
   // a whole stop off is the same press as taking any selection off.
   b.addEventListener('click', () => {
+    if (swallowClick) return;
     current = i;
     previewStop(i);
     select(cards);
@@ -650,31 +655,210 @@ function chip(cards: string[], i: number, name: number): HTMLLIElement {
 }
 
 /**
- * Which gap a drop at this point is in, as a boundary in the block as drawn.
- * 0 is before the first chip, `length` after the last - what markDrop()'s
- * line means, *not* what moveTourStop() takes (see the drop handler).
+ * Which gap a point is in, as a boundary in the block as drawn. 0 is before
+ * the first chip, `length` after the last - *not* what moveTourStop() takes
+ * (see placeHeld()).
  *
  * **Two dimensions, because the block wraps.** X alone answered by column
  * once the row wrapped - dropping left on line two landed before the
  * *first* chip of line one, both being on the left. Y picks the line
- * first, x only decides within it. Measured off live boxes, not a stored
- * width - chips are named and no two are the same width.
+ * first, x only decides within it. Measured off the boxes taken at the lift,
+ * not live ones: the chips making way are drawn away from their slots.
  */
-function dropAt(list: HTMLElement, x: number, y: number): number {
-  const items = [...list.children];
-  for (let i = 0; i < items.length; i++) {
-    const box = items[i].getBoundingClientRect();
+function dropAt(boxes: DOMRect[], x: number, y: number): number {
+  for (let i = 0; i < boxes.length; i++) {
+    const box = boxes[i];
     if (y < box.top) return i;
     if (y <= box.bottom && x < box.left + box.width / 2) return i;
   }
-  return items.length;
+  return boxes.length;
 }
 
-/** The line showing where a drop would land. */
-function markDrop(list: HTMLElement, x: number, y: number) {
-  const to = dropAt(list, x, y);
-  [...list.children].forEach((li, i) => {
-    li.classList.toggle('drop-before', i === to);
-    li.classList.toggle('drop-after', i === to - 1 && to === list.children.length);
+// ---- drag to reorder -----------------------------------------------------
+//
+// The Playlist's gesture (ui/playlist.ts), on a wrapping row: the held chip
+// lifts and follows the pointer on `translate`, and the chips it passes slide
+// into each other's slots, which across a line end is a move in both axes.
+// The DOM is left alone until the release, when moveTourStop() rebuilds the
+// bar and the chip at its new index settles from where it was let go.
+
+/** The `translate` an element is drawn at right now, transitions and animations included. */
+function drawnAt(el: Element): { x: number, y: number } {
+  const [x = '0', y = '0'] = getComputedStyle(el).translate.split(' ');
+  return { x: Number.parseFloat(x) || 0, y: Number.parseFloat(y) || 0 };
+}
+
+/** A press on a chip: a click until it travels DRAG_SLOP, a drag after. */
+function armDrag(e: PointerEvent, list: HTMLElement, li: HTMLElement, i: number) {
+  if (drag || e.button !== 0) return;
+  drag = {
+    list, li, pointerId: e.pointerId, from: i, to: i,
+    x0: e.clientX, y0: e.clientY, lastX: e.clientX, lastY: e.clientY,
+    lifted: false, boxes: [], bounds: null, scroll: 0,
+  };
+  // On the window: the rebuild after a drop takes the chip, and its capture, away.
+  addEventListener('pointermove', onDragMove);
+  addEventListener('pointerup', onDragEnd);
+  addEventListener('pointercancel', onDragEnd);
+}
+
+function onDragMove(e: PointerEvent) {
+  const d = drag;
+  if (!d || e.pointerId !== d.pointerId) return;
+  d.lastX = e.clientX;
+  d.lastY = e.clientY;
+  if (!d.lifted) {
+    if (Math.hypot(d.lastX - d.x0, d.lastY - d.y0) < DRAG_SLOP) return;
+    lift(d);
+  }
+  placeHeld(d);
+}
+
+function onDragEnd(e: PointerEvent) {
+  if (drag && e.pointerId === drag.pointerId) finishDrag(e.type === 'pointerup');
+}
+
+// Escape puts the chip back; it flies home from where it is drawn.
+function onDragKey(e: KeyboardEvent) {
+  if (!drag?.lifted || e.key !== 'Escape') return;
+  // Before canvas/input.ts, whose Escape would close the editor.
+  e.stopPropagation();
+  markClosed(e);
+  finishDrag(false);
+}
+
+/** Past the slop: measure the row at rest and pick the chip up. */
+function lift(d: ChipDrag) {
+  d.lifted = true;
+  const items = [...d.list.children].filter((c): c is HTMLElement => c instanceof HTMLElement);
+  // Caught mid-settle, the chip stays where it is drawn rather than snapping
+  // to its slot under the pointer.
+  const live = drawnAt(d.li);
+  d.x0 -= live.x;
+  d.y0 -= live.y;
+  for (const li of items) {
+    for (const run of li.getAnimations()) run.cancel();
+    li.style.translate = '';
+  }
+  d.boxes = items.map(li => li.getBoundingClientRect());
+  d.bounds = d.list.getBoundingClientRect();
+  d.scroll = d.list.scrollTop;
+  d.list.classList.add('is-sorting');
+  d.li.classList.add('is-dragging');
+  // Captured, so the chips passed under the pointer do not each peek their stop.
+  try { d.li.querySelector('button')?.setPointerCapture(d.pointerId); } catch { /* the pointer has gone */ }
+  addEventListener('keydown', onDragKey, true);
+  cue('pick');
+}
+
+/** Draw the held chip under the pointer and open the gap where it would land. */
+function placeHeld(d: ChipDrag) {
+  const { boxes, from } = d;
+  const home = boxes[from];
+  // A scroll since the lift moved the block, and the held chip with it.
+  const shift = d.list.scrollTop - d.scroll;
+  let dx = d.lastX - d.x0;
+  let dy = d.lastY - d.y0 + shift;
+  // Kept inside the block: past its edge the overflow would cut the chip off.
+  if (d.bounds) {
+    const b = d.bounds;
+    dx = Math.min(Math.max(dx, b.left - home.left), b.right - home.right);
+    dy = Math.min(Math.max(dy, b.top + shift - home.top), b.bottom + shift - home.bottom);
+  }
+  d.li.style.translate = `${dx}px ${dy}px`;
+  // dropAt() answers a boundary as drawn; moveTourStop() takes an index with
+  // the held stop already removed, which past `from` is one less.
+  const at = dropAt(boxes, home.left + home.width / 2 + dx, home.top + home.height / 2 + dy);
+  const to = at > from ? at - 1 : at;
+  if (to === d.to) return;
+  d.to = to;
+  // Each chip between the two places takes its neighbour's slot.
+  const items = [...d.list.children].filter((c): c is HTMLElement => c instanceof HTMLElement);
+  items.forEach((li, i) => {
+    if (i === from) return;
+    const slot = i > from && i <= to ? i - 1 : i < from && i >= to ? i + 1 : i;
+    const sx = boxes[slot].left - boxes[i].left;
+    const sy = boxes[slot].top - boxes[i].top;
+    li.style.translate = slot === i ? '' : `${sx}px ${sy}px`;
   });
+}
+
+/** Put the held chip down in its gap, or back where it was, and let it settle. */
+function finishDrag(commit: boolean) {
+  const d = drag;
+  if (!d) return;
+  abandonDrag();
+  if (!d.lifted) return;
+  // The click after this release is the drag's, not a press on the stop.
+  swallowClick = true;
+  setTimeout(() => { swallowClick = false; }, 0);
+  const { li, list, from } = d;
+  const to = commit ? d.to : from;
+  // Where it is drawn, and the lift it is drawn with, before any of it goes.
+  const was = li.getBoundingClientRect();
+  const lifted = getComputedStyle(li);
+  const lifting = { scale: lifted.scale, rotate: lifted.rotate };
+  if (to !== from) {
+    // The foot row follows whatever it was pointed at.
+    if (current === from) current = to;
+    else if (current > from && current <= to) current -= 1;
+    else if (current < from && current >= to) current += 1;
+    cue('tap');
+    // Rebuilds the bar (paint()), which is the drop.
+    moveTourStop(from, to);
+    const landed = host?.querySelector('.tour-chips')?.children[to];
+    if (landed instanceof HTMLElement) settle(landed, was, lifting);
+    return;
+  }
+  // Nothing moved: every chip goes home from where it is drawn.
+  const items = [...list.children].filter((c): c is HTMLElement => c instanceof HTMLElement);
+  const offsets = items.map(drawnAt);
+  list.classList.remove('is-sorting');
+  li.classList.remove('is-dragging');
+  items.forEach((el, i) => {
+    el.style.translate = '';
+    if (el !== li) slideHome(el, offsets[i]);
+  });
+  settle(li, was, lifting);
+}
+
+/** End the gesture's bookkeeping, with no motion: the bar is about to be rebuilt, or the release animates itself. */
+function abandonDrag() {
+  const d = drag;
+  if (!d) return;
+  drag = null;
+  removeEventListener('pointermove', onDragMove);
+  removeEventListener('pointerup', onDragEnd);
+  removeEventListener('pointercancel', onDragEnd);
+  removeEventListener('keydown', onDragKey, true);
+}
+
+/** --dur-base in ms, or 0 where motion is off. */
+const motionMs = () => (reducedMotion() ? 0 : baseMs());
+
+/** The dropped chip eases into its slot from the box it was let go at. */
+function settle(el: HTMLElement, was: DOMRect, lifting: { scale: string, rotate: string }) {
+  const ms = motionMs();
+  if (!(ms > 0) || typeof el.animate !== 'function') return;
+  const now = el.getBoundingClientRect();
+  // Centres, since the lift scales the chip about its own.
+  const dx = was.left + was.width / 2 - (now.left + now.width / 2);
+  const dy = was.top + was.height / 2 - (now.top + now.height / 2);
+  // Above its neighbours until it lands (chrome.css).
+  el.classList.add('is-settling');
+  const run = el.animate([
+    { translate: `${dx}px ${dy}px`, scale: lifting.scale, rotate: lifting.rotate },
+    { translate: '0 0', scale: '1', rotate: '0deg' },
+  ], { duration: ms, easing: readToken('--ease-back') || 'ease' });
+  const done = () => el.classList.remove('is-settling');
+  run.addEventListener('finish', done);
+  run.addEventListener('cancel', done);
+}
+
+/** A chip that made way, back into its own slot. */
+function slideHome(el: HTMLElement, from: { x: number, y: number }) {
+  const ms = motionMs();
+  if (!(ms > 0) || (Math.abs(from.x) < 1 && Math.abs(from.y) < 1) || typeof el.animate !== 'function') return;
+  el.animate([{ translate: `${from.x}px ${from.y}px` }, { translate: '0 0' }],
+    { duration: ms, easing: readToken('--ease') || 'ease' });
 }

@@ -14,7 +14,7 @@ import { bakeDisplayFor } from '../optimize/picture.ts';
 import {
   displayURLReady, ensureDisplay, bakedServes, type Crop, type Turn, type Matte,
 } from '../canvas/display.ts';
-import { baseName, clamp, div, actAsButton } from '../util.ts';
+import { baseName, clamp, div, actAsButton, readToken } from '../util.ts';
 import { mobileOrder } from '../arrange/arrangements.ts';
 // Shortest-column-first, shared with the board's own masonry - see the head of
 // that file for why the two walls are one rule and two surfaces.
@@ -44,6 +44,7 @@ import { dealSong } from './clean/clean.ts';
 import { renderMarkdown } from './markdown.ts';
 import { shownHash, type Item } from '../board-model.ts';
 import type { Point } from '../geometry.ts';
+import { baseMs, fastMs, reducedMotion } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
 /**
@@ -202,6 +203,10 @@ let riderPass = 0;
 const riderDrawn = new WeakMap<HTMLElement, string>();
 
 let cols = 2;
+/** The grid's width at the last layout, so a resize can be told from a reflow. */
+let gridWidth = 0;
+/** Each tile's running reflow slide, so a second reflow starts from where it is drawn. */
+const slides = new WeakMap<HTMLElement, Animation>();
 let mastheadRaf = 0;
 let layoutRaf = 0;
 let cullRaf = 0;
@@ -1621,7 +1626,18 @@ function layout() {
   if (!gridEl || board.layoutMode !== 'mobile') return;
   const width = gridEl.clientWidth;
   if (width < 1) return;
+  const wasCols = cols;
   cols = clamp(Math.round(width / TILE_TARGET), 2, MAX_COLS);
+  // A new width or column count is a window resize, which stays instant.
+  const resized = cols !== wasCols || Math.abs(width - gridWidth) >= 1;
+  gridWidth = width;
+  const was = new Map<string, Box>();
+  if (!resized) {
+    for (const id of tiles.keys()) {
+      const box = slotById.get(id)?.box;
+      if (box) was.set(id, { ...box });
+    }
+  }
 
   const slotOf = (it: Item): Slot => ({
     item: it, kind: kindOf(it), embed: linkEmbed(it),
@@ -1643,6 +1659,41 @@ function layout() {
 
   // Every box just moved, so every mounted tile is repositioned.
   cullWindow(true);
+  if (was.size) slideTiles(was);
+}
+
+/**
+ * A reflow seen moving: each tile that was already mounted slides from its old
+ * box to its new one, on the individual `translate`, which composes with the
+ * placement `transform` and stays on the compositor. A size change still jumps.
+ */
+function slideTiles(was: Map<string, Box>) {
+  let ms = -1;
+  let easing = '';
+  for (const [id, t] of tiles) {
+    const from = was.get(id);
+    const to = slotById.get(id)?.box;
+    if (!from || !to) continue;
+    // First, and cheap: the items bus fires often and most reflows move nothing.
+    let dx = from.x - to.x;
+    let dy = from.y - to.y;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+    if (ms < 0) {
+      ms = reducedMotion() || typeof t.el.animate !== 'function' ? 0 : baseMs();
+      easing = readToken('--ease') || 'ease';
+    }
+    if (!(ms > 0)) return;
+    // Caught mid-slide: start from where the tile is drawn, not its old slot.
+    const running = slides.get(t.el);
+    if (running && running.playState === 'running') {
+      const [x = '0', y = '0'] = getComputedStyle(t.el).translate.split(' ');
+      dx += Number.parseFloat(x) || 0;
+      dy += Number.parseFloat(y) || 0;
+      running.cancel();
+    }
+    slides.set(t.el, t.el.animate(
+      [{ translate: `${dx}px ${dy}px` }, { translate: '0 0' }], { duration: ms, easing }));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1705,7 +1756,8 @@ function cullWindow(reposition = false) {
     if (wanted.has(id)) continue;
     const s = slotById.get(id);
     if (s && t.video && t.video === npEl) { placeTile(t, s.box); continue; }
-    dropTile(t);
+    // No slot at all is a card gone from the wall (a delete), not a cull.
+    dropTile(t, !s);
     tiles.delete(id);
     changed = true;
   }
@@ -1796,12 +1848,36 @@ function scheduleMasthead() {
 
 // ---------------------------------------------------------------------------
 
-function dropTile(t: Tile) {
+function dropTile(t: Tile, leave = false) {
   if (t.video) { releasePlayers(t.el); t.video = null; }
   copyObs?.unobserve(t.el);
   cardObs?.unobserve(t.el);
   copyJobs.delete(t.el);
-  t.el.remove();
+  if (!leave || !exitTile(t.el)) t.el.remove();
+}
+
+/**
+ * A deleted tile on screen fades and shrinks out rather than vanishing, as the
+ * canvas plays an exit for the same delete. False when there is nothing to see:
+ * off screen, or motion flattened by the Quality dial. Reduced motion keeps
+ * the fade and drops the shrink.
+ */
+function exitTile(el: HTMLElement): boolean {
+  const ms = fastMs();
+  if (!root || !(ms > 0) || typeof el.animate !== 'function') return false;
+  const box = el.getBoundingClientRect();
+  const view = root.getBoundingClientRect();
+  if (box.bottom < view.top || box.top > view.bottom) return false;
+  // Inert at once: a press on a leaving tile must not open what was deleted.
+  el.inert = true;
+  const frames = reducedMotion()
+    ? [{ opacity: 1 }, { opacity: 0 }]
+    : [{ opacity: 1, scale: '1' }, { opacity: 0, scale: '0.96' }];
+  const run = el.animate(frames, { duration: ms, easing: readToken('--ease') || 'ease', fill: 'forwards' });
+  const gone = () => el.remove();
+  run.addEventListener('finish', gone);
+  run.addEventListener('cancel', gone);
+  return true;
 }
 
 /** Leave the Feed: release every clip and clear the wall. */

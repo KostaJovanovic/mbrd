@@ -7,7 +7,7 @@
 // initStickerWindow() or a handler that runs after it.
 
 import { readPrefJSON, writePref } from '../prefs.ts';
-import { div, markClosed } from '../util.ts';
+import { div, markClosed, readToken } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
 import { bus, wouldStick, byId } from '../state.ts';
 import { queryAround } from '../canvas/spatial.ts';
@@ -21,6 +21,7 @@ import {
 } from '../stickers/catalogue.ts';
 import type { Sticker } from '../stickers/catalogue.ts';
 import type { Viewport } from '../canvas/viewport.ts';
+import { baseMs, fastMs, travelMs } from '../canvas/viewport.ts';
 
 /**
  * What this window asks of the command surface: one verb. Handed in rather
@@ -61,6 +62,8 @@ type TileDrag = {
   x: number,
   y: number,
   ghost: HTMLElement | null,
+  /** Where on the tile it was taken hold of, from the tile's middle: the ghost keeps it under the finger. */
+  grab: { x: number, y: number },
 };
 let drag: TileDrag | null = null;
 
@@ -338,11 +341,15 @@ function startTileDrag(e: PointerEvent, entry: Sticker) {
   // one target a handler can be sure of.
   const el = e.currentTarget as HTMLElement;
   el.setPointerCapture?.(e.pointerId);
-  drag = { entry, el, id: e.pointerId, x: e.clientX, y: e.clientY, ghost: null };
+  const r = el.getBoundingClientRect();
+  const grab = { x: e.clientX - (r.left + r.width / 2), y: e.clientY - (r.top + r.height / 2) };
+  drag = { entry, el, id: e.pointerId, x: e.clientX, y: e.clientY, ghost: null, grab };
   // Where the pointer last was, for the edge loop, which pans the board while
   // the shape is held at an edge and asks again what it would stick to.
   let at = { x: e.clientX, y: e.clientY };
   let stopEdge: (() => void) | null = null;
+  // The shape's middle, which is where it lands and what it asks to stick to.
+  const mid = (x: number, y: number) => ({ x: x - grab.x, y: y - grab.y });
 
   const move = (ev: PointerEvent) => {
     if (!drag || ev.pointerId !== drag.id) return;
@@ -363,21 +370,25 @@ function startTileDrag(e: PointerEvent, entry: Sticker) {
       if (vp) {
         stopEdge = startEdgePan(vp, {
           point: () => at,
-          onPan: () => showStickTarget(hostUnderPointer(at.x, at.y)),
+          onPan: () => { const p = mid(at.x, at.y); showStickTarget(hostUnderPointer(p.x, p.y)); },
           needsEntry: true,
         });
       }
     }
-    placeGhost(ev.clientX, ev.clientY);
-    showStickTarget(hostUnderPointer(ev.clientX, ev.clientY));
+    const m = mid(ev.clientX, ev.clientY);
+    placeGhost(m.x, m.y);
+    showStickTarget(hostUnderPointer(m.x, m.y));
   };
 
   const end = (ev: PointerEvent) => {
     if (!drag || ev.pointerId !== drag.id) return;
     stopEdge?.();
     const { ghost } = drag;
-    const dropped = ev.type === 'pointerup' && ghost && overBoard(ev.clientX, ev.clientY);
-    ghost?.remove();
+    const m = mid(ev.clientX, ev.clientY);
+    const dropped = ev.type === 'pointerup' && ghost && overBoard(m.x, m.y);
+    // Landed, it settles into the sticker's box there; let go anywhere else it
+    // goes back to its tile, if the pad is still on screen, or shrinks away.
+    if (ghost) settleGhost(ghost, dropped ? landingBox(m) : tileBox(drag.el));
     // The window may have closed under this tile already, and releasing a
     // pointer the element no longer captures throws rather than no-opping.
     try { drag.el.releasePointerCapture?.(ev.pointerId); } catch { /* already gone */ }
@@ -388,7 +399,7 @@ function startTileDrag(e: PointerEvent, entry: Sticker) {
     removeEventListener('pointercancel', end);
     if (dropped) {
       lastCategory = entry.cat;
-      cmds!.addStickerAt(entry.id, vp!.toWorld(ev.clientX, ev.clientY));
+      cmds!.addStickerAt(entry.id, vp!.toWorld(m.x, m.y));
     }
     // Never moved: this was a tap, and a tap arms.
     else if (!ghost && ev.type === 'pointerup') arm(entry);
@@ -408,10 +419,50 @@ function makeGhost(entry: Sticker) {
   return el;
 }
 
-function placeGhost(clientX: number, clientY: number) {
-  if (!drag?.ghost) return;
-  drag.ghost.style.left = `${clientX}px`;
-  drag.ghost.style.top = `${clientY}px`;
+/** Put the ghost's middle at this screen point, by `translate`: the compositor moves it, not layout. */
+function placeGhost(cx: number, cy: number) {
+  const g = drag?.ghost;
+  if (!g) return;
+  g.style.translate = `${cx - g.offsetWidth / 2}px ${cy - g.offsetHeight / 2}px`;
+}
+
+/** Where a ghost settles: a box's middle on screen, and its width. */
+type GhostBox = { cx: number, cy: number, w: number };
+
+/** The tile a shape came from, if the pad is still on screen to go back to. */
+function tileBox(el: HTMLElement): GhostBox | null {
+  if (!el.isConnected) return null;
+  const r = el.getBoundingClientRect();
+  if (!r.width || r.right < 0 || r.left > innerWidth) return null;
+  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, w: r.width };
+}
+
+/** The box a sticker dropped with its middle at `m` will have on screen. */
+function landingBox(m: { x: number, y: number }): GhostBox | null {
+  return vp ? { cx: m.x, cy: m.y, w: defaultSize('sticker').w * vp.zoom } : null;
+}
+
+/**
+ * The ghost let go of: settled into `to` and faded as it arrives, so it hands
+ * over to the sticker (whose own entrance plays there, canvas/items.ts) or to
+ * the tile, rather than vanishing. With nowhere to go it shrinks away where it
+ * is; with motion reduced it is simply gone.
+ */
+function settleGhost(g: HTMLElement, to: GhostBox | null) {
+  const ms = baseMs();
+  if (!(travelMs() > 0) || !(ms > 1) || typeof g.animate !== 'function' || !g.offsetWidth) return void g.remove();
+  const w = g.offsetWidth, h = g.offsetHeight;
+  const from = g.style.translate || '0px 0px';
+  const end = to
+    ? { translate: `${to.cx - w / 2}px ${to.cy - h / 2}px`, scale: `${to.w / w}` }
+    : { translate: from, scale: '0.6' };
+  const opacity = getComputedStyle(g).opacity;
+  g.animate([
+    { translate: from, scale: '1', opacity },
+    { opacity, offset: 0.6 },
+    { ...end, opacity: 0 },
+  ], { duration: to ? ms : fastMs(), easing: readToken('--ease') || 'ease-out', fill: 'forwards' })
+    .finished.then(() => g.remove(), () => g.remove());
 }
 
 /** Is this screen point over the board rather than over the app's chrome? */

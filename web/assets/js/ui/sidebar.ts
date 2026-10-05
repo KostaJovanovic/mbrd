@@ -11,7 +11,7 @@ import { runCommand } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import { buildPanel, paintPanel } from './panel.ts';
 import { touchSliders } from './controls.ts';
-import { travelMs } from '../canvas/viewport.ts';
+import { baseMs, reducedMotion } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import { paintTitleField, wireTitleField } from './board-title.ts';
 
@@ -254,7 +254,9 @@ function panFor(opening: boolean): void {
   if (!view || !sidebar || view.isMobile || panelFillsScreen()) return;
   const reach = panelReach(sidebar);
   const dx = (opening ? reach : -reach) / 2;
-  view.viewTo({ x: view.pan.x - dx / view.zoom, y: view.pan.y }, view.zoom, travelMs());
+  // The panel's own --dur-base, so the board lands with it rather than drifting
+  // on after (audit 10-05 #12). Held still under reduced motion, as travelMs() was.
+  view.viewTo({ x: view.pan.x - dx / view.zoom, y: view.pan.y }, view.zoom, reducedMotion() ? 0 : baseMs());
 }
 
 /**

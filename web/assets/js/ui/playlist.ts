@@ -16,6 +16,7 @@ import {
   PAUSE_ICON, PLAY_ICON,
 } from '../media/transport.ts';
 import { mobileOrder, applyAudioOrder } from '../arrange/arrangements.ts';
+import { cue } from '../cuelume/engine.ts';
 import { assetURL, getAsset, addFile } from '../storage/assets.ts';
 import { nowPlaying, onNowPlaying } from '../canvas/audio.ts';
 import { edgeSpeed, EDGE_MAX } from '../canvas/edge-pan.ts';
@@ -317,6 +318,11 @@ function refreshActions() {
     g.shuffle.classList.toggle('is-on', shuffling);
     g.shuffle.setAttribute('aria-pressed', String(shuffling));
   }
+  // The row's equalizer freezes with the sound: pause and ended never reach
+  // markPlaying(), which follows only onNowPlaying.
+  for (const v of [mobileView, windowView]) {
+    v?.listEl.querySelector('.pl-row.is-playing')?.classList.toggle('is-paused', !playing);
+  }
 }
 
 function makeActions() {
@@ -594,6 +600,9 @@ function beginDrag(e: PointerEvent, view: View, r: Row, grip: HTMLElement) {
   if (from < 0) return;
   e.preventDefault();
   cancelHold();
+  // Grabbed mid-settle, the row stays where it is drawn: its live offset goes
+  // into the grab, so cancelling the settle below moves nothing under the finger.
+  const drawn = Number.parseFloat(getComputedStyle(r.el).translate.split(' ')[1] ?? '') || 0;
   // Measured at rest: a row still sliding from the last drop would be read
   // where it is drawn instead of where it stands.
   for (const row of rows) {
@@ -606,8 +615,9 @@ function beginDrag(e: PointerEvent, view: View, r: Row, grip: HTMLElement) {
     view, rowEl: r.el, pointerId: e.pointerId, rows,
     tops: boxes.map(b => b.top - top),
     heights: boxes.map(b => b.height),
-    from, to: from, grab: e.clientY - top, dy: 0, lastY: e.clientY, frame: 0, at: 0, spill: 0,
+    from, to: from, grab: e.clientY - top - drawn, dy: drawn, lastY: e.clientY, frame: 0, at: 0, spill: 0,
   };
+  r.el.style.translate = drawn ? `0 ${drawn}px` : '';
   list.classList.add('is-sorting');
   r.el.classList.add('is-dragging');
   grip.setPointerCapture?.(e.pointerId);
@@ -616,7 +626,17 @@ function beginDrag(e: PointerEvent, view: View, r: Row, grip: HTMLElement) {
   addEventListener('pointermove', onDragMove);
   addEventListener('pointerup', endDrag);
   addEventListener('pointercancel', endDrag);
+  addEventListener('keydown', onDragKey, true);
   drag.frame = requestAnimationFrame(dragFrame);
+  cue('pick');
+}
+
+// Escape puts the row back; the settle flies it home from the live offset.
+function onDragKey(e: KeyboardEvent) {
+  if (!drag || e.key !== 'Escape') return;
+  e.stopPropagation();
+  markClosed(e);
+  finishDrag(false);
 }
 
 function onDragMove(e: PointerEvent) {
@@ -684,6 +704,7 @@ function finishDrag(commit: boolean) {
   removeEventListener('pointermove', onDragMove);
   removeEventListener('pointerup', endDrag);
   removeEventListener('pointercancel', endDrag);
+  removeEventListener('keydown', onDragKey, true);
   const { rowEl, rows, from } = d;
   const to = commit ? d.to : from;
   const list = d.view.listEl;
@@ -703,7 +724,10 @@ function finishDrag(commit: boolean) {
     else order[order.length - 2].after(rowEl);
   }
   settle(rowEl, was - rowEl.getBoundingClientRect().top, lift);
-  if (to !== from) setListedOrder(order.map(row => row.dataset.id ?? ''));
+  if (to !== from) {
+    cue('tap');
+    setListedOrder(order.map(row => row.dataset.id ?? ''));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1250,7 +1274,7 @@ function makePlayer(): Player {
   function refresh() {
     const s = queueEl();
     const playing = !!s && !s.paused;
-    // Wave flattens to a straight line when paused (chrome.css).
+    // Paused, the wave cross-fades into a straight line (mobile.css).
     el.classList.toggle('is-paused', !playing);
     playBtn.querySelector('.pw-ico')!.innerHTML = playing ? PAUSE_ICON : PW_PLAY_ICON;
     playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');

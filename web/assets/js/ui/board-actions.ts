@@ -428,6 +428,24 @@ function obstacleBox(item: Item, step: number): Obstacle {
 }
 
 /**
+ * The toast's Undo for a move, sliding the cards back the way they came as
+ * the Undo command does. history.ts builds the button but may not reach
+ * canvas/, so the slide is wrapped round it here.
+ */
+function slidUndo(ids: readonly string[]) {
+  const action = undoAction();
+  if (!action) return undefined;
+  return {
+    ...action,
+    run: () => {
+      const seen = seenPlaces(ids);
+      action.run();
+      slideFrom(seen, travelMs());
+    },
+  };
+}
+
+/**
  * The title card, if Rearrange is to keep every card below it now.
  *
  * The setting is 'on', 'off', or - until somebody flips it - 'auto', which
@@ -831,7 +849,7 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     beforeAll, free.map(g => g.id), mobile ? { preservePresnap: true } : {});
   // A receipt with an Undo, since a whole board laid out anew is the change
   // most worth taking back at once - and the view is about to fly off it.
-  if (done) toast(`Rearranged ${free.length} item${free.length === 1 ? '' : 's'}`, '', undoAction());
+  if (done) toast(`Rearranged ${free.length} item${free.length === 1 ? '' : 's'}`, '', slidUndo(items.map(i => i.id)));
   slideFrom(seen, travelMs());
   // A whole-board layout rebuilds around the origin, so the view has to follow
   // it there or the rearrangement happens off screen. Free is the exception:
@@ -957,7 +975,7 @@ export function nudgeBoard() {
     }
   }
   const done = commitGeom('Nudge board', before, changed.map(it => it.id));
-  if (done) toast(`Nudged ${changed.length} item${changed.length === 1 ? '' : 's'} apart`, '', undoAction());
+  if (done) toast(`Nudged ${changed.length} item${changed.length === 1 ? '' : 's'} apart`, '', slidUndo(before.map(g => g.id)));
   slideFrom(seen, travelMs());
 }
 

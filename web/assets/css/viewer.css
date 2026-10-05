@@ -208,6 +208,14 @@
 #viewer[data-media] .viewer-media.is-panning { cursor: grabbing; }
 /* A clip keeps its controls — no zoom cursor, no drag claim. */
 #viewer[data-media] video.viewer-media { cursor: default; }
+/* The picture a swipe carried off, laid over the stage where it was for its
+   slide out while the next one comes in (ui/viewer.ts slide()). */
+.viewer-slide {
+  position: absolute;
+  margin: 0;
+  object-fit: contain;
+  pointer-events: none;
+}
 
 /* A text read is a page: as tall as the window allows and no wider than A4
    for that height, narrower still where the window is (a phone). The text

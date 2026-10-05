@@ -430,11 +430,13 @@
   color: var(--ink-3);
 }
 
-/* Ghost following the pointer out of the window. */
+/* Ghost following the pointer out of the window. Placed by an inline
+   `translate` from the corner (moveGhost(), ui/drawer.ts), never by left/top. */
 #drawer-ghost {
   position: fixed;
+  left: 0;
+  top: 0;
   z-index: var(--z-menu);
-  translate: -50% -50%;
   pointer-events: none;
   opacity: 0.9;
   rotate: -4deg;

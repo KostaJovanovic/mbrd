@@ -1204,12 +1204,20 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
         cue('pick');
         swap(entry.sub ? subMenu(entry.sub, entries) : entry.to!);
       });
-      // Hover also opens the child — click is kept for touch/keyboard.
+      // Hover also opens the child — click is kept for touch/keyboard. From
+      // nothing open it waits a beat, so a pointer running down the menu does
+      // not pop every fold it crosses; from another fold it swaps at once, with
+      // no entrance, since one panel replacing another has nowhere to arrive from.
       if (entry.sub) {
         btn.addEventListener('pointerenter', e => {
           if (e.pointerType !== 'mouse') return;
-          openChild(btn, entry.sub!, panel, entry.label);
+          clearTimeout(dwellTimer);
+          if (child) { openChild(btn, entry.sub!, panel, entry.label, childRow !== btn); return; }
+          dwellTimer = setTimeout(() => {
+            if (btn.isConnected) openChild(btn, entry.sub!, panel, entry.label);
+          }, DWELL_MS);
         });
+        btn.addEventListener('pointerleave', () => clearTimeout(dwellTimer));
       }
     } else {
       // Hovering past a fold's row closes its child (only from the parent
@@ -1253,10 +1261,16 @@ let leftAt: { x: number, y: number } | null = null;
 /** How long the pointer may be over neither panel before the child gives up. */
 const CHILD_GRACE_MS = 220;
 
+/** How long a fold row is hovered before its child opens from a closed state:
+ *  long enough to pass over, short enough to read as a response (macOS). */
+const DWELL_MS = 90;
+let dwellTimer = 0;
+
 /** `animate` false for page turns (swap) — no exit animation on drill-down. */
 function closeChild(animate = true) {
   clearTimeout(childTimer);
   childTimer = 0;
+  clearTimeout(dwellTimer);
   if (child) {
     if (animate) dismiss(child); else child.remove();
   }
@@ -1299,10 +1313,12 @@ function aimingAtChild(x: number, y: number): boolean {
   return !((s1 < 0 || s2 < 0 || s3 < 0) && (s1 > 0 || s2 > 0 || s3 > 0));
 }
 
-function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, label?: string) {
+/** `instant` for a swap from another open fold: the old one goes and the new one
+ *  is there, with no exit or entrance between them (.is-instant, menu.css). */
+function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, label?: string, instant = false) {
   // Pointer came back within grace period — cancel the close, not a reopen.
   if (childRow === row && child) { clearTimeout(childTimer); childTimer = 0; return; }
-  closeChild();
+  closeChild(!instant);
   // Grace period can leave a child animating out while a new one opens — flush it.
   flushLeaving();
   child = document.createElement('div');
@@ -1311,6 +1327,7 @@ function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, la
   // Entry label, not row text — row may include a <kbd> accelerator.
   child.setAttribute('aria-label', label || row.textContent?.trim() || 'More');
   child.tabIndex = -1;
+  if (instant) child.classList.add('is-instant');
   fillPanel(child, entries);
   child.style.visibility = 'hidden';
   panelHost().append(child);

@@ -18,12 +18,13 @@ import {
   addItems,
   snapshotGeom, applyGeom, commitGeom,
   declareOp, registerOp,
-  isContent, rolledAway, rolledFences, fenceFollowers, connectedTo,
+  isContent, rolledAway, rolledFences, fenceFollowers, connectedTo, travelling,
 } from './state.ts';
 import { kindName } from './canvas/item-dom.ts';
 import { alignTargets, distributeTargets, matchSizeTargets, separateOverlaps } from './geometry.ts';
 import { isPicture } from './canvas/picture-shape.ts';
-// Needed here for zoomToSelection; the rest of the camera is in commands/view.ts.
+// Needed here for zoomToSelection and slid(); the rest of the camera is in
+// commands/view.ts.
 import { travelMs } from './canvas/viewport.ts';
 import { pickFiles, addNote, addSwatch, addLink, addSticker, addStyleTile } from './import/drop.ts';
 import { linkURL, linkTyped, SWATCH_DEFAULT, defaultSize } from './canvas/renderers.ts';
@@ -52,7 +53,7 @@ import {
   isPanelOpen as isHeaderPanelOpen,
 } from './ui/mobile-header.ts';
 import { composeNote, editNoteInComposer } from './canvas/notes.ts';
-import { editFontText } from './canvas/items.ts';
+import { editFontText, mountedIds, seenPlaces, slideFrom } from './canvas/items.ts';
 import { editLinkProps } from './ui/link-props.ts';
 import { editTitleCard } from './ui/board-title.ts';
 import { armClear, nudgeBoard, rearrange } from './ui/board-actions.ts';
@@ -162,6 +163,20 @@ function distributeIds(ids: string[], axis: 'x' | 'y') {
   declareOp('distribute', { ids, axis });
   applyGeom(distributeTargets(items, axis));
   commitGeom(axis === 'x' ? 'Distribute across' : 'Distribute down', before, ids);
+}
+
+/**
+ * Run a change that moves cards and slide the ones on screen from where they
+ * stood, as Rearrange does, so a change and its reverse travel the same path
+ * instead of teleporting. Here rather than in history.ts, which may not reach
+ * canvas/. Only at the command entries: the registered ops above are also what
+ * a Timeline replay runs, and that animates the view instead.
+ */
+function slid<T>(ids: readonly string[], change: () => T): T {
+  const seen = seenPlaces(ids);
+  const out = change();
+  slideFrom(seen, travelMs());
+  return out;
 }
 
 /** Register runners so the timeline can replay these ops. Runners mutate without committing. */
@@ -355,7 +370,8 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
         top: 'Align top', bottom: 'Align bottom', vcenter: 'Align middle' };
       const label = labels[edge] || 'Align';
       // separateOverlaps spreads collisions along the perpendicular axis.
-      alignIds(ids, edge, label);
+      // travelling(): the riders move too, and slide with their cards.
+      slid(travelling(ids), () => alignIds(ids, edge, label));
     },
     distributeSelection: (axis: 'x' | 'y') => {
       if (board.layoutMode === 'mobile') { toast('Spacing out is a canvas thing'); return; }
@@ -363,7 +379,8 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       const items = board.items.filter(i =>
         selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i) && !isLocked(i));
       if (items.length < 3) { toast('Pick three or more cards to space out'); return; }
-      distributeIds(items.map(i => i.id), axis);
+      const ids = items.map(i => i.id);
+      slid(travelling(ids), () => distributeIds(ids, axis));
     },
     /** The card the menu was opened on is the measure; the same exclusions. */
     matchSizeSelection: (ref: string, axis: 'w' | 'h') => {
@@ -374,7 +391,9 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
         toast('Pick two or more cards, then open the menu on the one to match');
         return;
       }
-      matchSizeIds(items.map(i => i.id), ref, axis);
+      // The size still jumps; a card whose centre moves with it slides.
+      const ids = items.map(i => i.id);
+      slid(travelling(ids), () => matchSizeIds(ids, ref, axis));
     },
 
     // Routed through cmds so canvas/input.ts can open it without importing ui/.
@@ -453,7 +472,10 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       }
       select([id], true);
     },
-    undo, redo,
+    // Every mounted card, since the history cannot say what a step touched;
+    // seenPlaces() keeps the ones on screen and gives up past its cap.
+    undo: () => slid(mountedIds(), undo),
+    redo: () => slid(mountedIds(), redo),
     deleteSelection: () => {
       if (!selection.size) return;
       removeItems([...selection]);

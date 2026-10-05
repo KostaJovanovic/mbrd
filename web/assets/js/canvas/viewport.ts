@@ -947,6 +947,35 @@ export class Viewport {
     this.apply();
   }
 
+  /**
+   * Zoom to a pinch's `raw` total about (clientX, clientY). Inside the limits it
+   * is that zoom; past one the board gives on a diminishing band (give(), in
+   * log space, so at most twice past the limit) rather than stopping dead under
+   * fingers that are still spreading. settleZoom() takes it back on release.
+   */
+  pinchTo(clientX: number, clientY: number, raw: number) {
+    if (this.zoomLocked || this.isMobile) return;
+    this.stopAnim();
+    const limit = raw > MAX_ZOOM ? MAX_ZOOM : raw < MIN_ZOOM ? MIN_ZOOM : 0;
+    const z = limit ? limit * Math.exp(give(Math.log(raw / limit), Math.LN2)) : raw;
+    if (!(z > 0) || z === this.zoom) return;
+    const w = this.toWorld(clientX, clientY);
+    const sx = clientX - this.left - this.cx;
+    const sy = clientY - this.top - this.cy;
+    this.pan.x = w.x - sx / z;
+    this.pan.y = w.y + sy / z;
+    this.zoom = z;
+    this.apply();
+  }
+
+  /** Bring a zoom pinchTo() left past a limit back to it, about the given
+   *  point, over zoomMs() (a snap under reduced motion). Nothing otherwise. */
+  settleZoom(clientX: number, clientY: number) {
+    const z = clamp(this.zoom, MIN_ZOOM, MAX_ZOOM);
+    if (z === this.zoom || this.isMobile) return;
+    this.zoomAnimAt(clientX, clientY, z / this.zoom, zoomMs());
+  }
+
   setView(pan: Partial<Point> | null | undefined, zoom?: number) {
     this.stopAnim();
     // Number() rather than a unary plus, which is the same conversion written
@@ -968,8 +997,10 @@ export class Viewport {
   // -------------------------------------------------------------------------
   // Animated moves
   //
-  // Only ever driven by a deliberate command - a button, a keyboard shortcut,
-  // "zoom to this item". Direct manipulation (drag, wheel, pinch) stays
+  // Driven by a deliberate step - a button, a keyboard shortcut, "zoom to this
+  // item" - and by a mouse-wheel notch, which is the same discrete step as + and
+  // - from another device: cut, a 17% jump gives no idea which way the board
+  // went. Continuous manipulation (drag, pinch, a pad's two-finger stream) stays
   // instantaneous, because a hand on the board should never feel like it is
   // dragging the view through syrup; every one of those paths calls stopAnim()
   // so grabbing the canvas mid-flight takes over immediately.

@@ -39,7 +39,7 @@ function sweepOnEnd(node: Element): void {
 
 /** Take back an exit still playing: its card has come back (an undo inside
  *  the exit's few hundred ms), and the ghost would fall over the card itself.
- *  The clone keeps the card's data-id - see canvas/item-dom.ts. */
+ *  The ghost's wrapper carries the card's data-id - see flyOut(). */
 export function cancelExit(id: string): void {
   if (typeof document === 'undefined') return;
   const layer = document.getElementById('exit-layer');
@@ -62,7 +62,17 @@ function dropChip() {
   sweepOnEnd(chip);
 }
 
-export function flyOut(el: HTMLElement | null | undefined): void {
+/**
+ * Play `el`'s exit from where it stands on screen. `zoom` is the board's, which
+ * the clone needs because it leaves the world's own scale behind.
+ *
+ * The clone keeps its board size, lean and inline transform (the card's rot and
+ * device snap) and is scaled by the zoom, so its first frame is the card. The
+ * exit keyframes animate `transform` and play on a wrapper round it, centred on
+ * the card, so they compose over all of that instead of replacing it: a turned
+ * card leaves turned, and the contents never reflow to the screen box.
+ */
+export function flyOut(el: HTMLElement | null | undefined, zoom = 1): void {
   if (!el?.isConnected) return;
   const rect = el.getBoundingClientRect();
   if (rect.width === 0 || rect.height === 0) return;
@@ -75,14 +85,24 @@ export function flyOut(el: HTMLElement | null | undefined): void {
   g.classList.remove('is-selected', 'is-stick-target');
   for (const m of g.querySelectorAll('video, audio, iframe')) m.removeAttribute('src');
 
-  g.style.position = 'fixed';
+  const w = el.offsetWidth, h = el.offsetHeight;
+  g.style.position = 'absolute';
   g.style.margin = '0';
-  g.style.left = rect.left + 'px';
-  g.style.top = rect.top + 'px';
-  g.style.width = rect.width + 'px';
-  g.style.height = rect.height + 'px';
+  g.style.left = -w / 2 + 'px';
+  g.style.top = -h / 2 + 'px';
+  g.style.width = w + 'px';
+  g.style.height = h + 'px';
+  g.style.scale = String(zoom);
 
-  g.classList.add('exit-anim', 'exit-' + kind);
-  exitLayer().append(g);
-  sweepOnEnd(g);
+  // A zero-size box on the card's centre, so the keyframes pivot about it.
+  const wrap = document.createElement('div');
+  wrap.className = 'exit-anim exit-' + kind;
+  // cancelExit() finds the ghost by this.
+  if (el.dataset.id) wrap.dataset.id = el.dataset.id;
+  wrap.style.position = 'fixed';
+  wrap.style.left = rect.left + rect.width / 2 + 'px';
+  wrap.style.top = rect.top + rect.height / 2 + 'px';
+  wrap.append(g);
+  exitLayer().append(wrap);
+  sweepOnEnd(wrap);
 }

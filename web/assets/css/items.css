@@ -83,6 +83,26 @@
   --lift: 0px;
   --grow: 1;
 }
+/* A finger held on a card (setPressing(), canvas/items.ts): a slow shrink that
+   lands as the long-press menu opens, so a hold that is working shows it. The
+   rest of the 480ms LONG_PRESS_MS after the 120ms the class waits. Letting go
+   springs back on the card's own --ease-back. Derived from --btn-press, so
+   Harsh (1) holds still. The shadow and ring twins carry the same rule. */
+.item.is-pressing {
+  --grow: max(0.96, calc(1 - (1 - var(--btn-press)) * 1.67));
+  transition: box-shadow var(--dur-base) var(--ease),
+              translate var(--dur-base) var(--ease-back),
+              rotate var(--dur-base) var(--ease-back),
+              scale 360ms var(--ease),
+              opacity var(--dur-base) var(--ease);
+}
+.item-shadow.is-pressing {
+  --sh-grow: max(0.96, calc(1 - (1 - var(--btn-press)) * 1.67));
+  transition: translate var(--dur-base) var(--ease-back),
+              scale 360ms var(--ease),
+              rotate var(--dur-base) var(--ease-back),
+              opacity var(--dur-base) var(--ease);
+}
 
 /* The pin glyph, drawn into the pin badge (.item-pin, item-chrome.css) as a
    mask so it takes the badge's colour. */

@@ -159,13 +159,16 @@
 /* Always visible in the favourites row: the star is the way to unpin. */
 .sticker-tile.is-favourite .sticker-fav { opacity: 1; }
 
-/* Ghost following the pointer. Centred on the cursor where the sticker will land. */
+/* Ghost following the pointer, its middle where the sticker will land. Placed
+   by an inline `translate` from the corner (placeGhost(), ui/sticker-window.ts),
+   never by left/top. */
 .sticker-ghost {
   position: fixed;
+  left: 0;
+  top: 0;
   z-index: var(--z-menu);
   width: 64px;
   height: 64px;
-  margin: -32px 0 0 -32px;
   pointer-events: none;
   opacity: 0.9;
   rotate: -6deg;
