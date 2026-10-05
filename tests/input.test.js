@@ -342,7 +342,8 @@ test('a drag with nothing to carry is not entered at all', async () => {
     'startMove() builds a gesture out of an empty snapshot again');
   // The id's local name isn't the point (it's `cardId` in the cascade now) -
   // what matters is that the call's result is checked.
-  assert.match(src, /const move = startMove\(e, \w+\);[\s\S]{0,400}?if \(!move\) startPan\(e\);/,
+  // A third argument is Alt's "take hold of the note itself" - see startMove().
+  assert.match(src, /const move = startMove\(e, \w+(?:, \w+)?\);[\s\S]{0,400}?if \(!move\) startPan\(e\);/,
     'the press branch stopped checking whether startMove() found anything');
 });
 

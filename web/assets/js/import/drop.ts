@@ -598,7 +598,7 @@ export async function importFiles(
     });
     if (answer === 'go') {
       for (const f of boards) await mergeBoardFile(f);
-      files = files.filter(f => !boards.includes(f as File));
+      files = files.filter(f => !isFile(f) || !boards.includes(f));
       if (!files.length) return [];
     }
   }
