@@ -7,8 +7,9 @@
 import {
   byId, itemAdjust, itemCrop, itemFlip, itemMatte, itemRotate,
   setItemAdjust, setItemCrop, setItemFlip, setItemMatte, setItemRotate, MIN_CROP,
-  isLocked, snapshotGeom, applyGeom, commitGeom,
+  isLocked, snapshotGeom, applyGeom, commitGeom, commit, lastCommand, takeBack,
 } from '../state.ts';
+import type { Command } from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
 import { shownHash } from '../board-model.ts';
 import { cutout, matteAvailable } from '../canvas/matte.ts';
@@ -532,9 +533,10 @@ function resized(from: Rect, handle: Handle, dx: number, dy: number): Rect {
 const clamp01 = (v: number, size: number) => Math.min(Math.max(0, v), 1 - size);
 
 /**
- * Write every edit and close. Five separate calls, up to five history
- * entries - they're independent edits, and state.ts drops writes that change
- * nothing, so a crop-only session doesn't announce it also touched the grade.
+ * Write every edit and close. Five separate calls, each its own entry as it
+ * lands - state.ts drops writes that change nothing, so a crop-only session
+ * doesn't claim it also touched the grade - and then folded into one, so a
+ * sitting is one Ctrl+Z however many of the five it changed.
  */
 function apply() {
   const id = openId;
@@ -542,19 +544,45 @@ function apply() {
   const was = itemCrop(byId(id)) || { ...FULL };
   const wasTurn = itemRotate(byId(id)) || 0;
   const full = rect.x <= 0 && rect.y <= 0 && rect.w >= 1 && rect.h >= 1;
-  setItemCrop(id, full ? null : rect);
-  setItemRotate(id, turn || null);
-  // Card follows crop and turn, checked after both writes. Turn is in the test
-  // because a quarter turn changes the card's shape without touching `rect` at
-  // all - a crop-only check missed exactly that case.
-  if (was.w !== rect.w || was.h !== rect.h || wasTurn !== turn) refitCard(id);
-  const neutral = GRADE.every(k => grade[k] === 1);
-  setItemAdjust(id, neutral ? null : grade);
-  // Mirror gets its own history entry, same argument as above. Null rather
-  // than two falses, so flip-and-flip-again leaves no key.
-  setItemFlip(id, flip.x || flip.y ? flip : null);
-  setItemMatte(id, matte);
+  asOneStep('Edit picture', [
+    () => setItemCrop(id, full ? null : rect),
+    () => setItemRotate(id, turn || null),
+    // Card follows crop and turn, checked after both writes. Turn is in the
+    // test because a quarter turn changes the card's shape without touching
+    // `rect` at all - a crop-only check missed exactly that case.
+    () => { if (was.w !== rect.w || was.h !== rect.h || wasTurn !== turn) refitCard(id); },
+    () => setItemAdjust(id, GRADE.every(k => grade[k] === 1) ? null : grade),
+    // Null rather than two falses, so flip-and-flip-again leaves no key.
+    () => setItemFlip(id, flip.x || flip.y ? flip : null),
+    () => setItemMatte(id, matte),
+  ]);
   dlg!.close();
+}
+
+/**
+ * Run each write, then put whatever entries they made back as one. A single
+ * entry keeps its own label ("Crop" says more than "Edit picture"); two or
+ * more are withdrawn top first and committed again together, the way an
+ * Alt+drag folds its copy and its move (canvas/input.ts foldCopy()).
+ */
+function asOneStep(label: string, writes: (() => void)[]) {
+  const made: Command[] = [];
+  for (const write of writes) {
+    const was = lastCommand();
+    write();
+    const now = lastCommand();
+    if (now && now !== was) made.push(now);
+  }
+  if (made.length < 2) return;
+  for (const cmd of [...made].reverse()) {
+    // Something else on top: leave the entries as they are rather than fold
+    // around it.
+    if (!takeBack(cmd)) return;
+  }
+  commit(label,
+    () => { for (const cmd of made) cmd.redo(); },
+    () => { for (const cmd of [...made].reverse()) cmd.undo(); },
+    made.reduce((sum, cmd) => sum + cmd.weight, 0));
 }
 
 /**
