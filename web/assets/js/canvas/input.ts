@@ -13,7 +13,9 @@ import {
   travelling, isFence, isLocked, dragRoot, isPinned, isSticky, stuckTo, resettle,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
   baseStep, timelinePlaying, fenceAt, lastCommand,
+  duplicateInPlace, takeBack, commit,
 } from '../state.ts';
+import type { Command } from '../state.ts';
 import { baseMs, reducedMotion, zoomMs } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 import {
@@ -1100,6 +1102,11 @@ type MoveGesture = {
   // the only two fields of a mode that enter() does not lay down.
   additive?: boolean,
   wasSelected?: boolean,
+  // Alt held at the press, on a mouse: the drag carries a copy and leaves the
+  // originals. `copied` is the Duplicate entry once the copy is made, at the
+  // slop, so the release can fold it and the move into one step.
+  alt?: boolean,
+  copied?: Command | null,
 };
 
 /** One item's whole geometry, which is what a resize writes for each of them. */
@@ -1745,14 +1752,18 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    * itself already does - so the two presses that mean the same thing now
    * behave the same way.
    */
-  function startMove(e: PointerEvent, id: string): MoveGesture | null {
+  function startMove(e: PointerEvent, id: string, own = false): MoveGesture | null {
     // The top of the pile an id sits in, or the id itself when it sits in none
     // and when the board no longer has it. Written out rather than
     // `dragRoot(byId(sid))?.id ?? sid`, which said the same thing by leaning on
     // dragRoot() being total on a missing item.
+    //
+    // `own`: Alt on a stuck note, which takes hold of the note itself and not
+    // its host - the way off a card other than Unstick. The drop decides what
+    // it is stuck to, as any drop does.
     const rootOf = (sid: string) => {
       const it = byId(sid);
-      return it ? dragRoot(it).id : sid;
+      return it && !own ? dragRoot(it).id : sid;
     };
     // A pinned item is not what a press on it takes hold of - its host is. The
     // pile reads as one object under the pointer: press the photograph or press
@@ -1831,6 +1842,31 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // Handed back so the press that started it can write what it found onto the
     // standing gesture - see the move branch of onDown().
     return move;
+  }
+
+  /**
+   * Alt+drag: copy what the drag has hold of where it stands, and hand the
+   * drag the copies, so the originals stay put with everything they belong to -
+   * their lines out, their tour stop, their place in the playlist - and the
+   * copy is what travels. The copy is one undo entry until the release folds it
+   * into the move (see releaseGesture()).
+   */
+  function carryCopies(drag: MoveGesture) {
+    const was = lastCommand();
+    const copyOf = duplicateInPlace(drag.driven);
+    const made = lastCommand();
+    if (!copyOf.size || made === was) return;
+    const to = (id: string) => copyOf.get(id) ?? id;
+    drag.copied = made;
+    drag.id = to(drag.id);
+    drag.lead = to(drag.lead);
+    drag.driven = drag.driven.map(to);
+    drag.moving = drag.moving.map(to);
+    drag.before = snapshotGeom(drag.moving);
+    drag.origin = drag.before.map(b => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h }));
+    drag.leadOrigin = drag.origin.find(o => o.id === drag.lead) || drag.origin[0];
+    for (const sid of drag.moving) ensureMounted(sid);
+    select([...selection].map(to));
   }
 
   /**
@@ -2384,11 +2420,18 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       if (intent.kind === 'lockedPan') {
         startPan(e);
       } else {
-        const move = startMove(e, cardId);
+        // Alt on a mouse: a stuck note comes off its card, anything else is
+        // carried as a copy. Never both - on a stuck note the note is what Alt
+        // reaches for. A mouse only: a finger has no Alt to hold.
+        const alt = e.altKey && e.pointerType === 'mouse';
+        const pressed = byId(cardId);
+        const pull = alt && !!pressed && isPinned(pressed);
+        const move = startMove(e, cardId, pull);
         // Nothing to carry - a pinned item whose host is locked. The press
         // means what a press on that host means, so it pans. See startMove().
         if (!move) startPan(e);
         else {
+          move.alt = alt && !pull;
           // Carried on the gesture so the lift can tell a selection edit from a
           // pick - see `unpick` in endPointer(). A modified press means "toggle
           // this card", and whether the lift should drop it again depends on
@@ -2630,6 +2673,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // The press has become a drag. Raise now, so the stack change belongs to
       // the move that is about to be committed - see raiseToFront.
       if (!drag.moved) {
+        // Alt+drag: the copy is made here, at the slop, so a plain Alt-click
+        // makes nothing.
+        if (drag.alt) carryCopies(drag);
         raiseToFront(drag.moving);
         // The pointer is captured by #viewport, so the cursor is #viewport's
         // however far the card under it wants a grabbing hand. Mark the viewport
@@ -3117,6 +3163,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       if (gesture.mode === 'move' && gesture.moved) {
         resettle(gesture.driven);
         commitGeom('Move', gesture.before, gesture.driven);
+        foldCopy(gesture);
       }
       if (gesture.mode === 'resize') commitGeom('Resize', gesture.before, gesture.driven);
       // A card landing, and a band closing on something. Both here rather than
@@ -3170,6 +3217,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       const seen = seenPlaces(gesture.before.map(b => b.id));
       applyGeom(gesture.before);
       slideFrom(seen, reducedMotion() ? 0 : baseMs());
+      // An Alt+drag taken away takes its copy with it, entry and all.
+      if (gesture.mode === 'move' && gesture.copied) {
+        setDragging(gesture.moving, false);
+        takeBack(gesture.copied);
+        select([...selection].filter(id => !!byId(id)));
+      }
     }
     if (gesture.mode === 'marquee') marquee.hidden = true;
     // Both modes that carry a node: `resize`, and the `press` that was on its way
@@ -3185,6 +3238,32 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     el.classList.remove('is-panning', 'is-moving');
     showStickTarget(null);
     enter('idle');
+  }
+
+  /**
+   * An Alt+drag's copy and its move, as one undo step. Each committed as it
+   * always does; both are withdrawn and committed again together, so one Ctrl+Z
+   * takes the copy away rather than first putting it back on its original.
+   */
+  function foldCopy(drag: MoveGesture) {
+    const made = drag.copied;
+    if (!made) return;
+    const moved = lastCommand();
+    // Let go where it was picked up: no move, so no copy either - a card
+    // stacked exactly on its twin is one nobody could see to delete.
+    if (!moved || moved === made) {
+      takeBack(made);
+      select([...selection].filter(id => !!byId(id)));
+      return;
+    }
+    if (!takeBack(moved)) return;
+    if (!takeBack(made)) return;
+    const n = drag.driven.length;
+    commit(n === 1 ? 'Copy by dragging' : `Copy ${n} by dragging`,
+      () => { made.redo(); moved.redo(); },
+      () => { moved.undo(); made.undo(); },
+      made.weight + moved.weight);
+    select(drag.driven.filter(id => !!byId(id)));
   }
 
   function finishGesture() {

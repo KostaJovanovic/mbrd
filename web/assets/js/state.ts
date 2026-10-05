@@ -465,6 +465,20 @@ export function duplicateItems(ids: Iterable<string>, offset = { x: 28, y: -28 }
     { links });
 }
 
+/**
+ * Alt+drag's copy: duplicateItems() with no offset, so each copy sits exactly
+ * on its original, answering which copy is which original's. itemsIn() and
+ * addItems() both keep the stacking order, which is what pairs them.
+ */
+export function duplicateInPlace(ids: Iterable<string>): Map<string, string> {
+  const list = [...ids];
+  const src = itemsIn(travelling(list));
+  const made = duplicateItems(list, { x: 0, y: 0 });
+  const out = new Map<string, string>();
+  src.forEach((it, i) => { if (made[i]) out.set(it.id, made[i].id); });
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Clipboard commands that touch the board (cut + paste)
 // ---------------------------------------------------------------------------
