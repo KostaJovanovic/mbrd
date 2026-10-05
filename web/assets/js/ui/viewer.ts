@@ -1189,7 +1189,12 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
   // the old one; resetting is the one answer that can't be subtly wrong.
   const onResize = () => { stopGlide(); if (scale !== 1) reset(); };
 
+  // The browser's own drag of an image, which cancels the pointer the pan is
+  // following. viewer.css's -webkit-user-drag says the same, to Chromium only.
+  const onDragStart = (e: DragEvent) => e.preventDefault();
+
   img.addEventListener('wheel', onWheel, { passive: false });
+  img.addEventListener('dragstart', onDragStart);
   img.addEventListener('pointerdown', onDown);
   img.addEventListener('pointermove', onMove);
   img.addEventListener('pointerup', onUp);
