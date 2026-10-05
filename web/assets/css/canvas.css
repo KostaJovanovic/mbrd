@@ -119,7 +119,7 @@
 .item-shadow.is-hover.is-selected { --sh-lift: 0px; --sh-grow: 1; }
 /* The drag lean too, or a leaning card shows its square shadow's corners. */
 .item-shadow.is-dragging {
-  --sh-lift: var(--lift-drag);
+  --sh-lift: calc(var(--lift-drag) * min(1, 1 / var(--iz)));
   --sh-grow: var(--grow-hover);
   --sh-tilt: var(--tilt-drag);
 }
@@ -169,7 +169,7 @@
    here when its card was lifted, so the two settle together. */
 .item-ring.is-hover { --lift: calc(var(--lift-hover) / var(--iz)); --grow: var(--grow-hover); }
 .item-ring.is-dragging {
-  --lift: var(--lift-drag);
+  --lift: calc(var(--lift-drag) * min(1, 1 / var(--iz)));
   --tilt: var(--tilt-drag);
   --grow: var(--grow-hover);
 }

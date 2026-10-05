@@ -60,8 +60,9 @@
 /* The hover lift is divided by --iz to cancel the one in `translate`, so it is
    in board units and scales with the card, as the grow does: the pop looks the
    same at every zoom as it does at 100%. In screen pixels it was a fixed jump
-   that threw a card at far zoom by most of its own height. The drag lift stays
-   in screen pixels, because that card sits under the pointer. */
+   that threw a card at far zoom by most of its own height. The drag lift
+   follows the zoom out the same way, and stops at its screen size zoomed in,
+   so the card in the hand never leaves the pointer by more than that. */
 .item.is-hover {
   --lift: calc(var(--lift-hover) / var(--iz));
   --grow: var(--grow-hover);
@@ -70,7 +71,7 @@
 .item.is-selected { cursor: grab; }
 .item.is-dragging {
   cursor: grabbing;
-  --lift: var(--lift-drag);
+  --lift: calc(var(--lift-drag) * min(1, 1 / var(--iz)));
   --tilt: var(--tilt-drag);
   --grow: var(--grow-hover);
 }
