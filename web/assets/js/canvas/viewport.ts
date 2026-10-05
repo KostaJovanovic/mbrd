@@ -460,6 +460,8 @@ export const fastMs = () => cssMs('--dur-fast', 130);
 export const baseMs = () => cssMs('--dur-base', 240);
 
 function cssMs(name: string, fallback: number): number {
+  // No stylesheet to read in a test with no browser; a command still runs there.
+  if (typeof getComputedStyle !== 'function') return fallback;
   const raw = readToken(name);
   const n = parseFloat(raw);
   if (!Number.isFinite(n)) return fallback;

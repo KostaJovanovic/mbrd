@@ -18,10 +18,11 @@ import {
   addItems,
   snapshotGeom, applyGeom, commitGeom,
   declareOp, registerOp,
+  stuckFollowers, stuckTo, stuckPlacement, fenceOf, fenceBox, baseStep,
   isContent, rolledAway, rolledFences, fenceFollowers, connectedTo, travelling,
 } from './state.ts';
 import { kindName } from './canvas/item-dom.ts';
-import { alignTargets, distributeTargets, matchSizeTargets, separateOverlaps } from './geometry.ts';
+import { alignTargets, distributeTargets, matchSizeTargets, separateOverlaps, itemBounds } from './geometry.ts';
 import { isPicture } from './canvas/picture-shape.ts';
 // Needed here for zoomToSelection and slid(); the rest of the camera is in
 // commands/view.ts.
@@ -133,16 +134,57 @@ function layoutItems(ids: string[]) {
   return board.items.filter(i => wanted.has(i.id));
 }
 
+/**
+ * Move `ids` to `targets` as one undo step, with what rides them. A note
+ * stuck to a moved card keeps its spot on the card - by its fraction of the
+ * card, so Same size moves it as a resize would - in passes, a note on a note
+ * after its host. A card that leaves a fence the layout did not include grows
+ * that fence to keep it, as Nudge grows one; a locked fence does not grow, and
+ * the card leaves it as before.
+ */
+function moveWithRiders(ids: string[], targets: Parameters<typeof applyGeom>[0], label: string) {
+  // Read before anything moves: stuckTo() and fenceOf() measure live geometry.
+  const riders = stuckFollowers(ids);
+  const hostOf = new Map(riders.map(id => [id, stuckTo(byId(id))?.id]));
+  const moved = new Set(ids);
+  const homes = new Map<string, string[]>();
+  for (const id of ids) {
+    const fence = fenceOf(byId(id));
+    if (!fence || moved.has(fence.id) || isLocked(fence)) continue;
+    (homes.get(fence.id) || homes.set(fence.id, []).get(fence.id)!).push(id);
+  }
+  const before = snapshotGeom([...ids, ...riders, ...homes.keys()]);
+  const was = new Map(before.map(g => [g.id, g]));
+  applyGeom(targets);
+  // stuckFollowers() lists a host before what is stuck to it.
+  for (const id of riders) {
+    const host = byId(hostOf.get(id) ?? ''), note = was.get(id), hostWas = was.get(host?.id ?? '');
+    if (!host || !note || !hostWas) continue;
+    applyGeom([{ id, ...stuckPlacement(note, hostWas, host) }]);
+  }
+  for (const [fid, members] of homes) {
+    const fence = byId(fid);
+    const need = fenceBox(null, itemBounds(members.map(byId).filter(m => !!m)), baseStep());
+    if (!fence || !need) continue;
+    const x0 = Math.min(fence.x - fence.w / 2, need.x - need.w / 2);
+    const x1 = Math.max(fence.x + fence.w / 2, need.x + need.w / 2);
+    const y0 = Math.min(fence.y - fence.h / 2, need.y - need.h / 2);
+    const y1 = Math.max(fence.y + fence.h / 2, need.y + need.h / 2);
+    if (x0 === fence.x - fence.w / 2 && x1 === fence.x + fence.w / 2
+      && y0 === fence.y - fence.h / 2 && y1 === fence.y + fence.h / 2) continue;
+    applyGeom([{ id: fid, x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 }]);
+  }
+  commitGeom(label, before, ids);
+}
+
 function alignIds(ids: string[], edge: string, label = 'Align') {
   const items = layoutItems(ids);
   if (items.length < 2) return;
   const spread = edge === 'top' || edge === 'bottom' || edge === 'vcenter' ? 'x' : 'y';
   const targets = separateOverlaps(
     alignTargets(items, edge), items, spread, board.settings.spacing || 0);
-  const before = snapshotGeom(ids);
   declareOp('align', { ids, edge });
-  applyGeom(targets);
-  commitGeom(label, before, ids);
+  moveWithRiders(ids, targets, label);
 }
 
 /** Same width / Same height: every card but `ref` takes its size on one axis.
@@ -150,19 +192,17 @@ function alignIds(ids: string[], edge: string, label = 'Align') {
 function matchSizeIds(ids: string[], ref: string, axis: 'w' | 'h') {
   const items = layoutItems(ids);
   if (items.length < 2) return;
-  const before = snapshotGeom(ids);
   declareOp('matchSize', { ids, ref, axis });
-  applyGeom(matchSizeTargets(items, ref, axis, it => isPicture(byId(it.id))));
-  commitGeom(axis === 'w' ? 'Same width' : 'Same height', before, ids);
+  moveWithRiders(ids, matchSizeTargets(items, ref, axis, it => isPicture(byId(it.id))),
+    axis === 'w' ? 'Same width' : 'Same height');
 }
 
 function distributeIds(ids: string[], axis: 'x' | 'y') {
   const items = layoutItems(ids);
   if (items.length < 3) return;
-  const before = snapshotGeom(ids);
   declareOp('distribute', { ids, axis });
-  applyGeom(distributeTargets(items, axis));
-  commitGeom(axis === 'x' ? 'Distribute across' : 'Distribute down', before, ids);
+  moveWithRiders(ids, distributeTargets(items, axis),
+    axis === 'x' ? 'Distribute across' : 'Distribute down');
 }
 
 /**
