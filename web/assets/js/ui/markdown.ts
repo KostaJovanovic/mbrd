@@ -1,11 +1,12 @@
 // Hand-written Markdown renderer. CommonMark's common half, GitHub's tables
 // and task lists, and Obsidian's own: wikilinks and embeds, ==highlights==,
-// callouts, tags, footnotes, comments, math, properties and a handful of
-// inline HTML tags. Every scrap of text goes in as a text node, never markup -
+// callouts, tags, footnotes, comments, math (typeset by ui/math.ts),
+// properties and a handful of inline HTML tags. Every scrap of text goes in as a text node, never markup -
 // no innerHTML, no escaping to get right. Only href reaches an attribute,
 // checked via linkURL.
 
 import { linkURL } from '../canvas/renderers.ts';
+import { typeset } from './math.ts';
 
 /**
  * What one document says about itself away from where it is used: its link
@@ -340,14 +341,15 @@ export function mathEnd(lines: string[], i: number): number {
 }
 
 /**
- * Math, as the TeX it was written in. There is no typesetter here - KaTeX is
- * a quarter of a megabyte and its fonts - so the source is shown in its own
- * face, set apart, which is what a reader can still follow.
+ * Math: the TeX it was written in, typeset over once KaTeX has loaded
+ * (ui/math.ts). The source first, in its own face, so a page without KaTeX -
+ * a test, a refused load, a formula KaTeX cannot read - still says it.
  */
 function mathNode(tex: string, display: boolean) {
   const el = document.createElement(display ? 'div' : 'span');
   el.className = display ? 'md-math md-math-block' : 'md-math';
   el.textContent = tex;
+  typeset(el, tex, display);
   return el;
 }
 

@@ -61,6 +61,7 @@ import type { NoteEntrance } from './canvas/notes.ts';
 import { setMarkdownRenderer, setEmbedEnrich } from './canvas/renderers.ts';
 import { enrichEmbed } from './canvas/embed-meta.ts';
 import { renderMarkdown } from './ui/markdown.ts';
+import { enableMath } from './ui/math.ts';
 import { initAssets, getAsset, forgetAssets, putAsset } from './storage/assets.ts';
 import type { Asset } from './storage/assets.ts';
 import { forgetDisplay } from './canvas/display.ts';
@@ -268,6 +269,8 @@ setNoteMenu((anchor, rows, current, pick) => {
 });
 // Markdown renderer injected into canvas/ (layering: ui/ above canvas/).
 setMarkdownRenderer(renderMarkdown);
+// Formulas typeset by KaTeX from here on; unwired (a test, the patch page) they stay their TeX.
+enableMath();
 // The one hook that fetches: a Spotify card fills in its title and cover on
 // load if it has none. Unwired (a test) this never runs and nothing is fetched.
 if (!isPatch) setEmbedEnrich(enrichEmbed);

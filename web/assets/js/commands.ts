@@ -28,7 +28,8 @@ import { isPicture } from './canvas/picture-shape.ts';
 // Needed here for zoomToSelection and slid(); the rest of the camera is in
 // commands/view.ts.
 import { travelMs } from './canvas/viewport.ts';
-import { pickFiles, addNote, addSwatch, addLink, addSticker, addStyleTile } from './import/drop.ts';
+import { pickFiles, addNote, addSwatch, addLink, addSticker, addStyleTile, importFiles } from './import/drop.ts';
+import { LATEX_STARTER } from './ui/latex-doc.ts';
 import { linkURL, linkTyped, SWATCH_DEFAULT, defaultSize } from './canvas/renderers.ts';
 import { youTubeId } from './canvas/embed.ts';
 import { openViewer } from './ui/viewer.ts';
@@ -286,6 +287,16 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     },
     // Shortcut for the toolbar flyout's pigment swatches — no dialog needed.
     addSwatchOf: (hex: string) => addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), hex),
+    /**
+     * A new .tex file on the board, an article ready to fill in, opened in the
+     * editor with its preview. Made through importFiles() as a dropped file is,
+     * so it is a file card like any other and saves like one.
+     */
+    newLatex: async () => {
+      const file = new File([LATEX_STARTER], 'Untitled.tex', { type: 'application/x-tex' });
+      const [made] = await importFiles([file], vp.toWorld(vp.left + vp.cx, vp.top + vp.cy));
+      if (made) openViewer(made.id, { edit: true });
+    },
     /** Add a style tile card. Selection curates the picture strip; empty = largest pictures. */
     addStyleTile: () => addStyleTile(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), selection),
     // Typed link — nothing is fetched until the card is clicked.
@@ -666,6 +677,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       openAnchored(btn.getBoundingClientRect(), [
         { label: 'Add a colour', icon: 'i-swatch', action: () => cmds.addSwatch() },
         { label: 'Add a link', icon: 'i-link', action: () => cmds.addLink() },
+        { label: 'New LaTeX document', icon: 'i-pen', action: () => void cmds.newLatex() },
         { label: 'Stickers', icon: 'i-sticker', action: () => cmds.stickers() },
       // focus: true — opened by a press, not a hover.
       ], { label: 'More tools', owner: btn, focus: true });

@@ -421,6 +421,32 @@
   scrollbar-gutter: stable both-edges;
 }
 .is-finding .ed-scroll { padding-top: calc(var(--ed-top) + var(--chrome-button-h) + 8px); }
+/* A preview (LaTeX's): the source on the left half, the page it makes on the
+   right, each scrolling on its own. */
+.has-preview .ed-scroll { right: 50%; }
+.ed-preview {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: var(--ed-status-h);
+  width: 50%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--ed-top) 24px 30vh;
+  border-left: var(--hairline) solid var(--rule-2);
+  scrollbar-gutter: stable;
+}
+.ed-preview[hidden] { display: none; }
+.ed-preview-page {
+  box-sizing: border-box;
+  max-width: calc(680px * var(--ed-zoom, 1));
+  min-height: calc(880px * var(--ed-zoom, 1));
+  margin: 0 auto;
+  padding: calc(clamp(24px, 4vw, 56px) * var(--ed-zoom, 1));
+  background: var(--paper-card);
+  box-shadow: inset 0 0 0 var(--hairline) var(--rule-2), var(--shadow-2);
+  font-size: calc(var(--t-body) * var(--ed-zoom, 1));
+}
 /* An open outline takes its side, and the page centres in what is left. */
 .has-outline .ed-scroll { padding-left: calc(max(16px, env(safe-area-inset-left)) + 250px + 24px); }
 
@@ -616,6 +642,10 @@
     scrollbar-gutter: auto;
   }
   .is-finding .ed-scroll { inset: 0; padding: calc(var(--ed-top) + 88px + 8px) 0 30vh; scrollbar-gutter: auto; }
+  /* No room for both: the preview, pressed, takes the screen, and pressed again gives the source back. */
+  .has-preview .ed-scroll { display: none; }
+  .ed-preview { inset: 0; width: auto; padding: var(--ed-top) 0 30vh; border-left: 0; }
+  .ed-preview-page { min-height: 0; padding: 22px 20px 48px; }
   /* Edge to edge, a ring on the sides would be a line down each edge of the screen. */
   .ed-sheet { box-shadow: 0 var(--hairline) 0 var(--rule-2), 0 calc(-1 * var(--hairline)) 0 var(--rule-2), var(--shadow-2); }
   .ed-sheet {

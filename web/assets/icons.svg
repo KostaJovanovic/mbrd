@@ -305,6 +305,17 @@
   <path d="M5.6 2.3v11.4M8 5.5h4M8 8h3M8 10.5h4"/>
 </symbol>
 
+<!-- The editor's preview: source lines on the left, the page they make on the right. -->
+<symbol id="i-ed-preview" viewBox="0 0 16 16">
+  <rect x="1.8" y="2.3" width="12.4" height="11.4" rx="1.2"/>
+  <path d="M8 2.3v11.4M3.6 5.5h2.6M3.6 8h2M3.6 10.5h2.6M10 5.5h2.4M10 8h2.4M10 10.5h1.6"/>
+</symbol>
+
+<!-- Inserting a piece of a document at the caret: a plus over a line. -->
+<symbol id="i-ed-insert" viewBox="0 0 16 16">
+  <path d="M8 2.5v7M4.5 6h7M2.5 13h11"/>
+</symbol>
+
 <!-- An info button: what a thing is, in a sentence or two (the editor's Vomit Mode). -->
 <symbol id="i-info" viewBox="0 0 16 16">
   <circle cx="8" cy="8" r="6.2"/>

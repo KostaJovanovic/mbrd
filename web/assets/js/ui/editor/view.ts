@@ -49,6 +49,15 @@ export type EditorOptions = {
   name?: string,
   /** The name was changed on the sheet. Returns the name kept, which the field then shows. Absent, the field is not shown. */
   onRename?: (name: string) => string,
+  /**
+   * The document as it reads, drawn beside its source - for a kind of file
+   * whose source is not what it says, LaTeX. Absent, there is no preview.
+   */
+  preview?: (text: string) => Node,
+  /** What the preview button is called: the kind of file it shows. */
+  previewLabel?: string,
+  /** Things to insert at the caret, from a menu on the ribbon: a label and its text, `|` where the caret goes. */
+  snippets?: { label: string, text: string }[],
 };
 
 export type Editor = {
@@ -69,6 +78,8 @@ const TYPING_GAP_MS = 1200;
 const UNDO_MAX = 500;
 /** Matches painted at once. Past this the bar still counts them all. */
 const PAINT_MAX = 2000;
+/** A pause in typing this long redraws the preview: long enough to skip mid-word, short enough to feel live. */
+const PREVIEW_MS = 350;
 /** The page zooms the status bar steps through, Word's stops and a few more. */
 const ZOOMS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
 const ZOOM_PREF = 'mbrd.editorZoom';
@@ -254,6 +265,26 @@ export function mountEditor(opts: EditorOptions): Editor {
   const root = h('div', 'ed');
   if (screen) root.classList.add('is-screen');
   else if (plain) root.classList.add('is-plain');
+  // The preview pane, made here so a change before the ribbon is built can already ask for it.
+  const preview = h('div', 'ed-preview');
+  preview.hidden = true;
+  preview.setAttribute('aria-label', 'Preview');
+  // Dressed as the viewer's reading page (viewer.css), so the preview and the read view are one look.
+  const previewPage = h('div', 'ed-preview-page viewer-md');
+  preview.append(previewPage);
+  let previewTimer = 0;
+  /** The preview drawn again from the document as it stands, holding its scroll. */
+  const paintPreview = () => {
+    if (!opts.preview || preview.hidden) return;
+    const top = preview.scrollTop;
+    previewPage.replaceChildren(opts.preview(write(doc)));
+    preview.scrollTop = top;
+  };
+  const queuePreview = () => {
+    if (!opts.preview || preview.hidden) return;
+    clearTimeout(previewTimer);
+    previewTimer = window.setTimeout(paintPreview, PREVIEW_MS);
+  };
   const scroller = h('div', 'ed-scroll');
   const page = h('div', 'ed-page');
   makeEditable(page);
@@ -525,6 +556,7 @@ export function mountEditor(opts: EditorOptions): Editor {
   let countTimer = 0;
   const changed = () => {
     opts.onChange?.();
+    queuePreview();
     clearTimeout(countTimer);
     countTimer = window.setTimeout(paintCount, 250);
     if (!find.hidden) runFind(true);
@@ -1009,6 +1041,37 @@ export function mountEditor(opts: EditorOptions): Editor {
     opts.onAscii?.(ascii);
   }, { icon: 'assets/icons.svg#i-ed-ascii', word: 'ASCII art', cls: 'ed-big' });
   asciiBtn.setAttribute('aria-pressed', String(ascii));
+  const previewBtn = button(`Preview: the ${opts.previewLabel ?? 'document'} as it reads, beside its source`,
+    () => setPreview(preview.hidden), { icon: 'assets/icons.svg#i-ed-preview', word: 'Preview', cls: 'ed-big' });
+  previewBtn.setAttribute('aria-pressed', 'false');
+  /** The preview beside the source, or the source alone. On a phone the preview takes the screen. */
+  const setPreview = (open: boolean) => {
+    preview.hidden = !open;
+    root.classList.toggle('has-preview', open);
+    previewBtn.setAttribute('aria-pressed', String(open));
+    if (open) paintPreview();
+  };
+  // Pieces of a document at the caret, from a menu: what a file of this kind is made of.
+  const insertBtn = button('Insert', () => {}, { icon: 'assets/icons.svg#i-ed-insert', word: 'Insert', cls: 'ed-big' });
+  insertBtn.setAttribute('aria-haspopup', 'menu');
+  /** A snippet at the selection, as one undo step, the caret left at its `|`. */
+  const insertSnippet = (snippet: string) => {
+    page.focus({ preventScroll: true });
+    setSel(...lastSel);
+    const cut = snippet.indexOf('|');
+    const [a, z] = range();
+    if (!apply(insertText(doc, a, z, snippet.replace('|', '')), 'paste')) return;
+    if (cut >= 0) {
+      // Each line of a plain page is a block, so the `|` is counted in lines and then characters.
+      const lines = snippet.slice(0, cut).split('\n');
+      const o = lines.length === 1 ? a.o + lines[0].length : lines[lines.length - 1].length;
+      setSel(clampPos(doc, { b: a.b + lines.length - 1, o }));
+    }
+    settle();
+  };
+  menuButton(insertBtn, () => openAnchored(insertBtn.getBoundingClientRect(),
+    (opts.snippets ?? []).map((s): MenuEntry => ({ label: s.label, action: () => insertSnippet(s.text) })),
+    { label: 'Insert', owner: insertBtn, focus: true }));
 
   // A narrow ribbon and a phone's toolbar both trade the gallery for one
   // Style button that names the line and opens its list.
@@ -1044,9 +1107,14 @@ export function mountEditor(opts: EditorOptions): Editor {
     );
   }
   panel.append(group('Editing', stack(findBtn, replaceBtn)));
+  if (opts.snippets?.length) panel.append(group('Insert', insertBtn));
   if (screen) panel.append(rowBreak);
   panel.append(group('Vomit Mode', vomitBtn, superBtn, infoBtn));
-  const showBtns = [...(!opts.plain || screen ? [outlineBtn] : []), ...(opts.onAscii ? [asciiBtn] : [])];
+  const showBtns = [
+    ...(opts.preview ? [previewBtn] : []),
+    ...(!opts.plain || screen ? [outlineBtn] : []),
+    ...(opts.onAscii ? [asciiBtn] : []),
+  ];
   if (showBtns.length) {
     const show = group('Show', ...showBtns);
     show.classList.add('ed-show');
@@ -1649,7 +1717,9 @@ export function mountEditor(opts: EditorOptions): Editor {
   // The board's own paper grain under the desk, and the controls floating over it as the board's do.
   const grain = h('div', 'ed-grain');
   grain.setAttribute('aria-hidden', 'true');
-  root.append(grain, scroller, aside, bar, find, status);
+  root.append(grain, scroller, aside, preview, bar, find, status);
+  // Open beside the source from the start where there is room for both; a phone opens on the source.
+  if (opts.preview && !matchMedia('(max-width: 700px)').matches) setPreview(true);
 
   // -------------------------------------------------------------------------
   // Start
@@ -1694,6 +1764,7 @@ export function mountEditor(opts: EditorOptions): Editor {
       barSize?.disconnect();
       endVomit();
       clearTimeout(countTimer);
+      clearTimeout(previewTimer);
       document.removeEventListener('selectionchange', onSelect);
       highlights?.delete('ed-find');
       highlights?.delete('ed-find-now');

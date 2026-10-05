@@ -398,6 +398,105 @@
 .md-callout[data-callout="quote"] { --co: var(--ink-3); }
 
 /* ---------------------------------------------------------
+   LaTeX, read (ui/latex.ts) - in the viewer and in the
+   editor's preview, both inside .viewer-md, whose type and
+   measure it keeps. Set as an article sets: a centred title,
+   numbered heads, italic theorems, a square at a proof's end.
+   --------------------------------------------------------- */
+
+.tex-doc { font-family: var(--font-serif); }
+.tex-doc .tex-title { margin: 0 0 2em; text-align: center; }
+.tex-doc .tex-title h1 { margin: 0 0 0.4em; padding: 0; border: 0; }
+.tex-doc :is(.tex-author, .tex-date) { margin: 0 0 0.3em; color: var(--ink-2); }
+.tex-doc .tex-num { margin-right: 0.75em; }
+.tex-doc h2.tex-h, .tex-doc h1.tex-h { border: 0; padding: 0; }
+.tex-doc .tex-abstract { margin: 0 2.5em 1.5em; font-size: 0.94em; }
+.tex-doc .tex-abstract .tex-box-title { margin-bottom: 0.3em; font-weight: 600; text-align: center; }
+/* amsthm's plain style: a bold head, then the statement in italic. A
+   definition, an example or a remark is stated upright. */
+.tex-doc .tex-thm { margin: 0 0 1em; font-style: italic; }
+.tex-doc .tex-thm:is([data-kind="definition"], [data-kind="example"], [data-kind="remark"],
+  [data-kind="exercise"], [data-kind="problem"], [data-kind="note"], [data-kind="notation"],
+  [data-kind="question"], [data-kind="assumption"]) { font-style: normal; }
+.tex-doc .tex-thm-head { font-style: normal; }
+.tex-doc .tex-proof { margin: 0 0 1em; }
+.tex-doc .tex-proof > :last-child { margin-bottom: 0; }
+.tex-doc .tex-qed { float: right; margin-left: 1em; }
+.tex-doc .tex-proof::after { content: ''; display: block; clear: both; }
+.tex-doc :is(.tex-center, .tex-float) { text-align: center; }
+.tex-doc .tex-flushright { text-align: right; }
+.tex-doc .tex-float { margin: 0 0 1.4em; }
+.tex-doc .tex-float :is(table, pre, .tex-algo) { margin-left: auto; margin-right: auto; text-align: left; }
+.tex-doc .tex-caption { margin: 0.5em 0 0; font-size: 0.92em; color: var(--ink-2); }
+.tex-doc .tex-img { display: block; max-width: 100%; margin: 0 auto; }
+/* Display math: centred, and its own scroll when it is wider than the page. */
+.tex-doc .tex-display { margin: 0 0 1em; overflow-x: auto; overflow-y: hidden; text-align: center; }
+/* Until KaTeX has drawn it, and if it cannot: the TeX, in the code face. */
+.tex-doc .tex-math:not(.is-typeset) { font-family: var(--font-mono); font-size: 0.88em; color: var(--ink-2); }
+.tex-doc .tex-display:not(.is-typeset) { white-space: pre-wrap; }
+/* A formula KaTeX refused: its TeX, underlined as a misspelling is, the reason in its tooltip. */
+:is(.tex-math, .md-math).is-wrong { text-decoration: underline wavy color-mix(in srgb, var(--danger) 70%, transparent); }
+.viewer-md .md-math.is-typeset { font-family: inherit; color: inherit; font-size: inherit; }
+.viewer-md .md-math-block.is-typeset { background: none; overflow-x: auto; }
+.tex-doc pre.tex-code { text-align: left; }
+.tex-doc .tex-sc { font-variant: small-caps; }
+.tex-doc .tex-alert { color: var(--accent-deep); }
+.tex-doc .tex-fbox { padding: 0.05em 0.3em; border: var(--hairline) solid var(--ink-2); }
+.tex-doc :is(.tex-note, .tex-tikz summary) { color: var(--ink-3); font-style: italic; font-size: 0.92em; }
+.tex-doc .tex-tikz pre { font-size: 0.85em; }
+.tex-doc .tex-ref:not(.is-found) { color: var(--ink-3); }
+.tex-doc .tex-fnref { font-size: 0.75em; }
+.tex-doc .tex-footnotes { font-size: 0.9em; color: var(--ink-2); }
+.tex-doc li.tex-labelled { list-style: none; }
+.tex-doc .tex-item-label { margin: 0 0.5em 0 -1.6em; font-weight: 600; }
+.tex-doc .tex-desc dt { font-weight: 700; }
+.tex-doc .tex-desc dd { margin: 0 0 0.6em 1.6em; }
+/* Tables: rules only where \hline and the spec's bars put them. */
+.tex-doc .tex-table { border-collapse: collapse; }
+.tex-doc .tex-table td { padding: 4px 12px; border: 0; }
+.tex-doc .tex-table.is-ruled td { border-left: var(--hairline) solid var(--ink-3); border-right: var(--hairline) solid var(--ink-3); }
+.tex-doc .tex-table tr.rule-above td { border-top: var(--hairline) solid var(--ink-2); }
+.tex-doc .tex-table tr.rule-below td { border-bottom: var(--hairline) solid var(--ink-2); }
+/* Pseudocode: a line each, indented a step per block it is in. */
+.tex-doc .tex-algo {
+  margin: 0 0 1em;
+  padding: 8px 12px;
+  border-top: var(--hairline) solid var(--ink-2);
+  border-bottom: var(--hairline) solid var(--ink-2);
+  line-height: 1.5;
+}
+.tex-doc .tex-algo-line { display: flex; align-items: baseline; }
+.tex-doc .tex-algo-num { flex: none; width: 2.2em; margin-right: 0.6em; color: var(--ink-3); font-size: 0.85em; text-align: right; }
+.tex-doc .tex-algo-body { flex: 1 1 auto; min-width: 0; padding-left: calc(var(--indent, 0) * 1.5em); }
+.tex-doc .tex-algo-comment { float: right; margin-left: 1em; color: var(--ink-3); }
+/* Slides: each frame a box of its own, its title in the accent. */
+.tex-doc .tex-frame {
+  margin: 0 0 1.4em;
+  padding: 12px 18px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-xs);
+  background: var(--paper);
+}
+.tex-doc .tex-frame-title { margin: 0 0 0.6em; color: var(--accent-deep); }
+.tex-doc .tex-columns { display: flex; gap: 12px; }
+.tex-doc .tex-column { flex: 1 1 0; min-width: 0; }
+.tex-doc :is(.tex-block, .tex-solution) {
+  margin: 0 0 1em;
+  padding: 8px 12px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.tex-doc .tex-block .tex-box-title { margin-bottom: 0.3em; color: var(--accent-deep); font-weight: 600; }
+/* An exam: points beside each question, the right choice marked, a solution in its box. */
+.tex-doc .tex-points { color: var(--ink-3); font-size: 0.9em; }
+.tex-doc .tex-choices { list-style: circle; }
+.tex-doc .tex-choices .is-correct::marker { content: '● '; color: var(--accent-deep); }
+.tex-doc .tex-solution { border: var(--hairline) dashed var(--rule); background: none; }
+.tex-doc .tex-solution .tex-box-title { margin-bottom: 0.3em; font-weight: 600; }
+.tex-doc .tex-toc ol { list-style: none; padding: 0; }
+.tex-doc .tex-toc-entry { padding-left: calc(var(--level, 0) * 1.2em); }
+
+/* ---------------------------------------------------------
    Documents in the viewer (ui/documents.ts)
    .docx, .odt and .pptx read into ordinary elements. Shares
    the viewer's Markdown measure and face. --------------- */

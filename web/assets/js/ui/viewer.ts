@@ -1,8 +1,9 @@
 // Viewer: one item at full size in a showModal() <dialog>. VIEWS table keyed
 // by item type (same shape as RENDERERS). Teardown is load-bearing: mounted
 // videos keep their decoder, blob URLs must be revoked, parsed PDFs hold the
-// whole file, and an open document is saved. A .md, .txt or .fountain opened
-// to edit goes to the text editor (ui/editor/); opened plainly, it is read.
+// whole file, and an open document is saved. A .md, .txt, .fountain or .tex
+// opened to edit goes to the text editor (ui/editor/) - a .tex with its preview
+// beside it (ui/latex-doc.ts); opened plainly, it is read.
 // No document reach at import time (tests/imports.test.js).
 
 import {
@@ -30,6 +31,7 @@ import { noteTint } from '../canvas/note-model.ts';
 import type { NoteEntrance } from '../canvas/notes.ts';
 import { kindName } from '../canvas/item-dom.ts';
 import { renderMarkdown } from './markdown.ts';
+import { LATEX, LATEX_SNIPPETS, latexPreview } from './latex-doc.ts';
 // Statically: the only import the reader needs is storage/zip.ts, already in
 // memory (it opens every .mbrd), plus the browser's DOMParser - nothing to defer.
 import { canReadDocument, readDocument } from './documents.ts';
@@ -51,7 +53,7 @@ const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? asse
 const TEXT_MAX = 200000;
 
 /** The text files that open in the editor. Every other text file is read, as before. */
-const EDITABLE = new Set([...MARKDOWN, 'txt', 'text', 'fountain']);
+const EDITABLE = new Set([...MARKDOWN, ...LATEX, 'txt', 'text', 'fountain']);
 
 /** A pause in typing this long saves the document. */
 const IDLE_SAVE_MS = 1500;
@@ -1497,9 +1499,11 @@ const VIEWS: Record<string, View> = {
 
 /** A text file to read: rendered if Markdown, as source otherwise. `why` says why it is not editable. */
 function readOnlyText(item: Item, host: HTMLElement, why = '') {
-  const md = MARKDOWN.has(str(item.meta?.ext));
-  const holder = document.createElement(md ? 'div' : 'pre');
-  holder.className = md ? 'viewer-md' : 'viewer-text';
+  const ext = str(item.meta?.ext);
+  const md = MARKDOWN.has(ext);
+  const tex = LATEX.has(ext);
+  const holder = document.createElement(md || tex ? 'div' : 'pre');
+  holder.className = md ? 'viewer-md' : tex ? 'viewer-md viewer-tex' : 'viewer-text';
   // Wrapped to the page, unless the editor was told this is ASCII art, whose lines are the picture.
   holder.classList.toggle('is-ascii', item.meta?.ascii === true);
   dlg!.dataset.page = '';
@@ -1510,6 +1514,7 @@ function readOnlyText(item: Item, host: HTMLElement, why = '') {
   readText(hash, TEXT_MAX).then(text => {
     if (!holder.isConnected) return;
     if (md) holder.append(renderMarkdown(text));
+    else if (tex) holder.append(latexPreview(text));
     else holder.textContent = text;
     if (text.length >= TEXT_MAX) {
       const more = document.createElement('p');
@@ -1596,8 +1601,11 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
       session.timer = window.setTimeout(() => { if (session) void saveEdit(session); }, IDLE_SAVE_MS);
     },
     onSave: () => { if (session) void saveEdit(session); },
-    ascii: item.meta?.ascii === true,
-    onAscii: on => setItemAscii(item.id, on),
+    // LaTeX: its source on the left and the page it makes on the right, and
+    // the pieces of one on a menu. ASCII art is not a question it asks.
+    ...(LATEX.has(ext)
+      ? { preview: latexPreview, previewLabel: 'LaTeX', snippets: LATEX_SNIPPETS }
+      : { ascii: item.meta?.ascii === true, onAscii: (on: boolean) => setItemAscii(item.id, on) }),
     name: shownName(item),
     onRename: typed => {
       // The extension stays on, as the card's name had it: the title is what is typed.
@@ -1620,7 +1628,7 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
   fit();
   session = {
     editor, id: item.id, name,
-    mime: asset.mime || (MARKDOWN.has(ext) ? 'text/markdown' : 'text/plain'),
+    mime: asset.mime || (MARKDOWN.has(ext) ? 'text/markdown' : LATEX.has(ext) ? 'application/x-tex' : 'text/plain'),
     saved: text, step: null, gen: boardGen, timer: 0, chain: Promise.resolve(),
     release: () => {
       vv?.removeEventListener('resize', fit);

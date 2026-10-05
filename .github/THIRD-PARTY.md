@@ -90,8 +90,9 @@ nobody pays a megabyte of precache for a mode most people never open.
 | onnxruntime-web 1.23.0 | `web/assets/vendor/onnxruntime/ort.wasm.min.mjs`, `web/assets/vendor/onnxruntime/ort-wasm-simd-threaded.mjs`, `web/assets/vendor/onnxruntime/ort-wasm-simd-threaded.wasm` | https://github.com/microsoft/onnxruntime | MIT | `web/assets/vendor/onnxruntime/LICENSE.txt` |
 | u2netp (model weights) | `web/assets/vendor/u2netp/u2netp.onnx` | https://github.com/xuebinqin/U-2-Net | Apache-2.0 | `web/assets/vendor/u2netp/LICENSE.txt` |
 | heic2any 0.0.4 (libheif, libde265) | `web/assets/vendor/heic2any/heic2any.min.js` | https://github.com/alexcorvi/heic2any, https://github.com/strukturag/libheif | MIT, LGPL-3.0 | `web/assets/vendor/heic2any/LICENSE.txt` |
+| KaTeX 0.19.0 | `web/assets/vendor/katex/katex.mjs`, `web/assets/vendor/katex/katex.min.css`, `web/assets/vendor/katex/fonts/*.woff2` | https://github.com/KaTeX/KaTeX | MIT | `web/assets/vendor/katex/LICENSE.txt` |
 
-Ten vendored builds, none of them modified, each loaded only when a file or a
+Eleven vendored builds, none of them modified, each loaded only when a file or a
 command that needs it is used and none of them in `SHELL`.
 
 **onnxruntime-web** runs **u2netp**, the model behind the background remover,
@@ -106,6 +107,13 @@ deployed site while working perfectly on the dev server, so the feature was dead
 exactly where anybody else would see it. `web/assets/js/import/pdf.ts` argues it
 at length and pins the version, and `tests/pdf-vendor.test.js` holds the pin to
 the bytes actually in the directory.
+
+**KaTeX** typesets the mathematics in a `.tex` document's preview and the
+`$…$` in Markdown. `web/assets/js/ui/math.ts` loads it on the first formula and
+pins the version, and `tests/katex-vendor.test.js` holds the pin to the bytes.
+Its fonts are its own and travel under its licence. It runs with `trust`
+off, so a document cannot reach `\href` or `\htmlClass`, and with HTML output
+only, because its MathML writes `style` attributes the policy refuses.
 
 **UTIF.js** decodes a TIFF, which is the one ordinary picture format no engine
 but Safari draws and the one with nothing else to fall back on: a scan carries

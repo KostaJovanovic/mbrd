@@ -73,6 +73,8 @@ const TEXT_EXT = new Set([
   'ini', 'cfg', 'conf', 'toml', 'js', 'mjs', 'ts', 'jsx', 'tsx', 'css', 'scss',
   'html', 'htm', 'py', 'rb', 'rs', 'go', 'c', 'h', 'cpp', 'hpp', 'cs',
   'java', 'kt', 'swift', 'php', 'sh', 'bat', 'ps1', 'sql', 'srt', 'vtt', 'fountain',
+  // LaTeX, which the editor previews (ui/latex-doc.ts), and the bibliography beside it.
+  'tex', 'latex', 'ltx', 'bib',
 ]);
 
 /** The extensions read as prose rather than shown as source. Shared by three
