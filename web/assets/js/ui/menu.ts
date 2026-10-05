@@ -782,11 +782,12 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: `Rearrange these ${count}`, icon: 'i-rearrange', hidden: !many,
       action: () => cmds!.rearrangeSelection() },
     // Group only — eight alignment options stay in a fold to keep the menu short.
-    { label: 'Align & distribute', icon: 'i-align-center', hidden: !many,
+    // Canvas only: the Feed's column has no edges to line up.
+    { label: 'Align & distribute', icon: 'i-align-center', hidden: mobile || !many,
       sub: alignDistributeEntries(id) },
     // Group only. Also reachable via rubber-band prompt — this covers shift-click
-    // selections where there is no band.
-    { label: `Fence these ${count}`, icon: 'i-fence', accel: 'Ctrl G', hidden: !many,
+    // selections where there is no band. The Feed has no fences.
+    { label: `Fence these ${count}`, icon: 'i-fence', accel: 'Ctrl G', hidden: mobile || !many,
       action: () => cmds!.fenceSelection() },
     // Every line touching the selection, gone in one step. Canvas only, where
     // lines are drawn; hidden when there are none to take.
