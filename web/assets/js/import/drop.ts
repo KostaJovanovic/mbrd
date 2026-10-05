@@ -780,15 +780,10 @@ export async function importFiles(
       spacing: board.settings.spacing,
       // Snapped drops need whole-cell reservations to avoid overlap after rounding.
       cellStep: board.settings.snap ? baseStep() : 0,
-      // Folder drops flow around existing items. Mobile does this in placeMobileItems().
-      // Ghosts excluded: the hint cards leave the moment content lands, so flowing
-      // around them reserves a void where they used to be. Same filter as the
-      // Mobile pack's obstacles in layout.ts.
+      // Every drop and paste flows around what is already there, as near the
+      // point as the free room allows. Mobile does this in placeMobileItems().
       // What lands from a card flows round everything but the card it replaces.
-      obstacles: avoidOverlap || replace
-        ? board.items.filter(it => it.type !== 'ghost' && it.id !== replace?.id)
-          .map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }))
-        : undefined,
+      obstacles: landingObstacles(replace?.id),
     });
     drafts.forEach((d, i) => { d.x = spots[i].x; d.y = spots[i].y; });
   } else if (replace) {
@@ -1563,6 +1558,16 @@ function addLinks(at: Point, urls: URL[]) {
     x: at.x + i * LINK_STEP.x,
     y: at.y + i * LINK_STEP.y,
   }));
+  // A cascade that would land on a card is laid out round the board's cards
+  // instead, from the same point, as a file drop is.
+  const blocked = landingObstacles();
+  if (board.layoutMode !== 'mobile' && drafts.some(d => blocked.some(o => overlaps(d, o)))) {
+    const spots = arrange(drafts.map(d => ({ x: d.x, y: d.y, w: d.w, h: d.h })), {
+      name: 'grid', center: at, spacing: board.settings.spacing,
+      cellStep: board.settings.snap ? baseStep() : 0, obstacles: blocked,
+    });
+    drafts.forEach((d, i) => { d.x = spots[i].x; d.y = spots[i].y; });
+  }
   const made = addItems(
     drafts,
     drafts.length > 1 ? `Add ${drafts.length} links` : 'Add link',
@@ -1574,6 +1579,20 @@ function addLinks(at: Point, urls: URL[]) {
 
 /** Enough that each card's corner and title clear the one beneath it. */
 const LINK_STEP = { x: 26, y: -26 };
+
+/**
+ * The boxes new cards land clear of: every card but `except`. Ghosts are left
+ * out because the hint cards leave the moment content lands, so flowing round
+ * them reserves a void where they used to be - the Mobile pack's filter too.
+ */
+function landingObstacles(except?: string) {
+  return board.items.filter(it => it.type !== 'ghost' && it.id !== except)
+    .map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }));
+}
+
+type Rect = { x: number, y: number, w: number, h: number };
+const overlaps = (a: Rect, b: Rect) =>
+  Math.abs(a.x - b.x) * 2 < a.w + b.w && Math.abs(a.y - b.y) * 2 < a.h + b.h;
 
 // --- drag payload helpers --------------------------------------------------
 
