@@ -1783,12 +1783,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // swept the selection across other items, so the group you picked up would
     // not be the group you put down. What is stuck when you take hold is what
     // travels. See travelling() in layout.ts, where the fixed point is worked out.
-    // Filtered again on the way out, and not only on the way in: travelling()
-    // adds what is stuck to the selection and what is fenced by it, so a locked
-    // card inside a fence that is being dragged would otherwise be carried by
-    // the fence. A lock that holds against a direct drag and yields to an
-    // indirect one is not a lock.
-    const moving = travelling(roots).filter(sid => !isLocked(byId(sid)));
+    // Not filtered for locks again on the way out: a locked card inside a fence
+    // being dragged goes with the fence. A lock stops the card itself being
+    // taken hold of, not the fence it sits in from being moved, and a card left
+    // behind would be measured out of its fence on release without a word.
+    const moving = travelling(roots);
     // Snapshotted here, before anything is touched, so the raise below rides
     // along in the same undo entry as the move it belongs to.
     const before = snapshotGeom(moving);
@@ -3643,8 +3642,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // other.
     // Locked out, on the same terms as a drag: the arrow keys are a drag by
     // another route, so a lock that held one and not the other would be a lock
-    // that depends on which hand you used.
-    const before = snapshotGeom(travelling(selection).filter(id => !isLocked(byId(id))));
+    // that depends on which hand you used. As there, a locked card is held only
+    // against being moved itself; inside a moving fence it goes with the fence.
+    const before = snapshotGeom(travelling([...selection].filter(id => !isLocked(byId(id)))));
     if (!before.length) return;
     const { dx, dy } = nudgeBy(sx, sy, e.shiftKey, before);
     if (!dx && !dy) return;

@@ -543,9 +543,12 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // Mobile has its own answer and it is a better one: packRuns() lays the whole
   // column out in runs, a band and then the cards under it, so every fenced card
   // has to be in the list it is handed. See placeMobileItems().
+  // Anchored cards included: a fence that moves carries everything in it, as a
+  // drag of the fence does. The anchor holds the card against being laid out,
+  // not against the region it sits in moving.
   const carried = mobile ? [] : items.filter(it => {
     const parent = parentOf.get(it.id);
-    return !isRider(it) && !isLocked(it) && parent != null && inSet.has(parent);
+    return !isRider(it) && parent != null && inSet.has(parent);
   });
   const carriedIds = new Set(carried.map(it => it.id));
   // Locked cards are dealt no slot and carried by nothing, so a rearrangement
@@ -587,7 +590,9 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // Anchored, *or carried by something anchored*. A card in an anchored region
   // is carried by a fence that has not moved, so its translation is zero and it
   // is standing just as still as the fence is - see the carry pass below.
-  const held = new Set(board.items.filter(stays).map(it => it.id));
+  // An anchored card riding a fence that moves is not one of them - it goes
+  // with the fence - unless that fence is held itself, which the loop finds.
+  const held = new Set(board.items.filter(it => stays(it) && !carriedIds.has(it.id)).map(it => it.id));
   for (let grew = true; grew;) {
     grew = false;
     for (const it of carried) {

@@ -56,6 +56,20 @@ test('a card aligned out of its fence grows the fence', () => {
   assert.equal(byId(f.id).h, 600);
 });
 
+test('a rearranged fence carries its anchored card', () => {
+  const [f] = addItems([fence({ x: 3000, y: 3000, w: 600, h: 600 })]);
+  const [held] = addItems([photo({ x: 3100, y: 3100, meta: { locked: true } })]);
+  const [a, b] = addItems([photo({ x: 0, y: 0 }), photo({ x: 900, y: 0 }), photo({ x: -5000, y: 0 })]);
+  // A selection, not the board: the whole board also flies the view, and there
+  // is no view here.
+  select([f.id, held.id, a.id, b.id]);
+  commands().rearrangeSelection();
+  const fen = byId(f.id), card = byId(held.id);
+  assert.notEqual(fen.x, 3000, 'the fence was laid out');
+  assert.equal(card.x - fen.x, 100);
+  assert.equal(card.y - fen.y, 100);
+});
+
 test('a locked fence does not grow', () => {
   const [f] = addItems([fence({ x: 1000, y: 0, w: 600, h: 600, meta: { locked: true } })]);
   const [a, b] = addItems([photo({ x: 0, y: -900 }), photo({ x: 1000, y: 0 })]);
