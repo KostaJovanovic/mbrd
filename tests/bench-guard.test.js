@@ -14,7 +14,7 @@ import { setStoreBackend } from '../web/assets/js/storage/idb.ts';
 import { libraryIndex } from '../web/assets/js/storage/library.ts';
 import {
   adoptFolder, newBoard, saveDocument, compactDocument, autosave, stashCurrent,
-  ensureCurrentOnShelf, switchBoard, clearAllData, setPrompt,
+  ensureCurrentOnShelf, switchBoard, clearAllData, setPrompt, duplicateLibraryBoard, currentBoardId,
 } from '../web/assets/js/storage/storage.ts';
 import {
   loadBoard, markDirty, markBenchBoard, isBenchBoard, notUsersBoard,
@@ -116,6 +116,7 @@ test('no writer and no door touches the disk or the store', async () => {
   assert.equal(await newBoard(), false, 'New is refused');
   assert.equal(await switchBoard('brd-somewhere-else'), false, 'so is switching away');
   assert.equal(await clearAllData(), false, 'and Clear everything');
+  assert.equal(await duplicateLibraryBoard(await currentBoardId()), false, 'and copying the board on screen');
 
   assert.equal(writes, 0, 'the shell was asked to write nothing');
   assert.equal(clears, 0, 'no store was cleared');

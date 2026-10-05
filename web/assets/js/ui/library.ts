@@ -6,14 +6,14 @@
 import {
   listBoards, switchBoard, newBoard, deleteLibraryBoard, ensureCurrentOnShelf,
   openCloudBoard, relocateLibraryBoard, boardFolder, revealBoardFolder,
-  refreshBoardThumb, boardFileThumb,
+  refreshBoardThumb, boardFileThumb, duplicateLibraryBoard, saveLibraryCopy,
 } from '../storage/storage.ts';
 import type { BoardEntry } from '../storage/storage.ts';
 import { platform, fileNameOf } from '../platform/platform.ts';
 import { toast } from '../notify.ts';
 import { markClosed } from '../util.ts';
 import { ask } from './dialog.ts';
-import { icon } from './menu.ts';
+import { icon, openAnchored } from './menu.ts';
 import { connectCloud } from './cloud-connect.ts';
 import type { RemoteBoard } from '../storage/cloud/sync.ts';
 
@@ -462,6 +462,25 @@ function card(b: BoardEntry) {
     }, () => {});
   }
 
+  // The card's menu: a copy of the board, and its removal - the board on
+  // screen included, which switches to the most recent other one first.
+  el.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    const question = removal(b);
+    openAnchored({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY }, [
+      { label: 'Open', icon: 'i-expand', hidden: !!b.current,
+        action: () => guard(async () => { if (await switchBoard(b.id)) closeLibrary(); }) },
+      { label: 'Duplicate board', icon: 'i-duplicate',
+        action: () => guard(async () => { if (await duplicateLibraryBoard(b.id)) await render(); }) },
+      { sep: true },
+      b.current
+        ? { label: 'Delete and open another', icon: 'i-delete', danger: true,
+          action: () => guard(() => deleteAndMoveOn(b)) }
+        : { label: question.label, icon: 'i-delete', danger: question.danger,
+          action: () => guard(() => removeBoard(b)) },
+    ], { label: b.title || 'Untitled board' });
+  });
+
   if (!b.current) {
     const question = removal(b);
     const del = document.createElement('button');
@@ -488,13 +507,43 @@ function card(b: BoardEntry) {
     // A board in the boards folder is a file the folder would list again, so
     // its cross moves the file to the bin, where it can come back from. A file
     // elsewhere is somebody's own, and its cross only takes it off the list.
-    del.addEventListener('click', () => guard(async () => {
-      const { title, body, go, danger } = question;
-      if (await ask({ title, body, go, danger }) !== 'go') return;
-      await deleteLibraryBoard(b.id, { file: b.inFolder ? b.path : '' });
-      await render();
-    }));
+    del.addEventListener('click', () => guard(() => removeBoard(b)));
     el.append(del);
   }
   return el;
+}
+
+/**
+ * Ask, then take a board away. A shelf board on the web has no other copy
+ * and the bin does not hold boards, so the question offers to save one first,
+ * as the shelf's eviction prompt does (storage.ts).
+ */
+async function removeBoard(b: BoardEntry) {
+  const { title, body, go, danger } = removal(b);
+  const onlyCopy = !b.path;
+  const answer = await ask({ title, body, go, danger, keep: onlyCopy ? 'Save a copy first' : undefined });
+  if (answer === 'keep') { if (!(await saveLibraryCopy(b.id))) return; }
+  else if (answer !== 'go') return;
+  if (await deleteLibraryBoard(b.id, { file: b.inFolder ? b.path : '' })) await render();
+}
+
+/**
+ * The board on screen cannot be deleted from under itself, so it is left
+ * first: for the most recent other board, or a new one when it is the only
+ * board there is. Asked before anything moves.
+ */
+async function deleteAndMoveOn(b: BoardEntry) {
+  const { title, body, go, danger } = removal(b);
+  const onlyCopy = !b.path;
+  const answer = await ask({ title, body, go, danger, keep: onlyCopy ? 'Save a copy first' : undefined });
+  if (answer === 'keep') {
+    // The shelf copy is the board as last filed; filed now so it is as it stands.
+    await ensureCurrentOnShelf();
+    if (!(await saveLibraryCopy(b.id))) return;
+  } else if (answer !== 'go') return;
+  const other = (await listBoards()).find(o => !o.current);
+  const left = other ? await switchBoard(other.id) : await newBoard();
+  if (!left) return;
+  await deleteLibraryBoard(b.id, { file: b.inFolder ? b.path : '' });
+  await render();
 }

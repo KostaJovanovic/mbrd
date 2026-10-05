@@ -1280,6 +1280,59 @@ export async function relocateLibraryBoard(id: string) {
   }
 }
 
+/**
+ * A second board with the same contents, under "<title> copy". The board on
+ * screen is filed first so the copy is of what is on screen; a board on screen
+ * that is not the user's (the benchmark's, the not-found page) is never filed
+ * and so never copied. On the desktop the copy is a new file in the boards
+ * folder; on the web, a new shelf row holding the same packed blob. The copy's
+ * own title inside the file is the original's - the row's name is what says
+ * which is which until it is opened and renamed.
+ */
+export async function duplicateLibraryBoard(id: string) {
+  const current = id === await ensureBoardId();
+  if (current && notUsersBoard()) { toast('This board is not one of yours to copy'); return false; }
+  try {
+    if (current) await stashCurrent();
+    const row = (await libraryIndex()).find(e => e.id === id);
+    const path = row?.path ?? (id.startsWith(FILE_ID) ? id.slice(FILE_ID.length) : '');
+    const title = `${row?.title || (path ? titleFromFileName(fileNameOf(path)) : 'Untitled board')} copy`;
+    const blob = path ? await platform.files.read({ name: fileNameOf(path), path }) : await getLibraryBoard(id);
+    if (!blob) { toast('That board has nothing on the shelf to copy', 'error'); return false; }
+    if (folder && platform.files.folder) {
+      const ref = await platform.files.folder.create(fileNameFor(title), blob);
+      await putLibraryBoard(uid('brd'), null, { title, thumb: row?.thumb, path: ref.path });
+    } else {
+      await putLibraryBoard(uid('brd'), blob, { title, thumb: row?.thumb });
+    }
+    toast(`Made ${title}`);
+    return true;
+  } catch (err) {
+    console.error(err);
+    toast('Could not copy that board: ' + detailOf(err), 'error');
+    return false;
+  }
+}
+
+/**
+ * A shelf board saved out as a .mbrd before it is deleted - the web's only
+ * copy of it is the shelf's, and the bin does not hold boards. The packed blob
+ * is a .mbrd already. False when it could not be saved, a dismissed picker
+ * included, so the delete waits.
+ */
+export async function saveLibraryCopy(id: string) {
+  const row = (await libraryIndex()).find(e => e.id === id);
+  const blob = await getLibraryBoard(id).catch(() => null);
+  if (!blob) { toast('That board has nothing on the shelf to save', 'error'); return false; }
+  try {
+    await saveBlob(blob, fileNameFor(row?.title || 'Untitled board'));
+    return true;
+  } catch (err) {
+    if (!isAbort(err)) toast('Could not save that board: ' + detailOf(err), 'error');
+    return false;
+  }
+}
+
 /** Take a board off the shelf. The board on screen cannot be deleted from under itself.
  *  `file` is a board in the boards folder: it goes to the bin with its row, or
  *  the folder would list it again at the next look. A file elsewhere only
