@@ -162,8 +162,162 @@ back to the board.
 
 ## Releases
 
+## Second Try
+version: 0.597 - 0.599
+date: 5 October 2026
+
+- **A picture that arrived as a plain card can be tried again.**
+
+- [new] **A picture the browser could not draw when it arrived** - a HEIC, a
+  camera RAW, or one you said no to at the size warning - lands as a card with
+  its name and format, and that card now carries a `Retry` button. One press
+  reads the file again: if it can be drawn now, the card becomes the picture
+  and keeps its place, width, name and tags. If it still cannot, the card stays
+  as it was and says so. `Undo` turns it back into the plain card.
+
+## Elbow Room
+version: 0.586 - 0.596
+date: 3 October 2026
+
+- **Room to work: a board can push its cards apart, and selecting on a phone
+  stops fighting the finger.**
+
+### On the board
+- [new] **`Nudge board` pushes overlapping cards apart** by as little as it
+  takes and keeps the board's shape. It is on the board's right-click menu and
+  beside `Rearrange everything` in the sidebar. Anchored cards stay put, stuck
+  notes ride along, and a fence too small for its cards grows to hold them.
+- [new] **A click on a fence's body picks the fence.** A drag across it still
+  pans or draws a band, and with something already picked the click only puts
+  that down.
+- [new] **Every board in the list has a picture,** a board made on another
+  machine, a new board and a fresh install included. The board file now carries
+  its own small picture, and a copy of the app from before today simply does
+  not show it.
+- [fix] **The sidebar's scrollbar stays up on every tab.**
+
+### Sharpness
+- [new] **At `Full`, pictures stay sharp down to 20% and sharpen as you zoom**
+  rather than when you let go, with a mouse or trackpad. A touch screen keeps
+  sharpening on release, so a pinch stays smooth.
+- [fix] **A photo zoomed in close no longer blinks blank** while its full-size
+  original decodes. The smaller copy stays up until the original is ready.
+
+### On a phone
+- [new] **With a card picked, holding a second one starts a group** instead of
+  opening the menu, and a drag on bare board pans without dropping the group.
+  Only a tap puts it down. In this mode a tap on a card's controls picks the
+  card rather than playing it or following its link.
+- [faster] **The crop frame drags about twice as smoothly.**
+- [fix] **A fingertip no longer resizes a small card by accident.** Under a
+  finger, the corners stop resizing below 30% zoom and the press moves the card
+  instead. A mouse keeps 15%.
+
+## Small Mercies
+version: 0.553 - 0.585
+date: 2 October 2026
+
+- **Thirty small things that should already have worked.** Keys for the tools,
+  undo that says what it did, copies that survive a change of board, and files
+  you can get back out.
+
+### Keys
+- [new] **`Escape` during a drag puts the cards back** where they started and
+  records nothing.
+- [new] **`?` opens the keyboard shortcuts.**
+- [new] **`Shift` keeps a dragged card on one line,** `Shift+F` frames the
+  selection, and `1` zooms to 100%.
+- [new] **Keys for the tools that had none:** `N` writes a note at the
+  pointer, `J` turns Join on and off, `L` anchors or lets go, `]` and `[` bring
+  to front and send to back, and `Ctrl+G` fences the selection.
+- [new] **The Menu key and `Shift+F10` open the menu a right-click would.**
+- [new] **`Ctrl+F` opens Find on the board,** which now opens on your last
+  search and can select every match at once with `Shift+Enter`.
+- [fix] **A held arrow key is one undo step,** not one per press.
+
+### Picking and editing
+- [new] **A note's colour can be changed after it is written,** from its menu.
+- [new] **A `Select` fold on the card menu** picks every card of the same kind,
+  everything in a fence, or every card joined to this one.
+- [new] **The selected cards' connections can be removed in one step.**
+- [new] **`Same width` and `Same height`** under Align & distribute size the
+  selection to the card you opened the menu on. A picture keeps its shape.
+- [new] **Duplicate, copy and cut bring what goes with a card:** the notes stuck
+  on it, a fence's contents, and the lines between them.
+- [new] **A copy made on one board pastes on the next,** pictures and all.
+- [new] **The viewer steps to the previous and next item** with the arrow keys,
+  two buttons at its edges, or a swipe. `Enter` opens the picked card.
+
+### Undo and messages
+- [new] **Undo and Redo say what they just did,** beside the buttons.
+- [new] **Large changes carry an `Undo` on their message:** a cut to the bin,
+  a join, removed connections and a rearrange.
+- [new] **A message that asks for something carries the button for it** -
+  `Reload` on a new version, `Export`, `Connect`, `Create tour` - and stays up
+  while your pointer or keyboard is on it.
+- [new] **The import summary names the files that failed,** or offers `Show
+  them` when every new card landed off screen.
+
+### Files and saving
+- [new] **A card's own file can be saved,** from its menu or the viewer, under
+  the name it arrived with. On a phone it can be sent to another app.
+- [new] **`Replace file…` swaps the file a card holds** and keeps the card: its
+  place, width, tags and every line and tour stop that names it.
+- [new] **A card whose file is missing says so** with a dashed edge, and mends
+  itself when the file is dropped back in.
+- [new] **`Save image` and `Save PDF` can take only the selection,** or one
+  fence.
+- [fix] **A full web shelf asks before it deletes a board to make room,** and
+  offers to save a copy first. It used to drop the oldest board silently.
+- [fix] **When the browser stops storing the board, the corner says so** with a
+  standing `Not saved - Export` button until it resumes.
+- [fix] **Cloud sync waits out an offline spell** and pushes again when the
+  connection is back, instead of stopping.
+
+### Around the app
+- [new] **Media keys, a headset and the lock screen control the board's music,**
+  with the track's title and cover shown by the system.
+- [new] **A YouTube link keeps its timestamp,** and `music.youtube.com` links
+  play.
+- [new] **The browser tab carries the board's name.**
+- [fix] **The phone's Back button closes the open menu or dialog first** in the
+  browser and the installed web app, as it already did in the Android app.
+- [fix] **Focus follows the sidebar in and out** from the keyboard.
+
+## Paperwork
+version: 0.552
+date: 30 September 2026
+
+- **Maintenance:** nothing a reader would see. The save script gained two
+  quicker modes.
+
+## In Motion
+version: 0.540 - 0.551
+date: 24 September 2026
+
+- **Things move the way they should: from where they start, without swinging,
+  and not at all when you asked for less motion.**
+
+- [new] **A picture opened from a card flies out of the card** rather than
+  swelling from the middle of the screen.
+- [new] **`Rearrange` slides the cards to their new places** rather than
+  jumping them there.
+- [new] **The Timeline slides in and out,** and what sits along the foot of the
+  window moves with it.
+- [fix] **Zoom steps pressed during a zoom add up** rather than restarting, and a
+  jump to a card no longer swings outward before it lands.
+- [fix] **Reduced motion now reaches every animation,** the document flights and
+  the zooms included.
+- [fix] **A submenu stays open while the pointer cuts diagonally across the rows
+  above it,** and menus opened from the keyboard no longer pop.
+- [fix] **A finger passing over a card no longer lifts it.**
+- [fix] **In the desktop app, a title-bar menu drops from its title** with a
+  light shadow of its own.
+- **Maintenance:** a benchmark built into the app, for measuring zooms and pans
+  on a given machine.
+
 ## No Dead Weight
-version: 0.487 - 0.519
+version: 0.487 - 0.539
 date: 23 September 2026
 
 - **A board file stops growing on every save, and a phone keeps up with a
@@ -214,12 +368,27 @@ date: 23 September 2026
   cut the text back down to fit while the editor is still open. The note opens
   with the caret where you deleted.
 - [fix] **The sheet no longer jumps sideways** as a scrollbar arrives.
+- [new] **A document written back down to fit flies back into its sticky,**
+  and a sticky outgrowing itself hands over to its page without a jump.
+- [fix] **A long sticky scrolls inside the composer** rather than running off
+  the bottom of the window, and the count of what is left shows only in its
+  last ten characters.
+- [fix] **A paste with a button or a dialog focused no longer lands on the board
+  behind it** as a stray `.md` card.
 
 ### Around the app
 - [new] **The version at the foot of the sidebar links to these notes,** beside
   a new `Privacy` link.
 - [new] **The browser's install prompt shows two pictures of the app,** where it
   had none.
+- [new] **Archive and folder cards are drawn as folders,** with a look of their
+  own at each whimsy tier.
+- [fix] **Signing in to Drive on the web finishes** on a host that drops `.html`
+  from the address, and the app starts offline again.
+- [fix] **A board pulled from the cloud keeps its look, settings and history.**
+- [fix] **Over a hundred smaller repairs** from a full read of the code, most of
+  them the readers for unusual file formats refusing a broken file rather than
+  stalling on it.
 
 ## The Blank Page
 version: 0.465 - 0.486

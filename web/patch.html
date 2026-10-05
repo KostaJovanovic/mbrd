@@ -187,21 +187,174 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>44 releases</span>
-      <span>598 commits</span>
+      <span>49 releases</span>
+      <span>599 commits</span>
       <span>since 24 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
-<li class="pn-rel" id="r-no-dead-weight">
+<li class="pn-rel" id="r-second-try">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">3</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.597 - 0.599</p>
+      <h2 class="pn-name">Second Try</h2>
+      <p class="pn-date">5 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>A picture that arrived as a plain card can be tried again.</strong></li>
+      <li><span class="pn-tag is-new">New</span><strong>A picture the browser could not draw when it arrived</strong> - a HEIC, a camera RAW, or one you said no to at the size warning - lands as a card with its name and format, and that card now carries a <code>Retry</code> button. One press reads the file again: if it can be drawn now, the card becomes the picture and keeps its place, width, name and tags. If it still cannot, the card stays as it was and says so. <code>Undo</code> turns it back into the plain card.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-elbow-room">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">11</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.586 - 0.596</p>
+      <h2 class="pn-name">Elbow Room</h2>
+      <p class="pn-date">3 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Room to work: a board can push its cards apart, and selecting on a phone stops fighting the finger.</strong></li>
+    </ul>
+    <h3 class="pn-part">On the board</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong><code>Nudge board</code> pushes overlapping cards apart</strong> by as little as it takes and keeps the board's shape. It is on the board's right-click menu and beside <code>Rearrange everything</code> in the sidebar. Anchored cards stay put, stuck notes ride along, and a fence too small for its cards grows to hold them.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A click on a fence's body picks the fence.</strong> A drag across it still pans or draws a band, and with something already picked the click only puts that down.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Every board in the list has a picture,</strong> a board made on another machine, a new board and a fresh install included. The board file now carries its own small picture, and a copy of the app from before today simply does not show it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The sidebar's scrollbar stays up on every tab.</strong></li>
+    </ul>
+    <h3 class="pn-part">Sharpness</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>At <code>Full</code>, pictures stay sharp down to 20% and sharpen as you zoom</strong> rather than when you let go, with a mouse or trackpad. A touch screen keeps sharpening on release, so a pinch stays smooth.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A photo zoomed in close no longer blinks blank</strong> while its full-size original decodes. The smaller copy stays up until the original is ready.</li>
+    </ul>
+    <h3 class="pn-part">On a phone</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>With a card picked, holding a second one starts a group</strong> instead of opening the menu, and a drag on bare board pans without dropping the group. Only a tap puts it down. In this mode a tap on a card's controls picks the card rather than playing it or following its link.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>The crop frame drags about twice as smoothly.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A fingertip no longer resizes a small card by accident.</strong> Under a finger, the corners stop resizing below 30% zoom and the press moves the card instead. A mouse keeps 15%.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-small-mercies">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>
     <span class="pn-count">33</span>
   </div>
   <article class="pn-plate">
     <header class="pn-plate-head">
-      <p class="pn-ver">0.487 - 0.519</p>
+      <p class="pn-ver">0.553 - 0.585</p>
+      <h2 class="pn-name">Small Mercies</h2>
+      <p class="pn-date">2 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Thirty small things that should already have worked.</strong> Keys for the tools, undo that says what it did, copies that survive a change of board, and files you can get back out.</li>
+    </ul>
+    <h3 class="pn-part">Keys</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong><code>Escape</code> during a drag puts the cards back</strong> where they started and records nothing.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>?</code> opens the keyboard shortcuts.</strong></li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Shift</code> keeps a dragged card on one line,</strong> <code>Shift+F</code> frames the selection, and <code>1</code> zooms to 100%.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Keys for the tools that had none:</strong> <code>N</code> writes a note at the pointer, <code>J</code> turns Join on and off, <code>L</code> anchors or lets go, <code>]</code> and <code>[</code> bring to front and send to back, and <code>Ctrl+G</code> fences the selection.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The Menu key and <code>Shift+F10</code> open the menu a right-click would.</strong></li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Ctrl+F</code> opens Find on the board,</strong> which now opens on your last search and can select every match at once with <code>Shift+Enter</code>.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A held arrow key is one undo step,</strong> not one per press.</li>
+    </ul>
+    <h3 class="pn-part">Picking and editing</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>A note's colour can be changed after it is written,</strong> from its menu.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A <code>Select</code> fold on the card menu</strong> picks every card of the same kind, everything in a fence, or every card joined to this one.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The selected cards' connections can be removed in one step.</strong></li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Same width</code> and <code>Same height</code></strong> under Align &amp; distribute size the selection to the card you opened the menu on. A picture keeps its shape.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Duplicate, copy and cut bring what goes with a card:</strong> the notes stuck on it, a fence's contents, and the lines between them.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A copy made on one board pastes on the next,</strong> pictures and all.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The viewer steps to the previous and next item</strong> with the arrow keys, two buttons at its edges, or a swipe. <code>Enter</code> opens the picked card.</li>
+    </ul>
+    <h3 class="pn-part">Undo and messages</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Undo and Redo say what they just did,</strong> beside the buttons.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Large changes carry an <code>Undo</code> on their message:</strong> a cut to the bin, a join, removed connections and a rearrange.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A message that asks for something carries the button for it</strong> - <code>Reload</code> on a new version, <code>Export</code>, <code>Connect</code>, <code>Create tour</code> - and stays up while your pointer or keyboard is on it.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The import summary names the files that failed,</strong> or offers <code>Show them</code> when every new card landed off screen.</li>
+    </ul>
+    <h3 class="pn-part">Files and saving</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>A card's own file can be saved,</strong> from its menu or the viewer, under the name it arrived with. On a phone it can be sent to another app.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Replace file&hellip;</code> swaps the file a card holds</strong> and keeps the card: its place, width, tags and every line and tour stop that names it.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A card whose file is missing says so</strong> with a dashed edge, and mends itself when the file is dropped back in.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Save image</code> and <code>Save PDF</code> can take only the selection,</strong> or one fence.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A full web shelf asks before it deletes a board to make room,</strong> and offers to save a copy first. It used to drop the oldest board silently.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>When the browser stops storing the board, the corner says so</strong> with a standing <code>Not saved - Export</code> button until it resumes.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Cloud sync waits out an offline spell</strong> and pushes again when the connection is back, instead of stopping.</li>
+    </ul>
+    <h3 class="pn-part">Around the app</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Media keys, a headset and the lock screen control the board's music,</strong> with the track's title and cover shown by the system.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A YouTube link keeps its timestamp,</strong> and <code>music.youtube.com</code> links play.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The browser tab carries the board's name.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The phone's Back button closes the open menu or dialog first</strong> in the browser and the installed web app, as it already did in the Android app.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Focus follows the sidebar in and out</strong> from the keyboard.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-paperwork">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">1</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.552</p>
+      <h2 class="pn-name">Paperwork</h2>
+      <p class="pn-date">30 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Maintenance:</strong> nothing a reader would see. The save script gained two quicker modes.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-in-motion">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">12</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.540 - 0.551</p>
+      <h2 class="pn-name">In Motion</h2>
+      <p class="pn-date">24 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Things move the way they should: from where they start, without swinging, and not at all when you asked for less motion.</strong></li>
+      <li><span class="pn-tag is-new">New</span><strong>A picture opened from a card flies out of the card</strong> rather than swelling from the middle of the screen.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Rearrange</code> slides the cards to their new places</strong> rather than jumping them there.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The Timeline slides in and out,</strong> and what sits along the foot of the window moves with it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Zoom steps pressed during a zoom add up</strong> rather than restarting, and a jump to a card no longer swings outward before it lands.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Reduced motion now reaches every animation,</strong> the document flights and the zooms included.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A submenu stays open while the pointer cuts diagonally across the rows above it,</strong> and menus opened from the keyboard no longer pop.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A finger passing over a card no longer lifts it.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>In the desktop app, a title-bar menu drops from its title</strong> with a light shadow of its own.</li>
+      <li class="is-plain"><strong>Maintenance:</strong> a benchmark built into the app, for measuring zooms and pans on a given machine.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-no-dead-weight">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">53</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.487 - 0.539</p>
       <h2 class="pn-name">No Dead Weight</h2>
       <p class="pn-date">23 September 2026</p>
     </header>
@@ -232,11 +385,18 @@
       <li><span class="pn-tag is-new">New</span><strong>A document may be untitled.</strong> Clear its name on the sheet, and the card reads <code>untitled</code>.</li>
       <li><span class="pn-tag is-new">New</span><strong>A sticky that grew into a document turns back into a sticky</strong> if you cut the text back down to fit while the editor is still open. The note opens with the caret where you deleted.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>The sheet no longer jumps sideways</strong> as a scrollbar arrives.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A document written back down to fit flies back into its sticky,</strong> and a sticky outgrowing itself hands over to its page without a jump.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A long sticky scrolls inside the composer</strong> rather than running off the bottom of the window, and the count of what is left shows only in its last ten characters.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A paste with a button or a dialog focused no longer lands on the board behind it</strong> as a stray <code>.md</code> card.</li>
     </ul>
     <h3 class="pn-part">Around the app</h3>
     <ul class="pn-notes">
       <li><span class="pn-tag is-new">New</span><strong>The version at the foot of the sidebar links to these notes,</strong> beside a new <code>Privacy</code> link.</li>
       <li><span class="pn-tag is-new">New</span><strong>The browser's install prompt shows two pictures of the app,</strong> where it had none.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Archive and folder cards are drawn as folders,</strong> with a look of their own at each whimsy tier.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Signing in to Drive on the web finishes</strong> on a host that drops <code>.html</code> from the address, and the app starts offline again.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A board pulled from the cloud keeps its look, settings and history.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Over a hundred smaller repairs</strong> from a full read of the code, most of them the readers for unusual file formats refusing a broken file rather than stalling on it.</li>
     </ul>
   </article>
 </li>
@@ -1348,7 +1508,7 @@
   </ol>
 
   <footer class="pn-foot">
-    <span><span class="wm">mbrd</span> 0.598 by valjdakosta</span>
+    <span><span class="wm">mbrd</span> 0.599 by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>
