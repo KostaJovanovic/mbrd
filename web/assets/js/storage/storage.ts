@@ -17,7 +17,7 @@ import {
 } from './library.ts';
 import type { LibraryEntry } from './library.ts';
 import {
-  board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus, mergeBoard,
+  board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus, mergeBoard, byId, select,
   defaultBoardTitle, isNotFoundBoard, isBenchBoard, notUsersBoard, hasContent, isDefaultTitle,
 } from '../state.ts';
 import { normalizeBoard } from '../board-schema.ts';
@@ -703,6 +703,16 @@ export async function openCloudBoard(remote: { boardId: string, folder: string, 
  * had not thrown away. Mobile geometry is left for completeLayout() to pack,
  * since a column somebody else's phone packed says nothing about this one.
  */
+export const mergeBoardFile = (file: File) => mergeFile(file);
+
+/**
+ * The camera, for a merge's receipt: the merged block lands beside the whole
+ * board, usually out of sight. Injected, as the import summary's is, because
+ * storage sits below the viewport; unwired, the receipt has no Show.
+ */
+let showItems: ((ids: readonly string[]) => void) | null = null;
+export function setShowItems(fn: ((ids: readonly string[]) => void) | null) { showItems = fn; }
+
 async function mergeFile(file: File) {
   const job = busy('Merging ' + file.name);
   try {
@@ -718,7 +728,13 @@ async function mergeFile(file: File) {
     const plan = planMerge(incoming, taken, board.items);
     const n = mergeBoard(plan, 'Merge ' + file.name);
     if (!n) { toast('There was nothing on that board to merge'); return false; }
-    toast(`Merged ${n} item${n === 1 ? '' : 's'} from ${file.name}`);
+    // Picked, so whatever is done next is done to them, and a Show that flies
+    // there - the block is beside the whole board, off screen as a rule.
+    const ids = plan.items.map(i => i.id).filter(id => !!byId(id));
+    select(ids);
+    const show = showItems;
+    toast(`Merged ${n} item${n === 1 ? '' : 's'} from ${file.name}`, '',
+      show && board.layoutMode !== 'mobile' ? { label: 'Show', run: () => show(ids) } : undefined);
     return true;
   } catch (err) {
     console.error(err);

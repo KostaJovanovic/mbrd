@@ -34,7 +34,7 @@ import { isWordDoc, pageOneRaster } from './page-one.ts';
 import { isTiffFile, tiffRaster } from './tiff.ts';
 import { makeThumb, shrinkPicture, DISPLAY_SIDE } from '../optimize/picture.ts';
 import { looksLikeMbrd } from '../storage/mbrd.ts';
-import { openOrMergeFile } from '../storage/storage.ts';
+import { openOrMergeFile, mergeBoardFile } from '../storage/storage.ts';
 import { stickerShape, stickerTint, DEFAULT_SHAPE } from '../stickers/catalogue.ts';
 import { tilePictures } from '../style-tile.ts';
 import { NOTE_TINTS } from '../canvas/note-model.ts';
@@ -585,6 +585,22 @@ export async function importFiles(
   if (!replace && sole && isFile(sole) && looksLikeMbrd(sole)) {
     await openOrMergeFile(sole);
     return [];
+  }
+  // Several boards in one drop cannot all be opened, and as file cards they
+  // are nothing anybody wanted: offered as merges, each into this board.
+  const boards = replace ? [] : files.filter((f): f is File => isFile(f) && looksLikeMbrd(f));
+  if (boards.length && confirmImport) {
+    const answer = await confirmImport({
+      title: `Merge ${boards.length} boards?`,
+      body: `${boards.length === 1 ? boards[0].name : `${boards.length} board files`} would be folded into this board, `
+        + 'each beside what is here, each its own undo step.',
+      go: 'Merge them', cancel: 'Add as files',
+    });
+    if (answer === 'go') {
+      for (const f of boards) await mergeBoardFile(f);
+      files = files.filter(f => !boards.includes(f as File));
+      if (!files.length) return [];
+    }
   }
 
   // filesFrom() already capped at MAX_FILES; `truncated` reports whether it did.
