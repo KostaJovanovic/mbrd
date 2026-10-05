@@ -24,9 +24,12 @@ const EPS = 1e-6;
 /**
  * Push overlapping pairs apart along the axis they overlap least on, which is
  * the shortest move that separates them and the one that keeps their order on
- * the other axis. Two free boxes split the move; a fixed one makes the other
- * take all of it. Repeated until a pass finds nothing, since clearing one pair
- * can push a box into the next.
+ * the other axis - unless that move lands a box on a third one and the other
+ * axis lands it clear of everything. Without that, a crowded row only ever parted
+ * sideways: each push shoved the next card along and the row grew wider and
+ * wider while the room above and below it stayed empty. Two free boxes split
+ * the move; a fixed one makes the other take all of it. Repeated until a pass
+ * finds nothing, since clearing one pair can push a box into the next.
  */
 export function nudgeApart(boxes: NudgeBox[], opts: NudgeOpts = {}): Point[] {
   const gap = Math.max(opts.gap ?? 0, 0);
@@ -62,6 +65,16 @@ export function nudgeApart(boxes: NudgeBox[], opts: NudgeOpts = {}): Point[] {
   for (const p of pos) { cx += p.x / n; cy += p.y / n; }
   const quantum = (v: number) => (step > 0 ? Math.ceil(v / step - EPS) * step : v);
   const order = boxes.map((_, i) => i);
+  /** How many boxes other than `a` and `b` box `who` would overlap at (x, y). */
+  const clashes = (who: number, x: number, y: number, a: number, b: number) => {
+    let c = 0;
+    for (let k = 0; k < n; k++) {
+      if (k === a || k === b) continue;
+      if (hw[who] + hw[k] - Math.abs(pos[k].x - x) > EPS
+        && hh[who] + hh[k] - Math.abs(pos[k].y - y) > EPS) c++;
+    }
+    return c;
+  };
 
   for (let pass = 0; pass < MAX_PASSES; pass++) {
     let moved = false;
@@ -80,19 +93,36 @@ export function nudgeApart(boxes: NudgeBox[], opts: NudgeOpts = {}): Point[] {
         const ox = hw[i] + hw[j] - Math.abs(dx);
         const oy = hh[i] + hh[j] - Math.abs(dy);
         if (ox <= EPS || oy <= EPS) continue;
-        // A fixed box can still share a centre with a free one; then j goes right.
-        const alongX = ox <= oy;
-        const away = Math.sign(alongX ? dx : dy) || 1;
-        const need = alongX ? ox : oy;
-        // `away` points from i to j: j moves along it, i against it.
-        let mi = 0, mj = 0;
-        if (boxes[i].fixed) mj = quantum(need);
-        else if (boxes[j].fixed) mi = quantum(need);
-        else if (step > 0) {
-          const mid = alongX ? (pos[i].x + pos[j].x) / 2 : (pos[i].y + pos[j].y) / 2;
-          const outward = (mid - (alongX ? cx : cy)) * away >= 0;
-          if (outward) mj = quantum(need); else mi = quantum(need);
-        } else { mi = need / 2; mj = need / 2; }
+        // The move along one axis. A fixed box can still share a centre with a
+        // free one; then j goes right. `away` points from i to j: j moves along
+        // it, i against it.
+        const plan = (alongX: boolean) => {
+          const away = Math.sign(alongX ? dx : dy) || 1;
+          const need = alongX ? ox : oy;
+          let mi = 0, mj = 0;
+          if (boxes[i].fixed) mj = quantum(need);
+          else if (boxes[j].fixed) mi = quantum(need);
+          else if (step > 0) {
+            const mid = alongX ? (pos[i].x + pos[j].x) / 2 : (pos[i].y + pos[j].y) / 2;
+            const outward = (mid - (alongX ? cx : cy)) * away >= 0;
+            if (outward) mj = quantum(need); else mi = quantum(need);
+          } else { mi = need / 2; mj = need / 2; }
+          return { alongX, away, mi, mj };
+        };
+        // Where a plan leaves the two, counted against everything else.
+        const cost = (p: ReturnType<typeof plan>) => {
+          const ux = p.alongX ? p.away : 0, uy = p.alongX ? 0 : p.away;
+          return (p.mi ? clashes(i, pos[i].x - ux * p.mi, pos[i].y - uy * p.mi, i, j) : 0)
+            + (p.mj ? clashes(j, pos[j].x + ux * p.mj, pos[j].y + uy * p.mj, i, j) : 0);
+        };
+        // Only a clear spot wins over the shorter move. One that is merely
+        // less crowded starts a chain of its own, and a longer one.
+        let pick = plan(ox <= oy);
+        if (cost(pick)) {
+          const other = plan(!pick.alongX);
+          if (!cost(other)) pick = other;
+        }
+        const { alongX, away, mi, mj } = pick;
         if (alongX) { pos[i].x -= away * mi; pos[j].x += away * mj; }
         else { pos[i].y -= away * mi; pos[j].y += away * mj; }
         moved = true;

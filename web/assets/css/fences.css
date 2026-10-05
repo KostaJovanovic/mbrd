@@ -78,7 +78,7 @@
 }
 /* The ring would outline the whole region, which is not on screen. The bar's
    own edge takes the selection colour instead. */
-.item[data-type="fence"].is-rolled.is-selected::before { border-width: 0; }
+.item-ring[data-type="fence"].is-rolled::before { border-width: 0; }
 .item[data-type="fence"].is-rolled.is-selected .item-bar { border-color: var(--select); }
 .item.is-rolled-away,
 .item-shadow.is-rolled-away { visibility: hidden; pointer-events: none; }

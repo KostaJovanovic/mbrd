@@ -124,6 +124,66 @@
 :root[data-snap] .item-shadow,
 :root[data-no-tilt] .item-shadow { rotate: 0deg; }
 
+/* The selection overlay - a twin of every selected card, above the complete
+   item stack, so no card stacked higher can cover the outline of one that is
+   selected. paintRing() in canvas/items.ts keeps each twin on its card's box
+   and copies the card's state classes and type across. Above even the raised
+   title card (100000, below). Drawing only: the grips stay on the card. */
+#item-rings {
+  position: absolute;
+  inset: 0;
+  z-index: 1000000; /* #item-rings */
+  overflow: visible;
+  pointer-events: none;
+}
+/* The card's own box, corner and motion, as .item has them (items.css). A
+   selected card does not lift on hover, so only the drag pickup is mirrored. */
+.item-ring {
+  position: absolute;
+  pointer-events: none;
+  --shape-radius: var(--radius);
+  --own-radius: min(var(--shape-radius), var(--half-min, 9999px));
+  --sel-edge: calc((var(--sel-gap) + var(--sel-line)) * var(--iz));
+  --mark-radius: min(calc(var(--own-radius) + var(--sel-edge)),
+                     calc(var(--own-radius) * 1000));
+  --mark-size: calc(var(--mark-radius) + var(--sel-reach) * var(--iz));
+  translate: 0 calc(var(--lift) * var(--iz));
+  rotate: calc(var(--item-tilt, 0) * var(--tilt-max) + var(--tilt));
+  scale: var(--grow);
+  --lift: 0px;
+  --tilt: 0deg;
+  --grow: 1;
+  transition: translate var(--dur-base) var(--ease-back),
+              rotate var(--dur-base) var(--ease-back),
+              scale var(--dur-base) var(--ease-back),
+              opacity var(--dur-base) var(--ease);
+}
+.item-ring.is-dragging {
+  --lift: var(--lift-drag);
+  --tilt: var(--tilt-drag);
+  --grow: var(--grow-hover);
+}
+:root[data-snap] .item-ring { rotate: 0deg; }
+:root[data-no-tilt] .item-ring { rotate: var(--tilt); }
+/* The corners the card draws, wherever it overrides the default. */
+.item-ring[data-type="note"] { --shape-radius: var(--note-radius); }
+:root[data-whimsy="0"] .item-ring[data-type="image"]:not([data-bare]) {
+  --shape-radius: calc(var(--radius) * 0.12);
+}
+.item-ring::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--sel-edge));
+  border: calc(var(--sel-line) * var(--iz)) solid var(--select);
+  border-radius: var(--mark-radius);
+}
+/* A locked card has no ring - it outlines a grab that cannot happen. The
+   padlock (item-chrome.css) says why instead. */
+.item-ring[data-locked]::before { border-width: 0; }
+/* The card's dimmed and hidden states, carried over. */
+.item-ring.is-filtered { opacity: 0.75; }
+.item-ring:is(.is-rolled-away, .is-clean-out) { visibility: hidden; }
+
 /* Grid lattice. Sized in device pixels by canvas/grid.ts and stretched to CSS
    pixels so marks snap to the device grid. Position/size written per paint. */
 #grid-ink {
@@ -471,18 +531,20 @@
    underneath it is transparent. */
 .item[data-type="title"] {
   background: transparent;
-  /* A size container, so the selection ring below can read the item box in cqw /
-     cqh and pull its top and bottom in to the 3:2 card. The card's own
+  /* A size container, so the stick-target ring below can read the item box in
+     cqw / cqh and pull its top and bottom in to the 3:2 card. The card's own
      container-type:size still governs its text (nearest container wins), so this
-     only serves the ring. */
+     only serves the ring. The selection ring's twin is the same box for the
+     same reason. */
   container-type: size;
 }
+.item-ring[data-type="title"] { container-type: size; }
 /* The selection ring hugs the 3:2 card, not the taller 4:3 item hitbox. The card
    is full item width, so left/right stay at the item edge; top and bottom pull
    in by the slack the centring leaves - half the difference between the item
    height (100cqh) and the card height (the card is 3:2, so 100cqw * 2/3, i.e.
    200cqw/3). The radius is untouched: card and item share --own-radius. */
-.item[data-type="title"].is-selected::before,
+.item-ring[data-type="title"]::before,
 .item[data-type="title"].is-stick-target::before {
   top: calc(50cqh - 100cqw / 3 - var(--sel-edge));
   bottom: calc(50cqh - 100cqw / 3 - var(--sel-edge));

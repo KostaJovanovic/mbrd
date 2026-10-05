@@ -31,6 +31,30 @@ test('two overlapping cards part along the axis they overlap least on, by the le
   assert.deepEqual(pos, [{ x: -15, y: 0 }, { x: 95, y: 0 }]);
 });
 
+test('a push that would shove a card into a third parts the pair the other way', () => {
+  // A and B overlap by 10 across, and B already touches C on its right. Parted
+  // sideways, B would land on C and the row would grow; there is room above
+  // and below, so they part vertically and C is left where it is.
+  const boxes = [
+    { x: 0, y: 0, w: 100, h: 80 }, { x: 90, y: 0, w: 100, h: 80 }, { x: 190, y: 0, w: 100, h: 80 },
+  ];
+  const pos = nudgeApart(boxes);
+  assert.deepEqual(overlaps(boxes, pos), []);
+  assert.deepEqual(pos[2], { x: 190, y: 0 });
+  assert.equal(pos[0].x, 0);
+  assert.equal(pos[1].x, 90);
+  assert.notEqual(pos[0].y, pos[1].y);
+});
+
+test('a crowded row spreads into the rows above and below, not only sideways', () => {
+  // Ten cards a row, each overlapping the next by a fifth of its width.
+  const boxes = Array.from({ length: 10 }, (_, i) => ({ x: i * 80, y: 0, w: 100, h: 80 }));
+  const pos = nudgeApart(boxes, { gap: 8 });
+  assert.deepEqual(overlaps(boxes, pos, 8), []);
+  const ys = pos.map(p => p.y);
+  assert.ok(Math.max(...ys) - Math.min(...ys) > 0, 'some cards left the row');
+});
+
 test('a fixed card never moves, and the other takes the whole move', () => {
   const boxes = [{ x: 0, y: 0, w: 100, h: 100, fixed: true }, { x: 0, y: 60, w: 100, h: 100 }];
   const pos = nudgeApart(boxes);

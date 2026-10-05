@@ -61,6 +61,9 @@ export type BoardSettings = {
   gridStep: number;
   mobileColumns: number;
   spacing: number;
+  /** Rearrange keeps every card below the title card: 'on', 'off', or 'auto',
+   *  which is on while the title card is anchored - see keepsBelowTitle(). */
+  belowTitle: string;
   scale: number;
   units: string;
   /** Whether the sheet is drawn. `paper` keeps its size while it is not. */
@@ -174,6 +177,9 @@ export const DEFAULT_SETTINGS: BoardSettings = {
   gridStep: 64,
   mobileColumns: 6, // desktop compat value; mobile overrides to 8
   spacing: 12,
+  // Not a boolean, because "nobody chose" has to be told apart from either
+  // answer: untouched, it follows the title card's anchor.
+  belowTitle: 'auto',
   scale: DEFAULT_SCALE,
   units: 'metric',
   // Down, at A4. The two used to be one key, with '' meaning no sheet - so a

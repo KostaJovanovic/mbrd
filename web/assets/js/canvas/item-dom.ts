@@ -545,6 +545,27 @@ export function buildShadow(item: ItemLike, tilt: string): HTMLDivElement {
 }
 
 /**
+ * A selected card's ring and its four corner marks, drawn in #item-rings, the
+ * layer above every card - so a card stacked over a selected one can never hide
+ * what is selected. Inside the card the ring could only ever paint at the card's
+ * own depth. Drawing only: the grips that take the press stay on the card.
+ *
+ * No data-id, unlike the shadow twin: nothing should ever find a card by asking
+ * for its id and get this instead. Handed back unplaced, as buildShadow() is.
+ */
+export function buildRing(): HTMLDivElement {
+  const el = document.createElement('div');
+  el.className = 'item-ring';
+  for (const g of ['nw', 'ne', 'se', 'sw']) {
+    const mark = document.createElement('div');
+    mark.className = 'ring-mark';
+    mark.dataset.g = g;
+    el.append(mark);
+  }
+  return el;
+}
+
+/**
  * The eight resize handles: four corners, and four edges for resizing one axis
  * alone. The single-letter ones are the edges (see .grip-edge in items.css).
  *

@@ -268,6 +268,8 @@ function normalizeSettings(raw: unknown, mode: LayoutMode): BoardSettings {
     fonts: normalizeFonts(settings.fonts),
     scale: clampScale(settings.scale),
     units: settings.units === 'imperial' ? 'imperial' : 'metric',
+    belowTitle: settings.belowTitle === 'on' || settings.belowTitle === 'off'
+      ? settings.belowTitle : 'auto',
     // A size, always - `paperShow` is what says whether it is drawn. Every
     // file written before that split says "no sheet" by leaving `paper` empty,
     // and has no flag to read, so the flag is recovered from the id and the id

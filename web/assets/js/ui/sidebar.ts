@@ -3,6 +3,7 @@
 // themselves live in settings-schema.ts + panel.ts.
 
 import { bus, setSetting } from '../state.ts';
+import { TITLE_ID } from '../board-model.ts';
 import { VERSION } from '../version.js';
 import { el } from '../util.ts';
 import { readPref, writePref } from '../prefs.ts';
@@ -177,6 +178,9 @@ export function initSidebar(cmds: SidebarCommands, viewport: Viewport | null = n
   bus.on('lens', paint);
   // The Tour section's rows depend on whether there is a tour.
   bus.on('tour', paint);
+  // "Keep cards below the title card" follows the title card's anchor until it
+  // is chosen by hand, and an anchor arrives as an 'item' write.
+  bus.on('item', (id: string) => { if (id === TITLE_ID) paint(); });
   paint();
   restoreOpen();
 }

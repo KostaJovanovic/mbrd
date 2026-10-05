@@ -32,7 +32,7 @@ import { arrange, mobileOrder } from '../arrange/arrangements.ts';
 import { nudgeApart } from '../arrange/nudge.ts';
 import type { Obstacle } from '../arrange/arrangements.ts';
 import { syncBoardMode } from './board-view.ts';
-import type { Item, Geometry } from '../board-model.ts';
+import { TITLE_ID, type Item, type Geometry } from '../board-model.ts';
 import type { Point } from '../geometry.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import { platform } from '../platform/platform.ts';
@@ -428,6 +428,57 @@ function obstacleBox(item: Item, step: number): Obstacle {
 }
 
 /**
+ * The title card, if Rearrange is to keep every card below it now.
+ *
+ * The setting is 'on', 'off', or - until somebody flips it - 'auto', which
+ * follows the title card's anchor. The card arrives anchored, so a new board
+ * keeps its cards under its title; unanchor the card and, unless the setting
+ * was chosen by hand, the rule goes with the anchor, since an unanchored title
+ * is one that has been asked to take a slot like any other card. Desktop only:
+ * the Feed has no title card on the board.
+ */
+export function titleAbove(): Item | null {
+  if (board.layoutMode === 'mobile' || board.titleHidden) return null;
+  const title = byId(TITLE_ID);
+  if (!title || title.type !== 'title') return null;
+  const want = board.settings.belowTitle;
+  const on = want === 'on' || (want !== 'off' && isLocked(title));
+  return on ? title : null;
+}
+
+/** Whether Rearrange keeps cards below the title card - the setting's checkbox. */
+export const keepsBelowTitle = () => !!titleAbove();
+
+/**
+ * Bring a finished layout down until nothing in it stands above `limit`, the
+ * height of the title card's foot (world y runs up).
+ *
+ * Moved as a block rather than card by card, so the arrangement keeps its
+ * shape: the layout is asked again about a lower centre, which keeps it clear
+ * of the anchored cards - the title card among them - at its new height. A
+ * layout that grows upward again as it moves gets a few more tries and then
+ * the rest of the way as a plain shift. `free` shakes each card where it stands,
+ * so a block move there would carry the whole board; its cards are taken down
+ * one at a time instead.
+ */
+function keepBelow(laid: Item[], spots: Point[], limit: number, relay: (dy: number) => Point[], shake: boolean) {
+  const top = (k: number) => spots[k].y + rotatedExtents(laid[k]).hh;
+  if (shake) {
+    spots.forEach((p, k) => { const over = top(k) - limit; if (over > 0) p.y -= over; });
+    return spots;
+  }
+  const overshoot = () => Math.max(...spots.map((_, k) => top(k))) - limit;
+  let moved = 0;
+  for (let tries = 0; tries < 4 && overshoot() > 0; tries++) {
+    moved += overshoot();
+    spots = relay(moved);
+  }
+  const rest = overshoot();
+  if (rest > 0) for (const p of spots) p.y -= rest;
+  return spots;
+}
+
+/**
  * Lay `items` out again. A subset relays about its own centre (not the
  * origin) and the view stays put. Options: name (layout override),
  * center, within (fence to lay out inside, at its own size), label.
@@ -445,13 +496,12 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // keeps its place on it. So a pinned sticky stays pinned through a Rearrange,
   // and a note whose host is not in this set rides a host that does not move -
   // and so does not move either. Everything else is arranged as before.
-  // The title card is not singled out here and takes a slot like any other -
-  // but it arrives anchored (makeTitleItem in state.ts), so in practice it falls
-  // out into `held` below with every other anchored card and the board is laid
-  // out around it where it stands. That is the same end the old special case was
-  // after, "cards no longer land on top of it", reached through the anchor
-  // rather than through a rule of its own; unanchor it from its menu and it
-  // takes a slot and moves with the rest again.
+  // The title card arrives anchored (makeTitleItem in state.ts), so it falls out
+  // into `held` below with every other anchored card and the board is laid out
+  // around it where it stands. On top of that, the "keep cards below the title
+  // card" setting brings the whole layout under it - see titleAbove(), which
+  // also holds the card still while that setting is on. Unanchor it with the
+  // setting untouched and both go: it takes a slot and moves with the rest.
   const riders = items.filter(isRider);
   // A fenced card is not laid out either, and rides its fence the way a sticky
   // rides its card. A fence is one object - that is what fenceFollowers() says
@@ -492,7 +542,11 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // everything, and still rebuilds about the origin and flies the view there.
   // Filtering earlier would have made one locked card silently turn it into the
   // subset behaviour, which is a different command wearing the same name.
-  const free = items.filter(it => !isRider(it) && !isLocked(it) && !carriedIds.has(it.id));
+  // A title card the layout keeps below stays where it is, whether or not it is
+  // anchored - it is what the rest are being laid out under. See titleAbove().
+  const title = options.within ? null : titleAbove();
+  const stays = (it: Item) => isLocked(it) || it.id === title?.id;
+  const free = items.filter(it => !isRider(it) && !stays(it) && !carriedIds.has(it.id));
   // SAFETY: as above - see GeomRow.
   const beforeAll = snapshotGeom(items.map(i => i.id)) as GeomRow[];
   // Where the cards on screen stand now, so they can slide to their slots
@@ -515,7 +569,7 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // Anchored, *or carried by something anchored*. A card in an anchored region
   // is carried by a fence that has not moved, so its translation is zero and it
   // is standing just as still as the fence is - see the carry pass below.
-  const held = new Set(board.items.filter(isLocked).map(it => it.id));
+  const held = new Set(board.items.filter(stays).map(it => it.id));
   for (let grew = true; grew;) {
     grew = false;
     for (const it of carried) {
@@ -619,9 +673,10 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     // source for every later press of Rearrange.
     placed = placeMobileItems(placed, obstacles, { preserveSize: true, blockers: anchored });
   } else {
-    const spots = arrange(laid, {
-      name: options.name || board.arrangement,
-      center: at,
+    const name = options.name || board.arrangement;
+    const lay = (dy: number) => arrange(laid, {
+      name,
+      center: { x: at.x, y: at.y - dy },
       spacing: board.settings.spacing,
       // Snapping reserves whole cells so the per-item lattice snap below cannot
       // round two tight cards into an overlap - see arrange()/toCells.
@@ -630,7 +685,13 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
       obstacles: anchored.map(item => obstacleBox(item, snapDesktop ? step : 0)),
       width: room ? room.x1 - room.x0 : undefined,
     });
+    let spots = lay(0);
     if (room) squeezeInto(laid, spots, room);
+    // Under the title card's foot, with the board's spacing between them.
+    if (title) {
+      const limit = title.y - rotatedExtents(title).hh - board.settings.spacing;
+      spots = keepBelow(laid, spots, limit, lay, name === 'free');
+    }
     placed = laid.map((item, slot) => ({
       ...item,
       x: spots[slot].x,

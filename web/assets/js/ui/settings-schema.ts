@@ -11,7 +11,7 @@ const selectionSize = () => selection.size;
 const tourStops = () => board.tour.length;
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { currentLens } from './board-view.ts';
-import { setMediaFit } from './board-actions.ts';
+import { keepsBelowTitle, setMediaFit } from './board-actions.ts';
 import { timelineShown, toggleTimeline } from './timeline-view.ts';
 import { paletteSwatches } from './palettes.ts';
 import { itemBounds } from '../geometry.ts';
@@ -554,6 +554,13 @@ export const SECTIONS: Section[] = [
       { id: 'opt-snap', type: 'check', label: 'Snap to grid', needsBoard: true, when: desktop,
         get: () => !!board.settings.snap,
         set: v => setSetting('snap', v) },
+      // Shows what Rearrange will do now, which while nobody has flipped it is
+      // whether the title card is anchored - so unanchoring the card turns this
+      // off on its own. A flip here is a choice, and from then on it stays.
+      { id: 'opt-below-title', type: 'check', label: 'Keep cards below the title card',
+        needsBoard: true, when: ctx => desktop(ctx) && !board.titleHidden,
+        get: () => keepsBelowTitle(),
+        set: v => setSetting('belowTitle', v ? 'on' : 'off') },
     ],
   },
 

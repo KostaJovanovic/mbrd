@@ -23,7 +23,7 @@ import {
 import type { Box, Bounds, Point } from '../geometry.ts';
 import {
   itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName, showStickTarget,
-  setDragging, barHeight,
+  setDragging, barHeight, refreshRings,
 } from './items.ts';
 import { noteFloor } from './notes.ts';
 import { linkURL } from './renderers.ts';
@@ -3145,7 +3145,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // gesture object doing the discriminating for us - and `in` is that sentence
     // said so that the typechecker reads it too, rather than a mode list here
     // that would have to be kept level with the two declarations.
-    if ('node' in gesture) gesture.node?.classList.remove('is-resizing');
+    if ('node' in gesture) {
+      gesture.node?.classList.remove('is-resizing');
+      refreshRings();
+    }
     if (gesture.mode === 'move' && gesture.moved) setDragging(gesture.moving, false);
     el.classList.remove('is-panning', 'is-moving');
     showStickTarget(null);

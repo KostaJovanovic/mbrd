@@ -1359,7 +1359,7 @@
   .item { --grip-slop: 9px; --grip-corner: 40px; --grip-edge: 24px; }
   /* Nothing to hover with, and a swollen mark under a finger is a mark under a
      finger. It stays for the drag, which is the part you can see. */
-  .grip:not(.grip-edge):hover { --grip-swell: 1; }
+  .item-ring:not(.is-resizing) .ring-mark.is-swell { --grip-swell: 1; }
 
   /* The chrome's hover reactions used to be cancelled here, and the
      cancellation is gone rather than guarded a third time.

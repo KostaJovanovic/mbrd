@@ -95,10 +95,13 @@
   -webkit-mask: var(--pin-glyph) center / contain no-repeat;
   mask: var(--pin-glyph) center / contain no-repeat;
 }
-/* Selection ring on a pseudo-element rather than outline, because engines
-   disagree about whether outline-offset grows the corner radius. The box's
-   outer edge is --sel-edge out from the item; the border grows inward.
-   Delays let the ring expand instantly on selection and collapse unseen. */
+/* The stick-target ring, on a pseudo-element rather than outline, because
+   engines disagree about whether outline-offset grows the corner radius. The
+   box's outer edge is --sel-edge out from the item; the border grows inward.
+   Delays let the ring expand instantly and collapse unseen. The *selection*
+   ring is not drawn here: it is .item-ring in #item-rings (canvas.css), above
+   every card, since one drawn here paints at the card's own depth and any card
+   stacked higher covered it. */
 .item::before {
   content: '';
   position: absolute;
@@ -110,15 +113,6 @@
               inset 0s var(--dur-fast),
               border-radius 0s var(--dur-fast);
 }
-.item.is-selected::before {
-  border-width: calc(var(--sel-line) * var(--iz));
-  transition: border-width var(--dur-fast) var(--ease);
-}
-
-/* Locked cards have no ring — the ring outlines a grab that cannot happen.
-   The padlock (item-chrome.css) says why instead. */
-.item[data-locked].is-selected::before { border-width: 0; }
-
 /* A card whose file is not here (writeMissing() in canvas/item-dom.ts). It
    drew blank, which reads as an empty card rather than a broken one; a dashed
    edge and a word say which. Counter-scaled by --iz like the ring, so the word

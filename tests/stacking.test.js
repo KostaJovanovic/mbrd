@@ -27,9 +27,13 @@ const read = name => readFileSync(join(CSS, name), 'utf8');
  * clear of every other item *within the world*, a separate stack from the
  * chrome's - #world is its own containing block, so this is never compared
  * with --z-chrome. Large and !important to beat the board's unbounded
- * per-item z.
+ * per-item z. The selection-ring layer is the same case one rung up: it sits
+ * over every item, that raised title card included.
  */
-const EXEMPT = [/#world:not\(\.zoom-far\) \.item\[data-type="title"\]\.is-selected/];
+const EXEMPT = [
+  /#world:not\(\.zoom-far\) \.item\[data-type="title"\]\.is-selected/,
+  /z-index: 1000000; \/\* #item-rings \*\//,
+];
 
 test('nothing above the board writes its own z-index', () => {
   const stray = [];

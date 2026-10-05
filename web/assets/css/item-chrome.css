@@ -280,17 +280,26 @@
    sized. No grip on screen is no grip under the pointer, so this rule is
    the whole refusal. The corner marks go with them, and the ring turns
    dashed - a selection that moves and does not stretch. */
-#world.zoom-no-resize .grip { display: none; }
-#world.zoom-no-resize .item.is-selected::before { border-style: dashed; }
+#world.zoom-no-resize :is(.grip, .ring-mark) { display: none; }
+#world.zoom-no-resize .item-ring::before { border-style: dashed; }
 
-/* The corner mark — the selection ring drawn heavier at each corner. Only
-   the two outward-facing borders are drawn; the inward pair would close it
-   into a floating box.
+/* The corner mark — the selection ring drawn heavier at each corner, in the
+   ring's own layer (#item-rings, canvas.css) so no card covers it. Sized and
+   placed as the grip it marks, which stays on the card to take the press.
+   Shown only where the card has grips. Only the two outward-facing borders
+   are drawn; the inward pair would close it into a floating box.
    A border width floors to whole device pixels before the zoom transform, so
    zoomed in past about 160% the corner's 3.2 * --iz and the ring's 2 * --iz
    both floored to one pixel and the corners vanished into the ring. The floor
    is one device pixel past the ring as it is actually drawn. */
-.grip:not(.grip-edge)::after {
+.ring-mark {
+  position: absolute;
+  width:  min(var(--mark-size), calc(50% + var(--sel-edge)));
+  height: min(var(--mark-size), calc(50% + var(--sel-edge)));
+  display: none;
+}
+.item-ring[data-grips]:not([data-locked], [data-type="fence"].is-rolled) .ring-mark { display: block; }
+.ring-mark::after {
   --px: var(--device-px, 1px);
   --sel-ring: max(var(--px), round(down, calc(var(--sel-line) * var(--iz)), var(--px)));
   content: '';
@@ -302,35 +311,36 @@
   transition: border-width var(--dur-fast) var(--ease);
 }
 /* Thickens under the pointer / while dragging. Grows inward from the ring's
-   outer edge so the line stays in place. */
-.item.is-resizing .grip:not(.grip-edge) { --grip-swell: 1.6; }
-@media (hover: hover) {
-  .grip:not(.grip-edge):hover { --grip-swell: 1.6; }
-}
+   outer edge so the line stays in place. The hover is the grip's, carried to
+   its mark by swellMark() in canvas/items.ts. */
+.item-ring.is-resizing .ring-mark,
+.ring-mark.is-swell { --grip-swell: 1.6; }
 /* Corner radius follows the item's own curve. R offset outward by d gives
    R + d, staying concentric at every zoom. */
-.grip[data-g="nw"]::after {
+.ring-mark[data-g="nw"]::after {
   border-right-width: 0; border-bottom-width: 0;
   border-radius: var(--mark-radius) 0 0 0;
 }
-.grip[data-g="ne"]::after {
+.ring-mark[data-g="ne"]::after {
   border-left-width: 0; border-bottom-width: 0;
   border-radius: 0 var(--mark-radius) 0 0;
 }
-.grip[data-g="se"]::after {
+.ring-mark[data-g="se"]::after {
   border-left-width: 0; border-top-width: 0;
   border-radius: 0 0 var(--mark-radius) 0;
 }
-.grip[data-g="sw"]::after {
+.ring-mark[data-g="sw"]::after {
   border-right-width: 0; border-top-width: 0;
   border-radius: 0 0 0 var(--mark-radius);
 }
 
 /* Corner boxes straddle the item's corner — outer edge on the ring. */
-.grip[data-g="nw"] { left:  calc(-1 * var(--sel-edge)); top:    calc(-1 * var(--sel-edge)); cursor: nwse-resize; }
-.grip[data-g="ne"] { right: calc(-1 * var(--sel-edge)); top:    calc(-1 * var(--sel-edge)); cursor: nesw-resize; }
-.grip[data-g="sw"] { left:  calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); cursor: nesw-resize; }
-.grip[data-g="se"] { right: calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); cursor: nwse-resize; }
+:is(.grip, .ring-mark)[data-g="nw"] { left:  calc(-1 * var(--sel-edge)); top:    calc(-1 * var(--sel-edge)); }
+:is(.grip, .ring-mark)[data-g="ne"] { right: calc(-1 * var(--sel-edge)); top:    calc(-1 * var(--sel-edge)); }
+:is(.grip, .ring-mark)[data-g="sw"] { left:  calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); }
+:is(.grip, .ring-mark)[data-g="se"] { right: calc(-1 * var(--sel-edge)); bottom: calc(-1 * var(--sel-edge)); }
+.grip[data-g="nw"], .grip[data-g="se"] { cursor: nwse-resize; }
+.grip[data-g="ne"], .grip[data-g="sw"] { cursor: nesw-resize; }
 
 /* The grab area — an invisible hit area larger than the drawn mark. In --iz
    units so it holds a constant size on screen. */

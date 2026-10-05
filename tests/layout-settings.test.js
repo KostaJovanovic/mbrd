@@ -154,6 +154,20 @@ test('new Mobile profiles use the compact grid defaults and eight spaces', () =>
   assert.equal(board.settings.appearance.vars['--grid-dot'], '2.2px');
 });
 
+test('keeping cards below the title card is auto until chosen, and a choice is saved', () => {
+  // 'auto' is what follows the title card's anchor (titleAbove() in
+  // ui/board-actions.ts); a hand-picked 'on' or 'off' has to survive a save,
+  // and anything else a file says falls back to following the anchor.
+  setBoardMode('desktop');
+  loadBoard({ items: [] });
+  assert.equal(board.settings.belowTitle, 'auto');
+  setSetting('belowTitle', 'off');
+  loadBoard(serializeBoard());
+  assert.equal(board.settings.belowTitle, 'off');
+  loadBoard({ items: [], settings: { belowTitle: 'sometimes' } });
+  assert.equal(board.settings.belowTitle, 'auto');
+});
+
 test('Desktop and Mobile retain independent settings and local appearance', () => {
   setBoardMode('desktop');
   loadBoard({ items: [] });

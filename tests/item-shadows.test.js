@@ -28,6 +28,24 @@ test('board item shadows are mirrored into one layer below every item', async ()
   assert.match(items, /if \(shadow && item\) placeBox\(shadow,\s*item\)/);
 });
 
+test('selection rings are mirrored into one layer above every item', async () => {
+  // A ring drawn on the card paints at the card's depth, so a card stacked
+  // higher covered the outline of a selected one. The layer has to exist, sit
+  // over the item stack (the raised title card's 100000 included), refuse the
+  // pointer so the grips under it still take presses, and each ring has to be
+  // placed - an unplaced twin is a ring at the origin.
+  const [html, items] = await Promise.all([
+    readFile(new URL('web/index.html', root), 'utf8'),
+    readFile(new URL('web/assets/js/canvas/items.ts', root), 'utf8'),
+  ]);
+  const css = appCss();
+  assert.match(html, /<div id="item-rings" aria-hidden="true"><\/div>/);
+  assert.match(css, /#item-rings\s*\{[^}]*z-index:\s*1000000;/s);
+  assert.match(css, /#item-rings\s*\{[^}]*pointer-events:\s*none;/s);
+  assert.match(items, /placeBox\(ring,\s*item\)/);
+  assert.doesNotMatch(css, /\.item\.is-selected::before\s*\{[^}]*border-width:\s*calc/s);
+});
+
 test('the fence band is sunk below the underlay its cards cast onto', async () => {
   // A fence left in the item stack painted out the shadow of every card
   // inside it, since the shadow underlay sits below the item layer so no card

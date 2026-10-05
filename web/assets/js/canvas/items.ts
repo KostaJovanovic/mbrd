@@ -20,7 +20,7 @@ import {
   buildContent, fontFamilyOf, paintStyleTileFaces, releaseImages, retitleContent,
 } from './renderers.ts';
 import {
-  buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
+  buildItem, buildRing, buildShadow, buildTitleControls, farKind, itemAccessibleName,
   resetTilt, restingTilt, retilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook, writeNoteTint,
   writeMissing,
 } from './item-dom.ts';
@@ -46,13 +46,16 @@ const EXIT_ANIM_CAP = 12;
 const nodes = new Map<string, HTMLElement>();
 /** id -> lightweight geometry twin painted below the complete item stack. */
 const shadows = new Map<string, HTMLElement>();
-// The three things initItems() sets, together, once, for the rest of the
+/** id -> selection ring painted above the complete item stack. See paintRing(). */
+const rings = new Map<string, HTMLElement>();
+// The things initItems() sets, together, once, for the rest of the
 // session - hence the `!` on reads below once one of them (e.g. worldEl) has
 // already been checked: a state with one set and another not never happens.
 // cullMargin() (viewport.ts) is the exception, since it's reachable from a
 // repaint scheduled before the wiring, so it guards `vp` where these don't.
 let worldEl: HTMLElement | null = null;
 let shadowLayerEl: HTMLElement | null = null;
+let ringLayerEl: HTMLElement | null = null;
 let vp: Viewport | null = null;
 
 /**
@@ -122,6 +125,7 @@ export function slideFrom(was: ReadonlyMap<string, { x: number, y: number }>, ms
     const opts = { duration: ms, delay: i++ * step, easing: 'cubic-bezier(0.77, 0, 0.175, 1)', fill: 'backwards' as const };
     el.animate(frames, opts);
     shadows.get(id)?.animate(frames, opts);
+    rings.get(id)?.animate(frames, opts);
   }
 }
 
@@ -135,6 +139,7 @@ export function setDragging(ids: readonly string[], on: boolean) {
     nodes.get(id)?.classList.toggle('is-dragging', on);
     shadows.get(id)?.classList.toggle('is-dragging', on);
   }
+  paintRings();
 }
 /**
  * Told which cards the pointer is on, whenever that changes.
@@ -261,6 +266,7 @@ function reindex(delta?: ItemsDelta) {
 export function initItems(world: HTMLElement, viewport: Viewport) {
   worldEl = world;
   shadowLayerEl = world.querySelector('#item-shadows');
+  ringLayerEl = world.querySelector('#item-rings');
   vp = viewport;
   // The tour mark's press, delegated once for the whole world rather than bound
   // per node. The marks come and go with the cull and with every edit to the
@@ -419,9 +425,11 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
     // per-event touch rule. Lifting on it read as the card jumping under the finger.
     if (e.pointerType === 'touch') return;
     setHoverGroup(itemIdFromEvent(e.target));
+    swellMark(e.target);
   });
   world.addEventListener('pointerout', e => {
     if (!itemIdFromEvent(e.relatedTarget)) setHoverGroup(null);
+    swellMark(e.relatedTarget);
   });
   // Arrow rather than the function itself: onChange hands its listener the
   // viewport, and sync() reads its argument.
@@ -436,7 +444,10 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   // after syncView(), because a card that has only just been mounted has no
   // snapped transform yet, and it costs a single boolean read on every frame
   // that is not the settling one. See the note above deviceSnap().
+  // The rings follow on the settling frame, as the snap does: a selected card
+  // that scrolled into view mid-pan gets its ring the moment the view stops.
   vp.onChange(() => {
+    if (!vp!.moving) paintRings();
     if (!cullProfile.on) { syncView(); resnap(); return; }
     const t = performance.now();
     syncView();
@@ -946,6 +957,7 @@ function dropNode(id: string, el = nodes.get(id)) {
   nodes.delete(id);
   shadows.get(id)?.remove();
   shadows.delete(id);
+  paintRing(id);
 }
 
 /**
@@ -1536,6 +1548,8 @@ function rebuild(id: string) {
   // And the shadow twin, which is not on this element at all - see syncTwin(),
   // and the reason a question build() asks once has to be asked again here.
   syncTwin(el, item);
+  // And the ring, which reads the lock and the roll written just above.
+  paintRing(id);
   // The bar is a sibling of the body, so replaceChildren above does not touch
   // it - only the caption inside it needs the new name. Patched rather than
   // rebuilt so the handle beside it keeps its identity, and with it any focus
@@ -2044,6 +2058,79 @@ function paintGrips() {
   // +50ms, so the callback lands the far side of the comparison rather than on
   // the exact millisecond it turns over.
   if (soonest) gripWatch = setTimeout(paintGrips, soonest + 50);
+  // Last, since the rings copy the grips. This pass already runs after every
+  // selection change and every frame of a drag, which are the two things a
+  // ring has to follow.
+  paintRings();
+}
+
+/** What a card says on itself that its ring's rules read. Classes go across too:
+ *  every `is-` state the card wears, from the drag lift to the roll. */
+const RING_ATTRS = ['data-type', 'data-locked', 'data-bare', 'data-grips'] as const;
+
+/**
+ * Bring one card's selection ring into line with the card.
+ *
+ * The ring used to be the card's own ::before, which paints at the card's depth:
+ * any card stacked higher drew straight over the outline of what was selected.
+ * Here it is a twin in #item-rings, a layer above the whole item stack, built
+ * as #item-shadows is below it - same box, same lean, same lift - so it cannot
+ * be covered. It exists while the card is selected and on the board, and not
+ * otherwise: a card lifted into the note composer or culled has none.
+ *
+ * Cheap enough to run over the selection on every frame of a drag: each write is
+ * skipped when it would not change anything, and placeBox() is what placeNode()
+ * already pays for the card itself.
+ */
+function paintRing(id: string) {
+  const el = nodes.get(id);
+  const item = byId(id);
+  let ring = rings.get(id);
+  if (!el || !item || !selection.has(id) || el.parentElement !== worldEl) {
+    ring?.remove();
+    rings.delete(id);
+    return;
+  }
+  if (!ring) {
+    ring = buildRing();
+    rings.set(id, ring);
+  }
+  if (!ring.isConnected) ringLayerEl!.append(ring);
+  let cls = 'item-ring';
+  for (const c of el.classList) if (c.startsWith('is-')) cls += ' ' + c;
+  if (ring.className !== cls) ring.className = cls;
+  for (const name of RING_ATTRS) {
+    const v = el.getAttribute(name);
+    if (v === null) ring.removeAttribute(name);
+    else if (ring.getAttribute(name) !== v) ring.setAttribute(name, v);
+  }
+  const tilt = el.style.getPropertyValue('--item-tilt');
+  if (ring.style.getPropertyValue('--item-tilt') !== tilt) ring.style.setProperty('--item-tilt', tilt);
+  placeBox(ring, item);
+}
+
+/** Every ring: the selection's, and any left over from cards no longer in it. */
+function paintRings() {
+  if (!ringLayerEl) return;
+  for (const id of rings.keys()) if (!selection.has(id)) paintRing(id);
+  for (const id of selection) paintRing(id);
+}
+
+/** Exported for canvas/input.ts, which takes a resize's mark-swelling class off
+ *  the card at the end of the gesture, after the last frame that repaints. */
+export const refreshRings = paintRings;
+
+/**
+ * Swell the corner mark under the pointer, as the mark itself did when it was
+ * drawn on the grip: the grip is on the card and the mark is in the ring layer,
+ * so CSS :hover on one cannot reach the other.
+ */
+function swellMark(target: EventTarget | null) {
+  if (!ringLayerEl) return;
+  for (const m of ringLayerEl.querySelectorAll('.ring-mark.is-swell')) m.classList.remove('is-swell');
+  const grip = target instanceof Element ? target.closest<HTMLElement>('.grip:not(.grip-edge)') : null;
+  const id = grip && itemIdFromEvent(grip);
+  if (id) rings.get(id)?.querySelector(`.ring-mark[data-g="${grip.dataset.g}"]`)?.classList.add('is-swell');
 }
 
 /**
@@ -2065,6 +2152,7 @@ function paintFilter() {
     el.classList.toggle('is-filtered', dim);
     shadows.get(id)?.classList.toggle('is-filtered', dim);
   }
+  paintRings();
 }
 
 /** The rolled-up fences as of the last paintRolled(), read again at build. */
@@ -2088,6 +2176,7 @@ function paintRolled() {
     el.classList.toggle('is-rolled-away', away);
     shadows.get(id)?.classList.toggle('is-rolled-away', away);
   }
+  paintRings();
 }
 
 /** The cards the cleaning game dealt a mess to, while it is up and left some
@@ -2112,6 +2201,7 @@ export function setCleanPlay(ids: Set<string> | null) {
     el.classList.toggle('is-clean-out', out);
     shadows.get(id)?.classList.toggle('is-clean-out', out);
   }
+  paintRings();
 }
 
 /** Repaint every mounted node from scratch - used after loading a board. */
@@ -2119,6 +2209,8 @@ export function resetItems() {
   for (const el of nodes.values()) discard(el);
   nodes.clear();
   shadows.clear();
+  rings.clear();
+  ringLayerEl?.replaceChildren();
   // The five id-keyed latches, which are the same kind of state as the two maps
   // above and were being left behind. Each is "which card is currently wearing
   // this mark", and every one of them is compared before it is written: with
