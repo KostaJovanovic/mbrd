@@ -11,7 +11,7 @@ import {
 } from '../state.ts';
 import type { Command } from '../state.ts';
 import { copyItems } from '../clipboard.ts';
-import { openAnchored } from './menu.ts';
+import { openAnchored, justDismissed } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 import { openExternal } from './leaving.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
@@ -178,8 +178,26 @@ export interface ViewerCommands {
   saveItemFile: (id: string) => void;
   canSendItemFile: (id: string) => boolean;
   sendItemFile: (id: string) => void;
+  canEditPicture: (id: string) => boolean;
+  editPicture: (id: string) => void;
+  /** Bin one card, with the receipt Delete gives. */
+  binItem: (id: string) => void;
 }
 let cmds: ViewerCommands | null = null;
+
+/** The press-and-hold that opens the menu on touch, as the Feed's does. */
+const HOLD_MS = 500;
+const HOLD_SLOP = 10;
+let hold: { id: number, x: number, y: number, timer: number } | null = null;
+/** The hold opened the menu: the tap that would follow is the hold's, not a zoom. */
+let heldOpen = false;
+const cancelHold = () => { if (hold) clearTimeout(hold.timer); hold = null; };
+
+/** The menu, at a point or under a button. */
+function openViewerMenu(rect: { left: number, right: number, top: number, bottom: number }, owner?: Element) {
+  if (!shownId) return;
+  openAnchored(rect, viewerEntries(shownId), { label: 'Viewer', owner, focus: !!owner });
+}
 
 export function initViewer(commands?: ViewerCommands) {
   cmds = commands ?? null;
@@ -196,10 +214,42 @@ export function initViewer(commands?: ViewerCommands) {
     if (e.target instanceof Element && e.target.closest('.ed')) return;
     if (getSelection()?.isCollapsed === false) return;
     e.preventDefault();
-    if (!shownId) return;
-    openAnchored({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY },
-      viewerEntries(shownId), { label: 'Viewer' });
+    // The engines whose long press arrives as this event, before the timer.
+    cancelHold();
+    if (heldOpen) return;
+    openViewerMenu({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY });
   });
+  // The same menu, for a finger: the ⋯ in the head, and a press held still.
+  const more = document.getElementById('viewer-more');
+  more?.addEventListener('click', () => {
+    // The press that closed this menu must not open it again (CLAUDE.md).
+    if (justDismissed(more)) return;
+    openViewerMenu(more.getBoundingClientRect(), more);
+  });
+  dlg.addEventListener('pointerdown', e => {
+    heldOpen = false;
+    cancelHold();
+    if (e.pointerType !== 'touch' || !e.isPrimary || editing) return;
+    if (!(e.target instanceof Element) || !e.target.closest('#viewer-body')) return;
+    const x = e.clientX, y = e.clientY;
+    hold = { id: e.pointerId, x, y, timer: setTimeout(() => {
+      hold = null;
+      heldOpen = true;
+      openViewerMenu({ left: x, right: x, top: y, bottom: y });
+    }, HOLD_MS) };
+  });
+  dlg.addEventListener('pointermove', e => {
+    if (hold && (e.pointerId !== hold.id || Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > HOLD_SLOP)) cancelHold();
+  });
+  dlg.addEventListener('pointerup', cancelHold);
+  dlg.addEventListener('pointercancel', cancelHold);
+  // The click a hold leaves behind would zoom the picture under the menu.
+  dlg.addEventListener('click', e => {
+    if (!heldOpen) return;
+    heldOpen = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
   titleEl = document.getElementById('viewer-title');
   metaEl = document.getElementById('viewer-meta');
   bodyEl = document.getElementById('viewer-body');
@@ -890,6 +940,9 @@ function viewerEntries(id: string): MenuEntry[] {
     },
     // A document being read turns to writing where it is: the same viewing, reopened to edit.
     { label: 'Edit', icon: 'i-edit-text', hidden: !canEdit(id) || !!editing, action: () => openViewer(id, { edit: true }) },
+    // The darkroom is a dialog of its own; the viewing is put down first.
+    { label: 'Edit picture…', icon: 'i-crop', hidden: !cmds?.canEditPicture(id),
+      action: () => { closeViewer(true); cmds?.editPicture(id); } },
     { label: 'Fit to the window', hidden: !zoomed, action: () => zoomReset?.() },
     { label: 'Open in the browser', icon: 'i-link', hidden: !url, action: () => { if (url) void openExternal(url.href); } },
     // The file on show, as it arrived - the card menu's two rows, here too.
@@ -905,6 +958,14 @@ function viewerEntries(id: string): MenuEntry[] {
       },
     },
     { sep: true },
+    // Bins the card and shows the next one, so a run of photographs can be
+    // culled from here. The bin and the toast's Undo bring a mistake back.
+    { label: 'Delete', icon: 'i-delete', danger: true, hidden: !cmds || !!editing,
+      action: () => {
+        const next = neighbour(1) ?? neighbour(-1);
+        cmds?.binItem(id);
+        if (next) { teardown(); openViewer(next); } else closeViewer(true);
+      } },
     { label: 'Close', icon: 'i-close', action: closeViewer },
   ];
 }

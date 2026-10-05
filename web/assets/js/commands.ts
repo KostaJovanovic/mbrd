@@ -575,6 +575,12 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // seenPlaces() keeps the ones on screen and gives up past its cap.
     undo: () => slid(mountedIds(), undo),
     redo: () => slid(mountedIds(), redo),
+    // One card, from the viewer's menu: the same receipt.
+    binItem: (id: string) => {
+      const was = lastCommand();
+      removeItems([id]);
+      if (lastCommand() !== was) toast('Deleted 1 item', '', undoAction());
+    },
     // The receipt Cut gives (state.ts), with the same Undo.
     deleteSelection: () => {
       if (!selection.size) return;

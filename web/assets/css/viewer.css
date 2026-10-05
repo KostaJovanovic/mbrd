@@ -56,7 +56,8 @@
   letter-spacing: 0.06em;
 }
 #viewer-meta:empty { display: none; }
-#viewer-close {
+/* The ⋯ button wears the close's dress: two quiet buttons at the end of the head. */
+:is(#viewer-close, #viewer-more) {
   flex: none;
   display: grid;
   place-items: center;
@@ -69,11 +70,13 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 @media (hover: hover) {
-  #viewer-close:hover { background: var(--paper-2); color: var(--accent-deep); }
+  :is(#viewer-close, #viewer-more):hover { background: var(--paper-2); color: var(--accent-deep); }
 }
-#viewer-close:active { background: var(--paper-3); }
-#viewer-close:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
-#viewer-close svg { width: var(--icon-glyph); height: var(--icon-glyph); }
+:is(#viewer-close, #viewer-more):active { background: var(--paper-3); }
+:is(#viewer-close, #viewer-more):focus-visible { background: var(--paper-2); color: var(--accent-deep); }
+:is(#viewer-close, #viewer-more) svg { width: var(--icon-glyph); height: var(--icon-glyph); }
+/* A document being written has its own menus in the ribbon. */
+#viewer[data-edit] #viewer-more { display: none; }
 
 /* The previous and next item (stepping, ui/viewer.ts). Quiet until the pointer
    comes near: at the two side edges, halfway down, over whatever is shown. */
@@ -171,17 +174,17 @@
 #viewer[data-media] #viewer-meta { color: rgb(255 255 255 / 0.55); }
 /* A solid disc over the stage, not a bare icon that vanishes on a busy photo.
    Square at Harsh, as the other closes are: it is a close, not a circle with a meaning. */
-#viewer[data-media] #viewer-close {
+#viewer[data-media] :is(#viewer-close, #viewer-more) {
   border-radius: var(--radius-pill);
   background: rgb(14 13 12 / 0.55);
   border: var(--hairline) solid rgb(255 255 255 / 0.32);
   color: rgb(255 255 255 / 0.92);
 }
-#viewer[data-media] #viewer-close:hover {
+#viewer[data-media] :is(#viewer-close, #viewer-more):hover {
   background: rgb(255 255 255 / 0.2);
   color: rgb(255 255 255 / 1);
 }
-#viewer[data-media] #viewer-close svg {
+#viewer[data-media] :is(#viewer-close, #viewer-more) svg {
   width: calc(var(--icon-glyph) + 4px);
   height: calc(var(--icon-glyph) + 4px);
 }
