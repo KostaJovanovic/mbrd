@@ -70,6 +70,21 @@ test('a rearranged fence carries its anchored card', () => {
   assert.equal(card.y - fen.y, 100);
 });
 
+test('an anchored card is an edge to align to, and stays put', () => {
+  const [a, b] = addItems([photo({ x: 0, y: 500, meta: { locked: true } }), photo({ x: 400, y: 0 })]);
+  select([a.id, b.id]);
+  commands().alignSelection('top');
+  assert.equal(byId(a.id).y, 500);
+  assert.equal(byId(b.id).y, 500);
+});
+
+test('an anchored card can be the size to match', () => {
+  const [a, b] = addItems([photo({ x: 0, w: 400, meta: { locked: true } }), photo({ x: 600, w: 200 })]);
+  select([a.id, b.id]);
+  commands().matchSizeSelection(a.id, 'w');
+  assert.equal(byId(b.id).w, 400);
+});
+
 test('a locked fence does not grow', () => {
   const [f] = addItems([fence({ x: 1000, y: 0, w: 600, h: 600, meta: { locked: true } })]);
   const [a, b] = addItems([photo({ x: 0, y: -900 }), photo({ x: 1000, y: 0 })]);

@@ -135,6 +135,11 @@ function layoutItems(ids: string[]) {
   return board.items.filter(i => wanted.has(i.id));
 }
 
+/** The selected cards Align, Distribute and Same size work on: no furniture,
+ *  fences or riders. Anchored ones included - each command decides about those. */
+const layoutCards = () => board.items.filter(i =>
+  selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i));
+
 /**
  * Move `ids` to `targets` as one undo step, with what rides them. A note
  * stuck to a moved card keeps its spot on the card - by its fraction of the
@@ -178,13 +183,16 @@ function moveWithRiders(ids: string[], targets: Parameters<typeof applyGeom>[0],
   commitGeom(label, before, ids);
 }
 
-function alignIds(ids: string[], edge: string, label = 'Align') {
+/** `held`: anchored cards in the selection, which count towards the edge and stay put. */
+function alignIds(ids: string[], edge: string, label = 'Align', held: string[] = []) {
   const items = layoutItems(ids);
-  if (items.length < 2) return;
+  const all = layoutItems([...ids, ...held]);
+  if (!items.length || all.length < 2) return;
   const spread = edge === 'top' || edge === 'bottom' || edge === 'vcenter' ? 'x' : 'y';
+  const moving = new Set(ids);
   const targets = separateOverlaps(
-    alignTargets(items, edge), items, spread, board.settings.spacing || 0);
-  declareOp('align', { ids, edge });
+    alignTargets(all, edge).filter(t => moving.has(t.id)), items, spread, board.settings.spacing || 0);
+  declareOp('align', { ids, edge, held });
   moveWithRiders(ids, targets, label);
 }
 
@@ -224,7 +232,8 @@ function slid<T>(ids: readonly string[], change: () => T): T {
 function registerLayoutOps() {
   const asIds = (value: unknown): string[] =>
     (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []);
-  registerOp('align', params => alignIds(asIds(params.ids), String(params.edge || 'left')));
+  registerOp('align', params =>
+    alignIds(asIds(params.ids), String(params.edge || 'left'), undefined, asIds(params.held)));
   registerOp('distribute', params =>
     distributeIds(asIds(params.ids), params.axis === 'y' ? 'y' : 'x'));
   registerOp('matchSize', params =>
@@ -413,14 +422,20 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     /** Whether Rearrange selection would do anything - the flyout greys it out. */
     hasSelection: () => selection.size > 0,
 
-    // Align / distribute: furniture, fences, riders, and locked items excluded.
-    // Mobile declines (no free positions).
+    // Align / distribute: furniture, fences and riders excluded. Mobile
+    // declines (no free positions). Anchored cards never move, but Align and
+    // Same size can still measure from them.
     alignSelection: (edge: string) => {
       if (board.layoutMode === 'mobile') { toast('Aligning is a canvas thing'); return; }
-      // Riders come along at their own offset; locked items must not move.
-      const items = board.items.filter(i =>
-        selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i) && !isLocked(i));
-      if (items.length < 2) { toast('Pick two or more cards to line up'); return; }
+      // Riders come along at their own offset.
+      const cards = layoutCards();
+      const items = cards.filter(i => !isLocked(i));
+      // An anchored card in the selection counts towards the edge and stays put.
+      const held = cards.filter(i => isLocked(i)).map(i => i.id);
+      if (cards.length < 2 || !items.length) {
+        toast(cards.length < 2 ? 'Pick two or more cards to line up' : 'Those are all anchored');
+        return;
+      }
       const ids = items.map(i => i.id);
       const labels: Record<string, string> = {
         left: 'Align left', right: 'Align right', hcenter: 'Align centre',
@@ -428,22 +443,28 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       const label = labels[edge] || 'Align';
       // separateOverlaps spreads collisions along the perpendicular axis.
       // travelling(): the riders move too, and slide with their cards.
-      slid(travelling(ids), () => alignIds(ids, edge, label));
+      slid(travelling(ids), () => alignIds(ids, edge, label, held));
     },
     distributeSelection: (axis: 'x' | 'y') => {
       if (board.layoutMode === 'mobile') { toast('Spacing out is a canvas thing'); return; }
-      // Same exclusions as alignSelection.
-      const items = board.items.filter(i =>
-        selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i) && !isLocked(i));
-      if (items.length < 3) { toast('Pick three or more cards to space out'); return; }
+      // Anchored cards are left out: an even spacing cannot be kept round a
+      // card that will not move. Said when that is what stopped it.
+      const cards = layoutCards();
+      const items = cards.filter(i => !isLocked(i));
+      if (items.length < 3) {
+        toast(cards.length >= 3
+          ? 'Pick three or more cards that are not anchored to space out'
+          : 'Pick three or more cards to space out');
+        return;
+      }
       const ids = items.map(i => i.id);
       slid(travelling(ids), () => distributeIds(ids, axis));
     },
-    /** The card the menu was opened on is the measure; the same exclusions. */
+    /** The card the menu was opened on is the measure, anchored or not - it
+     *  does not change size either way. The rest keep the same exclusions. */
     matchSizeSelection: (ref: string, axis: 'w' | 'h') => {
       if (board.layoutMode === 'mobile') { toast('Sizing is a canvas thing'); return; }
-      const items = board.items.filter(i =>
-        selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i) && !isLocked(i));
+      const items = layoutCards().filter(i => i.id === ref || !isLocked(i));
       if (items.length < 2 || !items.some(i => i.id === ref)) {
         toast('Pick two or more cards, then open the menu on the one to match');
         return;
