@@ -262,8 +262,9 @@
 }
 .drawer-spacer { flex: 1 1 auto; }
 
-/* The switch to the Special shelf, and the destructive button beside it. */
+/* The switch to the Special shelf, Restore all, and the destructive button beside them. */
 .drawer-special,
+.drawer-restore,
 .drawer-empty {
   flex: none;
   padding: 2px 7px;
@@ -286,7 +287,11 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 .drawer-special[hidden],
+.drawer-restore[hidden],
 .drawer-empty[hidden] { display: none; }
+.drawer-restore { color: var(--ink-2); }
+.drawer-restore:hover { border-color: var(--rule-2); }
+.drawer-restore:disabled { color: var(--ink-3); cursor: default; border-color: transparent; }
 /* Destructive -- wears danger colour at rest. Asks before acting. */
 .drawer-empty { color: var(--danger); }
 .drawer-empty:hover { border-color: var(--danger); }

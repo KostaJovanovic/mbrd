@@ -272,11 +272,16 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
 }
 
 /**
- * Restore items from the bin. `at` is the drop point (null = original position).
- * Frozen clips go back onto their card via clipHome(). Riders are restored with
- * their hosts via stuckPlacement(). All stacked on top (old z is stale).
+ * Restore items from the bin. `at` is the drop point (null = original position),
+ * or a point for each id, worked out by a caller that placed them clear of the
+ * board. Frozen clips go back onto their card via clipHome(). Riders are
+ * restored with their hosts via stuckPlacement(). All stacked on top (old z is stale).
  */
-export function restoreItems(ids: Iterable<string>, at: { x: number, y: number } | null = null, label = 'Restore') {
+export function restoreItems(
+  ids: Iterable<string>,
+  at: { x: number, y: number } | ReadonlyMap<string, { x: number, y: number }> | null = null,
+  label = 'Restore',
+) {
   const picked = new Set(ids);
   const chosen = board.trash.filter(t => picked.has(t.item.id));
   if (!chosen.length) return [];
@@ -312,7 +317,8 @@ export function restoreItems(ids: Iterable<string>, at: { x: number, y: number }
     const hostWas = on ? was.get(on) : null;
     const hostNow = on ? now.get(on) : null;
     // Place on its host if co-restoring, else at drop point, else original spot.
-    const where = hostWas && hostNow ? stuckPlacement(e.item, hostWas, hostNow) : at;
+    const drop = at instanceof Map ? at.get(e.item.id) ?? null : at;
+    const where = hostWas && hostNow ? stuckPlacement(e.item, hostWas, hostNow) : drop;
     // Drop the drawer-only stuckOf link — live geometry takes over on the board.
     const meta = { ...e.item.meta };
     delete meta.stuckOf;

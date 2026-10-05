@@ -5,8 +5,9 @@
 
 import {
   board, bus, selection, removeItems, restoreItems, emptyTrash, select,
-  restoreTitleCard, isTitleHidden, titleCardShape, clipHomeId, stuckHostId, isKeepsake,
+  restoreTitleCard, isTitleHidden, titleCardShape, clipHomeId, stuckHostId, isKeepsake, baseStep,
 } from '../state.ts';
+import { arrange } from '../arrange/arrangements.ts';
 import { formatBytes, div, el, markClosed, readToken, wasClosed } from '../util.ts';
 import { buildItem, restingTilt, kindName } from '../canvas/item-dom.ts';
 import { releaseCardContent, screenBoxOf } from '../canvas/items.ts';
@@ -124,6 +125,7 @@ let win: HTMLElement | null = null;
 let body: HTMLElement | null = null;
 /** The Empty button and the Special switch, repainted as the bin changes. */
 let emptyBtn: HTMLButtonElement | null = null;
+let restoreBtn: HTMLButtonElement | null = null;
 let specialBtn: HTMLButtonElement | null = null;
 /** The window's name, which says which of the two shelves is on show. */
 let titleEl: HTMLElement | null = null;
@@ -238,6 +240,14 @@ function openDrawer() {
     body?.scrollTo({ top: 0 });
   });
 
+  // Everything on the shelves back on the board at once, round the middle of
+  // the view - the undo for a clear-out done by mistake.
+  restoreBtn = document.createElement('button');
+  restoreBtn.type = 'button';
+  restoreBtn.className = 'drawer-restore';
+  restoreBtn.textContent = 'Restore all';
+  restoreBtn.addEventListener('click', () => land(binned().map(t => t.item.id), viewMiddle()));
+
   emptyBtn = document.createElement('button');
   emptyBtn.type = 'button';
   emptyBtn.className = 'drawer-empty';
@@ -252,7 +262,7 @@ function openDrawer() {
   close.append(icon('i-close'));
   close.addEventListener('click', () => { cue('pick'); closeDrawer(); });
 
-  head.append(title, spacer, specialBtn, emptyBtn, close);
+  head.append(title, spacer, specialBtn, restoreBtn, emptyBtn, close);
   titleEl = title;
 
   body = div('drawer-body');
@@ -276,6 +286,7 @@ export function closeDrawer() {
   win = null;
   body = null;
   emptyBtn = null;
+  restoreBtn = null;
   specialBtn = null;
   titleEl = null;
   special = false;
@@ -353,6 +364,10 @@ function paintHead() {
   if (emptyBtn) {
     emptyBtn.hidden = special;
     emptyBtn.disabled = !binned().length;
+  }
+  if (restoreBtn) {
+    restoreBtn.hidden = special;
+    restoreBtn.disabled = !binned().length;
   }
 }
 
@@ -725,10 +740,13 @@ function restoreByKey(e: KeyboardEvent) {
   if (!slot) return;
   e.preventDefault();
   // The title card has no bin entry to lift out - see titleSlot().
-  if (slot.dataset.title) { landTitle(vp!.toWorld(innerWidth / 2, innerHeight / 2)); return; }
+  if (slot.dataset.title) { landTitle(viewMiddle()); return; }
   // Every other .drawer-slot is built by makeSlot(), which writes the id onto it.
-  land([slot.dataset.id!], vp!.toWorld(innerWidth / 2, innerHeight / 2));
+  land([slot.dataset.id!], viewMiddle());
 }
+
+/** The middle of the window, on the board. */
+const viewMiddle = () => vp!.toWorld(innerWidth / 2, innerHeight / 2);
 
 function startDrag(e: PointerEvent) {
   if (e.button !== 0) return;
@@ -819,7 +837,14 @@ function startDrag(e: PointerEvent) {
     // window).
     if (win?.contains(document.elementFromPoint(ev.clientX, ev.clientY))) {
       // Put back on its shelf: the ghost goes home to the slot.
-      if (lifted || !home) return void dropGhost(boxOf(slot));
+      if (lifted) return void dropGhost(boxOf(slot));
+      // A plain tap puts it back in the middle of the view, as Enter does - a
+      // drag straight down reads as a scroll, so the tap is the sure way out.
+      if (!home) {
+        if (isTitle) landTitle(viewMiddle());
+        else land([id], viewMiddle());
+        return;
+      }
     }
 
     // Where the ghost's middle is, which is where the card's goes.
@@ -867,11 +892,29 @@ function landTitle(at: { x: number, y: number }) {
  *  halves of it, since a Special shelf with a card still on it is a drawer with
  *  something in it. */
 function land(ids: string[], at: { x: number, y: number } | null) {
-  const back = restoreItems(ids, at);
+  const back = restoreItems(ids, at ? clearOf(ids, at) : null);
   if (!back.length) return;
   cue('arrive');
   select(back.map((i: Item) => i.id));
   if (!board.trash.length && !isTitleHidden()) closeDrawer();
+}
+
+/**
+ * Where each of these lands near `at`, clear of the cards already on the
+ * board - the placement a dropped file gets (import/drop.ts), so a restored
+ * card never comes back on top of something. Riders are left to restoreItems(),
+ * which puts each back on its host.
+ */
+function clearOf(ids: string[], at: { x: number, y: number }) {
+  const wanted = new Set(ids);
+  const coming = board.trash.filter(t => wanted.has(t.item.id)).map(t => t.item);
+  const spots = arrange(coming.map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h })), {
+    name: 'grid', center: at, spacing: board.settings.spacing,
+    cellStep: board.settings.snap ? baseStep() : 0,
+    obstacles: board.items.filter(it => it.type !== 'ghost')
+      .map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h })),
+  });
+  return new Map(coming.map((it, i) => [it.id, spots[i]]));
 }
 
 /**
