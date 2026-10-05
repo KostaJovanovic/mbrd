@@ -12,7 +12,7 @@ import {
   board, bus, selection, setSetting, byId, commit,
   snapshotGeom, applyGeom, commitGeom, baseStep,
   recheckBoardGeometry, placeMobileItems,
-  isRider, stuckTo, stuckPlacement, isFence, isLocked, fenceOf, fenceBox,
+  isRider, stuckTo, stuckPlacement, isFence, isLocked, fenceOf, fenceBox, fenceFollowers,
   declareOp, undoAction,
   type GeomPatch,
 } from '../state.ts';
@@ -882,11 +882,20 @@ const NUDGE_GAP_MAX = 24;
  * fence first, and a fence they no longer fit in grows to hold them - so the
  * box its parent then clears is the one it will really have. A fence never
  * shrinks, and a locked one never grows.
+ *
+ * `scope` narrows what may move, and the rest of the board holds still around
+ * it: `ids`, a selection, pushed apart from each other and off everything
+ * else; `fence`, everything inside that fence, nested fences included, with
+ * the fence growing to hold them as it does on a whole-board nudge.
  */
-export function nudgeBoard() {
+export function nudgeBoard(scope: { ids?: string[], fence?: string } = {}) {
   if (board.layoutMode === 'mobile') { toast('The feed never overlaps'); return; }
   const items = board.items.filter(it => it.type !== 'ghost' && !isRider(it));
-  if (items.length < 2) { toast('Nothing on this board overlaps'); return; }
+  const where = scope.fence ? 'in this fence' : scope.ids ? 'here' : 'on this board';
+  if (items.length < 2) { toast(`Nothing ${where} overlaps`); return; }
+  const inScope = scope.fence ? new Set(fenceFollowers([scope.fence]))
+    : scope.ids ? new Set(scope.ids) : null;
+  const movable = (it: Item) => !inScope || inScope.has(it.id);
   const step = baseStep();
   const snap = !!board.settings.snap;
   const gap = snap ? 0 : Math.min(board.settings.spacing, NUDGE_GAP_MAX);
@@ -919,7 +928,7 @@ export function nudgeBoard() {
     const { hw, hh } = rotatedExtents({ ...room, rot: b.rot });
     // The lattice box can sit off the card's own centre; it is solved there
     // and the card takes the same move.
-    return { x: room.x, y: room.y, w: 2 * hw, h: 2 * hh, fixed: isLocked(it) };
+    return { x: room.x, y: room.y, w: 2 * hw, h: 2 * hh, fixed: isLocked(it) || !movable(it) };
   };
   const solve = (members: Item[]) => {
     const boxes = members.map(solveBox);
@@ -937,6 +946,8 @@ export function nudgeBoard() {
     .sort((a, b) => depth(b) - depth(a));
   for (const id of fences) {
     const members = groups.get(id)!;
+    // A fence with nothing in scope is left exactly as it is, size and all.
+    if (!members.some(movable)) continue;
     solve(members);
     const fence = byId(id);
     if (!fence || isLocked(fence)) continue;
@@ -947,13 +958,14 @@ export function nudgeBoard() {
     const y0 = Math.min(f.y - f.h / 2, need.y - need.h / 2), y1 = Math.max(f.y + f.h / 2, need.y + need.h / 2);
     Object.assign(f, { x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 });
   }
-  solve(groups.get(null) || []);
+  const top = groups.get(null) || [];
+  if (top.some(movable)) solve(top);
 
   const changed = items.filter(it => {
     const b = box.get(it.id)!;
     return b.x !== it.x || b.y !== it.y || b.w !== it.w || b.h !== it.h;
   });
-  if (!changed.length) { toast('Nothing on this board overlaps'); return; }
+  if (!changed.length) { toast(`Nothing ${where} overlaps`); return; }
   const riders = board.items.filter(isRider);
   // SAFETY: as in rearrange() - see GeomRow.
   const before = snapshotGeom([...changed, ...riders].map(it => it.id)) as GeomRow[];
@@ -979,7 +991,8 @@ export function nudgeBoard() {
       grew = true;
     }
   }
-  const done = commitGeom('Nudge board', before, changed.map(it => it.id));
+  const label = scope.fence ? 'Nudge fence' : scope.ids ? 'Nudge selection' : 'Nudge board';
+  const done = commitGeom(label, before, changed.map(it => it.id));
   if (done) toast(`Nudged ${changed.length} item${changed.length === 1 ? '' : 's'} apart`, '', slidUndo(before.map(g => g.id)));
   slideFrom(seen, travelMs());
 }

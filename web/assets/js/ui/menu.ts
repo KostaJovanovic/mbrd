@@ -84,6 +84,8 @@ export interface MenuCommands {
   selectAll: () => void;
   rearrange: () => void;
   nudgeBoard: () => void;
+  nudgeSelection: () => void;
+  nudgeFence: (id: string) => void;
   rearrangeFence: (id: string) => void;
   // The touch multi-select mode: whether it is on, and the one way in or out.
   multiSelect: () => boolean;
@@ -773,6 +775,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: 'Rearrange fence', icon: 'i-rearrange',
       hidden: mobile || many || !cmds!.isFenceItem(id),
       action: () => cmds!.rearrangeFence(id) },
+    { label: 'Nudge fence', icon: 'i-nudge',
+      hidden: mobile || many || !cmds!.isFenceItem(id),
+      action: () => cmds!.nudgeFence(id) },
     // Mirrored pair — a fence folds down to its name bar, its cards out of sight.
     { label: 'Roll up', icon: 'i-arrow-up', hidden: !fenceItem || rolled,
       action: () => cmds!.setFenceRolled(id, true) },
@@ -781,6 +786,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Group only — relays the selection about its own centre.
     { label: `Rearrange these ${count}`, icon: 'i-rearrange', hidden: !many,
       action: () => cmds!.rearrangeSelection() },
+    // Group only — pushed apart where they stand, the rest of the board kept.
+    { label: `Nudge these ${count}`, icon: 'i-nudge', hidden: mobile || !many,
+      action: () => cmds!.nudgeSelection() },
     // Group only — eight alignment options stay in a fold to keep the menu short.
     // Canvas only: the Feed's column has no edges to line up.
     { label: 'Align & distribute', icon: 'i-align-center', hidden: mobile || !many,
@@ -1049,8 +1057,10 @@ function canvasEntries(at: Point): MenuEntry[] {
         action: () => cmds!.rearrangeFence(fence) }
       : { label: 'Rearrange board', icon: 'i-rearrange',
         action: () => cmds!.rearrange() },
-    // The whole board whatever `at` is: a fence's contents are nudged with it.
-    { label: 'Nudge board', icon: 'i-nudge', action: () => cmds!.nudgeBoard() },
+    // The same switch as Rearrange: inside a fence, that fence's contents.
+    fence
+      ? { label: 'Nudge fence', icon: 'i-nudge', action: () => cmds!.nudgeFence(fence) }
+      : { label: 'Nudge board', icon: 'i-nudge', action: () => cmds!.nudgeBoard() },
     { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
     { sep: true },
     // Board marks — tick on the trailing edge shows current state.

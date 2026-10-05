@@ -384,6 +384,10 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     rearrange: () => rearrange(board.items.filter(i => i.type !== 'ghost')),
     // Overlaps pushed apart, the board's shape kept - see nudgeBoard().
     nudgeBoard: () => nudgeBoard(),
+    // The same, narrowed: the selection pushed apart and off everything else,
+    // or one fence's contents among themselves.
+    nudgeSelection: () => nudgeBoard({ ids: [...selection] }),
+    nudgeFence: (id: string) => nudgeBoard({ fence: id }),
     // Set layout and rearrange in one press. Only the rearrange is on the undo
     // stack — the setting is intent, the positions are what you might regret.
     arrangement: () => board.arrangement,

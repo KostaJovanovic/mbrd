@@ -23,6 +23,8 @@ export interface FlyoutCommands {
   arrangeAs: (id: string) => void;
   hasSelection: () => boolean;
   rearrangeSelection: () => void;
+  nudgeBoard: () => void;
+  nudgeSelection: () => void;
   settingNumber: (key: string) => number | undefined;
   setSetting: (key: string, value: unknown) => void;
   addNote: (tint: number) => void;
@@ -175,6 +177,10 @@ export function arrangeEntries(cmds: FlyoutCommands) {
     // Hidden when no selection — menu fits what you are holding.
     { label: 'Rearrange selection', icon: 'i-select-all',
       hidden: !cmds.hasSelection(), action: () => cmds.rearrangeSelection() },
+    // Overlaps pushed apart, the layout kept - the gentler of the two.
+    { label: 'Nudge board', icon: 'i-nudge', action: () => cmds.nudgeBoard() },
+    { label: 'Nudge selection', icon: 'i-nudge',
+      hidden: !cmds.hasSelection(), action: () => cmds.nudgeSelection() },
     // The gap the layouts pack at. Live, and it does not lay the board out on
     // its own - Desktop's spacing is a rule the next Rearrange uses, which is
     // what the panel's own hint says - so moving it and then picking a layout
