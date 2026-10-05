@@ -15,6 +15,7 @@ import { shownHash } from '../board-model.ts';
 import { cutout, matteAvailable } from '../canvas/matte.ts';
 import { surface } from '../canvas/surface.ts';
 import { tickSlider } from './controls.ts';
+import { ask } from './dialog.ts';
 
 /** The crop rectangle, as fractions of the source. */
 type Rect = { x: number, y: number, w: number, h: number };
@@ -82,6 +83,17 @@ let grade: Grade = { ...NEUTRAL };
 let flip: Flip = { ...UNFLIPPED };
 let turn: Turn = 0;
 let matte = false;
+/**
+ * The pressed crop shape, as `data-ratio` spells it ('original', '4:5'), or
+ * null for a free crop. Held through every grip drag until pressed again.
+ */
+let shape: string | null = null;
+const shapeBtns: HTMLButtonElement[] = [];
+/** The five edits as the picture had them when the dialog opened. */
+let start: { rect: Rect, grade: Grade, flip: Flip, turn: Turn, matte: boolean } =
+  { rect: { ...FULL }, grade: { ...NEUTRAL }, flip: { ...UNFLIPPED }, turn: 0, matte: false };
+/** The discard question is up - a second Escape must not ask it twice. */
+let leaving = false;
 /**
  * What the background preview was last drawn from - every input the cut
  * depends on, joined into one string. paint() runs on every pointermove, so
@@ -170,7 +182,18 @@ export function initDarkroom() {
       // the sum mod 360 is one of the same four - no negative wrap needed here
       // the way itemRotate() needs for a value read from a file.
       turn = ((turn + by) % 360) as Turn;
+      // A held shape is a shape on screen, so a quarter turn fits it again.
+      fitShape();
       writeRatio();
+      paint();
+    });
+  }
+  for (const el of dlg.querySelectorAll<HTMLButtonElement>('.dk-ratios [data-ratio]')) {
+    shapeBtns.push(el);
+    el.addEventListener('click', () => {
+      shape = shape === el.dataset.ratio ? null : el.dataset.ratio || null;
+      fitShape();
+      writeDials();
       paint();
     });
   }
@@ -181,8 +204,14 @@ export function initDarkroom() {
     frame?.append(h);
   }
   frame?.addEventListener('pointerdown', onGrab);
-  document.getElementById('darkroom-close')?.addEventListener('click', () => dlg!.close());
-  document.getElementById('darkroom-cancel')?.addEventListener('click', () => dlg!.close());
+  document.getElementById('darkroom-close')?.addEventListener('click', () => void leave());
+  document.getElementById('darkroom-cancel')?.addEventListener('click', () => void leave());
+  // Escape: the browser's cancel, held back while there is something to lose.
+  dlg.addEventListener('cancel', e => {
+    if (!edited()) return;
+    e.preventDefault();
+    void leave();
+  });
   document.getElementById('darkroom-apply')?.addEventListener('click', apply);
   // Reset puts every edit back to neutral in the dialog only, without writing -
   // Cancel still has to be able to leave the item untouched.
@@ -192,6 +221,7 @@ export function initDarkroom() {
     flip = { ...UNFLIPPED };
     turn = 0;
     matte = false;
+    shape = null;
     writeDials();
     writeRatio();
     paint();
@@ -228,6 +258,8 @@ export function openDarkroom(id: string) {
   flip = itemFlip(it) || { ...UNFLIPPED };
   turn = itemRotate(it) || 0;
   matte = itemMatte(it);
+  shape = null;
+  start = { rect: { ...rect }, grade: { ...grade }, flip: { ...flip }, turn, matte };
   // Clear both: any run in flight belongs to the last picture. Without the
   // key reset, a second opening shows the previous cut-out until something
   // moves; without the counter bump, a slow run from that picture could land
@@ -262,6 +294,67 @@ function writeDials() {
   }
   // Same reasoning as the mirrors: a state, not an action, written once here.
   cutBtn?.setAttribute('aria-pressed', matte ? 'true' : 'false');
+  for (const el of shapeBtns) {
+    el.setAttribute('aria-pressed', el.dataset.ratio === shape ? 'true' : 'false');
+  }
+}
+
+/** Whether anything differs from what the picture had when it opened. */
+function edited(): boolean {
+  if (!openId) return false;
+  const r = start.rect;
+  return rect.x !== r.x || rect.y !== r.y || rect.w !== r.w || rect.h !== r.h
+    || GRADE.some(k => grade[k] !== start.grade[k])
+    || flip.x !== start.flip.x || flip.y !== start.flip.y
+    || turn !== start.turn || matte !== start.matte;
+}
+
+/**
+ * Close, asking first when that would throw edits away. Apply is offered as
+ * well, since a close that meant "done" is the likelier slip.
+ */
+async function leave() {
+  if (!dlg?.open || leaving) return;
+  if (!edited()) { dlg.close(); return; }
+  leaving = true;
+  const answer = await ask({
+    title: 'Throw away these edits?',
+    body: 'The picture goes back to how it was when you opened it.',
+    go: 'Throw away',
+    keep: 'Apply',
+    cancel: 'Keep editing',
+  });
+  leaving = false;
+  if (!dlg.open) return;
+  if (answer === 'go') dlg.close();
+  else if (answer === 'keep') apply();
+}
+
+/**
+ * The frame, reshaped to the pressed shape: as large as the picture allows,
+ * about the centre it had. In shown pixels, so 4:5 is 4:5 on screen after a
+ * quarter turn. Original is the whole picture. Before the picture has decoded
+ * there is no shape to measure, and the frame is left as it is.
+ */
+function fitShape() {
+  if (!shape) return;
+  const nw = img?.naturalWidth || 0;
+  const nh = img?.naturalHeight || 0;
+  if (!nw || !nh) return;
+  if (shape === 'original') { rect = { ...FULL }; return; }
+  const [a, b] = shape.split(':').map(Number);
+  if (!(a > 0) || !(b > 0)) return;
+  const quarter = turn === 90 || turn === 270;
+  const dw = quarter ? nh : nw;
+  const dh = quarter ? nw : nh;
+  // The shape in fractions of the shown picture: w/h there is (a/b) * dh/dw.
+  const k = (a / b) * (dh / dw);
+  const w = k >= 1 ? 1 : k;
+  const h = k >= 1 ? 1 / k : 1;
+  const d = toDisplay(rect);
+  const cx = d.x + d.w / 2;
+  const cy = d.y + d.h / 2;
+  rect = fromDisplay({ x: clamp01(cx - w / 2, w), y: clamp01(cy - h / 2, h), w, h });
 }
 
 /**
@@ -287,10 +380,25 @@ function writeRatio() {
  * Mirror applies to the *turned* rectangle, matching paint()'s draw order.
  */
 function toDisplay(r: Rect): Rect {
-  const d = turn === 90 ? { x: 1 - r.y - r.h, y: r.x, w: r.h, h: r.w }
-    : turn === 180 ? { x: 1 - r.x - r.w, y: 1 - r.y - r.h, w: r.w, h: r.h }
-      : turn === 270 ? { x: r.y, y: 1 - r.x - r.w, w: r.h, h: r.w }
+  return flipped(turned(r, turn));
+}
+
+/** toDisplay() undone: mirror first (it is its own inverse), then the turn back. */
+function fromDisplay(d: Rect): Rect {
+  // SAFETY: `turn` is one of the four quarters, so 360 - turn mod 360 is too.
+  return turned(flipped(d), ((360 - turn) % 360) as Turn);
+}
+
+/** A rectangle turned clockwise by `by`. */
+function turned(r: Rect, by: Turn): Rect {
+  return by === 90 ? { x: 1 - r.y - r.h, y: r.x, w: r.h, h: r.w }
+    : by === 180 ? { x: 1 - r.x - r.w, y: 1 - r.y - r.h, w: r.w, h: r.h }
+      : by === 270 ? { x: r.y, y: 1 - r.x - r.w, w: r.h, h: r.w }
         : r;
+}
+
+/** A rectangle mirrored on whichever axes `flip` names. */
+function flipped(d: Rect): Rect {
   return {
     x: flip.x ? 1 - d.x - d.w : d.x,
     y: flip.y ? 1 - d.y - d.h : d.y,
@@ -461,7 +569,11 @@ function onGrab(e: PointerEvent) {
     // `rect` is in source coordinates, so a drag right on a sideways picture
     // is a move down through the file.
     const [dx, dy] = toSource((ev.clientX - x0) / box.width, (ev.clientY - y0) / box.height);
-    rect = handle === 'move' ? moved(from, dx, dy) : resized(from, handle, dx, dy);
+    // Shift, or a pressed shape, holds the frame's proportions. Read per move,
+    // so Shift can be pressed or let go partway through a drag.
+    rect = handle === 'move' ? moved(from, dx, dy)
+      : shape || ev.shiftKey ? kept(from, handle, dx, dy)
+        : resized(from, handle, dx, dy);
     paint();
   };
   const onUp = () => {
@@ -527,6 +639,38 @@ function resized(from: Rect, handle: Handle, dx: number, dy: number): Rect {
   if (handle.includes('n')) { const ny = Math.min(from.y + dy, from.y + from.h - MIN_CROP); y = Math.max(0, ny); h = from.y + from.h - y; }
   if (handle.includes('s')) { const nb = Math.max(from.y + from.h + dy, from.y + MIN_CROP); h = Math.min(1, nb) - y; }
   return { x, y, w, h };
+}
+
+/**
+ * resized(), holding `from`'s proportions. Its fractions keep their ratio,
+ * which keeps the shown one too, since a turn only swaps the two sides. A
+ * corner follows whichever axis the hand moved further; an edge grip grows
+ * the other side about its centre. Held inside the picture by scale, so the
+ * frame stops at an edge rather than bending its shape against it.
+ */
+function kept(from: Rect, handle: Handle, dx: number, dy: number): Rect {
+  const free = resized(from, handle, dx, dy);
+  const across = handle.includes('e') || handle.includes('w');
+  const along = handle.includes('n') || handle.includes('s');
+  const sx = free.w / from.w;
+  const sy = free.h / from.h;
+  let s = across && along ? (Math.abs(sx - 1) >= Math.abs(sy - 1) ? sx : sy) : across ? sx : sy;
+  const cx = from.x + from.w / 2;
+  const cy = from.y + from.h / 2;
+  // Room from the side that stays put, or about the centre for the free axis.
+  const roomW = handle.includes('w') ? from.x + from.w
+    : handle.includes('e') ? 1 - from.x : 2 * Math.min(cx, 1 - cx);
+  const roomH = handle.includes('n') ? from.y + from.h
+    : handle.includes('s') ? 1 - from.y : 2 * Math.min(cy, 1 - cy);
+  s = Math.min(s, roomW / from.w, roomH / from.h);
+  s = Math.max(s, MIN_CROP / from.w, MIN_CROP / from.h);
+  const w = from.w * s;
+  const h = from.h * s;
+  return {
+    x: handle.includes('w') ? from.x + from.w - w : handle.includes('e') ? from.x : cx - w / 2,
+    y: handle.includes('n') ? from.y + from.h - h : handle.includes('s') ? from.y : cy - h / 2,
+    w, h,
+  };
 }
 
 /** A position held so that a box of size `size` stays inside 0..1. */

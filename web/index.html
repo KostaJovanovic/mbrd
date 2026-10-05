@@ -887,6 +887,14 @@
       Remove background
     </button>
   </div>
+  <!-- Crop shapes, as the picture is shown (turned). A pressed one holds its
+       shape while the grips are dragged; pressed again, the crop is free. -->
+  <div class="dk-ratios" role="group" aria-label="Crop shape">
+    <button type="button" class="dk-tool" data-ratio="original" aria-pressed="false">Original</button>
+    <button type="button" class="dk-tool" data-ratio="1:1" aria-pressed="false">1:1</button>
+    <button type="button" class="dk-tool" data-ratio="4:5" aria-pressed="false">4:5</button>
+    <button type="button" class="dk-tool" data-ratio="16:9" aria-pressed="false">16:9</button>
+  </div>
   <div id="darkroom-dials">
     <label class="dk-dial">
       <span>Brightness</span>

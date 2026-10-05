@@ -819,9 +819,10 @@ textarea.lp-url {
 .dk-handle[data-h="sw"] { bottom: -5px; left: -5px;  cursor: nesw-resize; }
 .dk-handle[data-h="w"]  { top: 50%; margin-top: -5px; left: -5px; cursor: ew-resize; }
 
-/* Tool buttons (flip, rotate). Pressed state keyed off aria-pressed so the
-   attribute a screen reader reads is the only state to keep in step. */
-#darkroom-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Tool buttons (flip, rotate, crop shape). Pressed state keyed off
+   aria-pressed so the attribute a screen reader reads is the only state to
+   keep in step. */
+:is(#darkroom-tools, .dk-ratios) { display: flex; flex-wrap: wrap; gap: 8px; }
 .dk-tool {
   display: inline-flex;
   align-items: center;
