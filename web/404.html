@@ -526,13 +526,14 @@
     </button>
     <!-- The app's only modal tool — stays pressed (aria-pressed) until Escape.
          Desktop only (phone layout has no spatial map). -->
+    <!-- No title: a hover flyout, as on Note and Colour. -->
     <button type="button" data-cmd="connect" data-desktop aria-pressed="false"
-            title="Join two cards (pick one, then the other)  J">
+            aria-label="Join two cards (pick one, then the other)">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-connect"/></svg>
       <span>Join</span>
     </button>
-    <!-- connectSelection (spanning tree) is a console command, not a toolbar
-         button — it is a one-time operation, not a tool. -->
+    <!-- The spanning tree and the removals are one-time operations, not tools:
+         they are rows in this button's hover flyout (ui/flyout.ts). -->
 
     <button type="button" data-cmd="rearrange" data-desktop aria-label="Rearrange everything">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-rearrange"/></svg>

@@ -170,5 +170,23 @@ export function connectionCommands() {
       }
       joinAll(pool);
     },
+    // The whole board whatever is selected - the Join flyout's second row.
+    joinEverything: () => {
+      if (board.layoutMode === 'mobile') {
+        toast('Connections are a canvas thing');
+        return;
+      }
+      const pool = joinable(board.items);
+      if (pool.length < 2) { toast('Put two or more cards on the board first'); return; }
+      if (pool.length > CONNECT_ALL_MAX) {
+        toast(`Too many cards to join at once - select up to ${CONNECT_ALL_MAX} of them`);
+        return;
+      }
+      joinAll(pool, 'Join everything');
+    },
+    /** How many of the selection can carry a line - the flyout's first row. */
+    joinableSelected: () => joinable(board.items.filter((i: Joinable) => selection.has(i.id))).length,
+    /** How many lines the board has - the flyout's last row. */
+    connectionCount: () => board.connections.length,
   };
 }

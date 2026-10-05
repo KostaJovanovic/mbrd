@@ -1294,13 +1294,8 @@ export const SECTIONS: Section[] = [
         { cmd: 'debug-sound', label: 'Log interface sounds',
           pressed: () => cueLogOn() },
         { cmd: 'debug-sound-report', label: 'Print the cue log' },
-        // Every line between cards, in one press. Here rather than beside the
-        // Join tool because it is a demolition and not a drawing tool: the way
-        // to remove *a* connection is to draw over it, and a board-wide clear is
-        // the thing you want after trying the generator on a board you did not
-        // mean to. Undoable like anything else, which is what keeps it out of
-        // the danger dressing the clear-everything button wears.
-        { cmd: 'clear-connections', label: 'Remove all connections' },
+        // Remove all connections lived here; it is in the Join tool's flyout now,
+        // beside the generator whose result it is usually for taking back.
       ] },
       // Four readouts. Buttons rather than live rows, and that is forced rather
       // than chosen: paintPanel() repaints on `board`, `settings`, `layout` and

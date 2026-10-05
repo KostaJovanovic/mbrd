@@ -121,6 +121,7 @@ export interface MenuCommands {
   editDocument: (id: string) => void;
   selectionLineCount: () => number;
   removeSelectionConnections: () => void;
+  connectSelection: () => void;
   selectLike: (id: string) => void;
   selectLikeThese: () => void;
   canSelectSameTags: (id: string) => boolean;
@@ -809,6 +810,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: many ? `Fence these ${count}` : 'Fence it', icon: 'i-fence', accel: 'Ctrl G',
       hidden: mobile || (!many && cmds!.isFenceItem(id)),
       action: () => cmds!.fenceSelection() },
+    // Group only — the spanning tree over these, as the Join flyout's first row.
+    { label: `Join these ${count}`, icon: 'i-connect', hidden: mobile || !many,
+      action: () => cmds!.connectSelection() },
     // Every line touching the selection, gone in one step. Canvas only, where
     // lines are drawn; hidden when there are none to take.
     ...lineRemoval(mobile),

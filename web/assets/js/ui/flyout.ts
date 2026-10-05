@@ -25,6 +25,13 @@ export interface FlyoutCommands {
   rearrangeSelection: () => void;
   nudgeBoard: () => void;
   nudgeSelection: () => void;
+  joinableSelected: () => number;
+  selectionLineCount: () => number;
+  connectionCount: () => number;
+  connectSelection: () => void;
+  joinEverything: () => void;
+  removeSelectionConnections: () => void;
+  clearConnections: () => void;
   settingNumber: (key: string) => number | undefined;
   setSetting: (key: string, value: unknown) => void;
   addNote: (tint: number) => void;
@@ -44,6 +51,7 @@ export const FLYOUTS: Record<string, (cmds: FlyoutCommands) => MenuEntry[]> = {
   rearrange: arrangeEntries,
   'add-note': noteEntries,
   'add-swatch': colourEntries,
+  connect: joinEntries,
 };
 
 export function initFlyouts(commands: FlyoutCommands) {
@@ -162,6 +170,27 @@ function open(btn: HTMLElement, focus: boolean, delay = 0, instant = false) {
 // ---------------------------------------------------------------------------
 // The three lists
 // ---------------------------------------------------------------------------
+
+/**
+ * The Join tool's one-shot rows, beside the tool itself (a press still arms
+ * it): the spanning tree over the selection or the board, and the two ways to
+ * take lines away. Each row only when it has something to act on.
+ */
+export function joinEntries(cmds: FlyoutCommands): MenuEntry[] {
+  const picked = cmds.joinableSelected();
+  const lines = cmds.selectionLineCount();
+  const all = cmds.connectionCount();
+  return [
+    { label: `Join the ${picked} selected`, icon: 'i-connect', hidden: picked < 2,
+      action: () => cmds.connectSelection() },
+    { label: 'Join everything', icon: 'i-connect', action: () => cmds.joinEverything() },
+    { sep: true, hidden: !all },
+    { label: lines === 1 ? 'Remove 1 connection' : `Remove ${lines} connections`, icon: 'i-delete',
+      hidden: !lines, action: () => cmds.removeSelectionConnections() },
+    { label: 'Remove all connections', icon: 'i-delete', hidden: !all,
+      action: () => cmds.clearConnections() },
+  ];
+}
 
 /** Layout choices from ARRANGEMENTS, plus spacing slider. Desktop only (Arrange is data-desktop). */
 export function arrangeEntries(cmds: FlyoutCommands) {
