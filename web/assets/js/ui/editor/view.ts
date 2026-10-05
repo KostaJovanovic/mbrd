@@ -10,7 +10,7 @@ import {
   insertText, deleteRange, splitBlock, joinBackward, joinForward, toggleMark, hasMark, setHeading,
   toggleList, indent, toggleTask, blockShortcut, fenceShortcut, inlineShortcut, insertBlocks, sliceDoc,
   findAll, replaceMatch, replaceAll, wordCount, marksAt, sameMarks, tidy, isText, isAtom, blockLen,
-  blockText, ordered, samePos, cmpPos, clampPos, para, withRoom, outlineOf, MATCH_MAX,
+  blockText, ordered, samePos, cmpPos, clampPos, para, withRoom, outlineOf, MATCH_MAX, toLevel,
 } from './model.ts';
 import type { Block, Doc, Edit, ListKind, Level, MarkKey, Marks, Match, OutlineEntry, Pos, Run, SceneEl } from './model.ts';
 import { parseDoc, parseMarkdown, serializeDoc, posAtSource } from './markdown.ts';
@@ -99,6 +99,7 @@ function runNode(r: Run): Node {
   let node: Node = document.createTextNode(r.text);
   const wrap = (el: HTMLElement) => { el.append(node); node = el; };
   if (r.code) wrap(h('code'));
+  if (r.hl) wrap(h('mark'));
   if (r.s) wrap(h('s'));
   if (r.i) wrap(h('em'));
   if (r.b) wrap(h('strong'));
@@ -117,7 +118,7 @@ function buildBlock(b: Block, plain: boolean): HTMLElement {
   let el: HTMLElement;
   switch (b.kind) {
     case 'p': el = h(plain ? 'div' : 'p'); break;
-    case 'h': el = h(b.level === 1 ? 'h1' : b.level === 2 ? 'h2' : 'h3'); break;
+    case 'h': el = h(`h${b.level}`); break;
     case 'quote': el = h('blockquote'); break;
     case 'li':
       el = h('div', 'ed-li');
@@ -210,6 +211,7 @@ function scanRuns(el: HTMLElement): Run[] {
       if (tag === 'EM' || tag === 'I') next.i = true;
       if (tag === 'S' || tag === 'DEL' || tag === 'STRIKE') next.s = true;
       if (tag === 'CODE') next.code = true;
+      if (tag === 'MARK') next.hl = true;
       if (c.classList.contains('ed-link') && c.dataset.href) next.href = c.dataset.href;
       walk(c, next);
     }
@@ -775,11 +777,12 @@ export function mountEditor(opts: EditorOptions): Editor {
     else if (key === 'b' && !e.shiftKey) mark('b');
     else if (key === 'i' && !e.shiftKey) mark('i');
     else if (key === 'x' && e.shiftKey) mark('s');
-    else if (e.altKey && ['0', '1', '2', '3'].includes(e.key)) {
+    else if (key === 'h' && e.shiftKey && !e.altKey) mark('hl');
+    else if (e.altKey && /^[0-6]$/.test(e.key)) {
       const [a, z] = range();
       const b = doc.blocks[a.b];
       if (e.key === '0') { if (b.kind === 'h') apply(setHeading(doc, a, z, b.level), 'format'); }
-      else heading(e.key === '1' ? 1 : e.key === '2' ? 2 : 3);
+      else heading(toLevel(Number(e.key)));
     } else if (e.shiftKey && e.code === 'Digit7') list('number');
     else if (e.shiftKey && e.code === 'Digit8') list('bullet');
     else if (e.shiftKey && e.code === 'Digit9') list('task');
@@ -948,6 +951,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     ['b', button('Bold (Ctrl+B)', () => mark('b'), { text: 'B', cls: 'ed-bold' })],
     ['i', button('Italic (Ctrl+I)', () => mark('i'), { text: 'i', cls: 'ed-italic' })],
     ['s', button('Strikethrough (Ctrl+Shift+X)', () => mark('s'), { text: 'S', cls: 'ed-strike' })],
+    ['hl', button('Highlight (Ctrl+Shift+H)', () => mark('hl'), { text: 'H', cls: 'ed-highlight' })],
   ];
   const lists: [ListKind, HTMLButtonElement][] = [
     ['bullet', button('Bulleted list (Ctrl+Shift+8)', () => list('bullet'), { icon: 'assets/icons.svg#i-ed-bullets' })],
@@ -1611,6 +1615,7 @@ export function mountEditor(opts: EditorOptions): Editor {
       { label: 'Bold', accel: 'Ctrl B', hidden: !styled, action: () => mark('b') },
       { label: 'Italic', accel: 'Ctrl I', hidden: !styled, action: () => mark('i') },
       { label: 'Strikethrough', accel: 'Ctrl Shift X', hidden: !styled, action: () => mark('s') },
+      { label: 'Highlight', accel: 'Ctrl Shift H', hidden: !styled, action: () => mark('hl') },
       { label: 'Style', hidden: !styled, sub: styled ? styleMenu() : undefined },
       {
         label: 'List', hidden: !styled,

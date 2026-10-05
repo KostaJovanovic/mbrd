@@ -6,10 +6,10 @@
 // so the editor and the card never read one file two ways. DOM-free.
 
 import {
-  inlineTokens, ATX, RULE, FENCE, QUOTE, BULLET, SETEXT, TABLE_RULE, TASK, opensBlock,
+  inlineTokens, ATX, RULE, FENCE, QUOTE, BULLET, SETEXT, TABLE_RULE, TASK, opensBlock, commentEnd, mathEnd,
 } from '../markdown.ts';
 import { oversize } from '../../consent.ts';
-import { para, runsLen, runsText, blockText, tidy } from './model.ts';
+import { para, runsLen, runsText, blockText, tidy, toLevel } from './model.ts';
 import type { Block, Doc, ListItem, ListKind, Marks, Pos, Run } from './model.ts';
 
 /** The lines each block was read from. Absent for a block an edit made. */
@@ -75,6 +75,25 @@ export function inlineRuns(src: string, marks: Marks = {}): Run[] {
       case 'strong': out.push(...inlineRuns(t.inner, { ...marks, b: true })); break;
       case 'em': out.push(...inlineRuns(t.inner, { ...marks, i: true })); break;
       case 'strike': out.push(...inlineRuns(t.inner, { ...marks, s: true })); break;
+      case 'highlight': out.push(...inlineRuns(t.inner, { ...marks, hl: true })); break;
+      // Obsidian's that point elsewhere or hold another language: kept whole,
+      // shown as written, so a link's target or a formula's TeX is never
+      // taken apart by an edit beside it.
+      case 'wikilink':
+      case 'footnote':
+      case 'note':
+      case 'comment':
+      case 'math':
+      case 'blockid':
+        out.push({ ...marks, text: t.src, raw: true });
+        break;
+      // Words that read back as themselves: editable as the words they are.
+      case 'tag':
+      case 'url':
+      case 'html':
+      case 'reflink':
+        out.push({ ...marks, text: t.src });
+        break;
     }
   }
   return tidy(out);
@@ -126,10 +145,13 @@ export function parseMarkdown(src: string): Doc {
         block = raw(i, n);
         end = n;
       }
+    } else if (commentEnd(lines, i) >= 0 || mathEnd(lines, i) >= 0) {
+      // A comment or a formula that is whole lines: kept as written, as the
+      // renderer hides or sets it apart.
+      end = Math.max(commentEnd(lines, i), mathEnd(lines, i)) + 1;
+      block = raw(i, end);
     } else if (atx) {
-      const n = atx[1].length;
-      const level = n === 1 ? 1 : n === 2 ? 2 : 3;
-      block = n <= 3 ? { kind: 'h', before, level, runs: inlineRuns(atx[2]) } : raw(i, i + 1);
+      block = { kind: 'h', before, level: toLevel(atx[1].length), runs: inlineRuns(atx[2]) };
     } else if (QUOTE.test(line)) {
       const inner: string[] = [];
       let j = i;
@@ -314,7 +336,7 @@ function escapeLineStart(line: string, first = false): string {
   const lead = /^ */.exec(cut)![0];
   const rest = cut.slice(lead.length);
   if (/^\d{1,9}[.)](\s|$)/.test(rest)) return lead + rest.replace(/^(\d+)/, '$1\\');
-  if (/^(#{1,6}(\s|$)|>|[-+*](\s|$)|```|~~~|=+\s*$)/.test(rest) || RULE.test(rest)) return lead + '\\' + rest;
+  if (/^(#{1,6}(\s|$)|>|[-+*](\s|$)|```|~~~|=+\s*$|\$\$|%%)/.test(rest) || RULE.test(rest)) return lead + '\\' + rest;
   if (first && (HTML_BLOCK.test(rest) || DEFINITION.test(rest))) return lead + '\\' + rest;
   return cut;
 }
@@ -329,7 +351,9 @@ type Tok =
   | { t: 'lit', s: string }
   | { t: 'open' | 'close', m: string, s: string };
 
-const STYLE_KEYS = ['b', 'i', 's'] as const;
+const STYLE_KEYS = ['b', 'i', 's', 'hl'] as const;
+/** Each paired mark's delimiter, both ends. Italic is chosen per pair (below). */
+const DELIM: Record<string, string> = { b: '**', s: '~~', hl: '==' };
 /** A mark as a stack entry. A link is one per address: two links side by side are two links. */
 const marksList = (r: Run) => [...(r.href ? ['a' + r.href] : []), ...STYLE_KEYS.filter(k => r[k])];
 
@@ -411,7 +435,7 @@ export function serializeRuns(input: Run[]): string {
       const tk = clean[j];
       if (tk.t === 'text' || tk.t === 'lit') return tk.s[0];
       if (tk.m[0] === 'a') return '[';
-      if (tk.m !== 'i') return tk.m === 's' ? '~' : '*';
+      if (tk.m !== 'i') return DELIM[tk.m][0];
     }
     return undefined;
   };
@@ -422,12 +446,11 @@ export function serializeRuns(input: Run[]): string {
   };
   clean.forEach((tk, k) => {
     if (tk.t === 'open') {
-      tk.s = tk.m === 'b' ? '**' : tk.m === 's' ? '~~' : tk.m === 'i' ? '' : '[';
+      tk.s = DELIM[tk.m] ?? (tk.m === 'i' ? '' : '[');
       opens.push(k);
     } else if (tk.t === 'close') {
       const at = opens.pop()!;
-      if (tk.m === 'b') tk.s = '**';
-      else if (tk.m === 's') tk.s = '~~';
+      if (DELIM[tk.m]) tk.s = DELIM[tk.m];
       else if (tk.m[0] === 'a') tk.s = '](' + tk.m.slice(1) + ')';
       else {
         const before = clean.slice(0, at).map((t, j) => text(j) || t.s).join('').slice(-1);
@@ -476,6 +499,8 @@ function escapeText(s: string, prev: string | undefined, next: string | undefine
       case '_': out += isWord(p) && isWord(n) ? '_' : '\\_'; break;
       case '`': out += '\\`'; break;
       case '~': out += p === '~' || n === '~' ? '\\~' : '~'; break;
+      // Two together would open a highlight.
+      case '=': out += p === '=' || n === '=' ? '\\=' : '='; break;
       case '[': out += rest === null || /^[^[\]]*\]\(/.test(s.slice(k + 1) + rest) ? '\\[' : '['; break;
       case ']': out += rest === null ? '\\]' : ']'; break;
       default: out += c;

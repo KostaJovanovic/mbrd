@@ -176,6 +176,13 @@
 /* A serif at every whimsy, where --font-display can be the sans: an italic reads as one only in a serif. */
 .ed-italic { font-family: var(--font-serif); font-style: italic; font-size: var(--t-body); }
 .ed-strike { text-decoration: line-through; }
+/* A highlighter's stroke under the letter, not a fill: a filled button reads as pressed. */
+.ed-highlight {
+  text-decoration: underline var(--highlight);
+  text-decoration-thickness: 0.5em;
+  text-underline-offset: -0.3em;
+  text-decoration-skip-ink: none;
+}
 /* A large command, its glyph over its word, as Word draws the ones a group leads with. */
 .ed-big {
   flex-direction: column;
@@ -624,7 +631,7 @@
 .ed-page > .ed-b { margin: 0 0 0.9em; }
 .is-plain .ed-page > .ed-b { margin: 0; }
 
-.ed-page > h1, .ed-page > h2, .ed-page > h3 {
+.ed-page > :is(h1, h2, h3, h4, h5, h6) {
   margin: 1.4em 0 0.5em;
   font-family: var(--font-display);
   font-weight: 600;
@@ -634,6 +641,10 @@
 .ed-page > h1 { font-size: 1.7em; }
 .ed-page > h2 { font-size: 1.35em; }
 .ed-page > h3 { font-size: 1.15em; }
+.ed-page > h4 { font-size: 1.05em; }
+.ed-page > h5 { font-size: 1em; }
+.ed-page > h6 { font-size: 1em; color: var(--ink-2); }
+.ed-page mark { padding: 0 0.1em; background: var(--highlight); color: var(--highlight-ink); }
 .ed-page > blockquote {
   padding: 0.1em 0 0.1em 1em;
   border-left: 3px solid var(--rule);

@@ -323,13 +323,79 @@
 }
 .viewer-md th { background: var(--paper-3); font-weight: 600; }
 /* Image alt text — the image itself is not fetched (see ui/markdown.ts). */
-.viewer-md .md-image {
+.viewer-md :is(.md-image, .md-embed) {
   padding: 0.1em 0.45em;
   border: var(--hairline) dashed var(--rule);
   border-radius: var(--radius-xs);
   color: var(--ink-3);
   font-size: 0.9em;
 }
+
+/* Obsidian's own (ui/markdown.ts). A wikilink names a note in a vault this
+   app does not have, so it reads as a link and goes nowhere. */
+.viewer-md mark { padding: 0 0.1em; background: var(--highlight); color: var(--highlight-ink); }
+.viewer-md .md-wikilink { color: var(--accent-deep); text-decoration: underline dotted; text-underline-offset: 0.15em; }
+.viewer-md .md-tag {
+  padding: 0.05em 0.45em;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent-deep);
+  font-size: 0.9em;
+}
+/* The TeX as written: there is no typesetter here (ui/markdown.ts mathNode). */
+.viewer-md .md-math { font-family: var(--font-mono); font-size: 0.9em; color: var(--ink-2); }
+.viewer-md .md-math-block {
+  margin: 0 0 1em;
+  padding: 8px 14px;
+  border-radius: var(--leaf);
+  background: var(--paper-3);
+  text-align: center;
+  white-space: pre-wrap;
+}
+.viewer-md .md-fnref { font-size: 0.75em; color: var(--accent-deep); }
+.viewer-md .md-footnotes { font-size: 0.9em; color: var(--ink-2); }
+.viewer-md .md-footnotes hr { margin: 2em 0 1em; }
+.viewer-md kbd {
+  padding: 0.05em 0.4em;
+  border: var(--hairline) solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+/* Properties: the frontmatter, as names and their values. */
+.viewer-md .md-props {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0 0 1.4em;
+  padding: 0 0 1em;
+  border-bottom: var(--hairline) solid var(--rule-2);
+  font-size: 0.9em;
+}
+.viewer-md .md-props dt { color: var(--ink-3); }
+.viewer-md .md-props dd { margin: 0; }
+/* Callouts: a tinted panel per type, the title in the type's colour. */
+.viewer-md .md-callout {
+  --co: var(--accent-deep);
+  margin: 0 0 1em;
+  padding: 10px 14px;
+  border-left: 3px solid var(--co);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--co) 8%, transparent);
+}
+.viewer-md .md-callout-title { color: var(--co); font-weight: 600; }
+.viewer-md summary.md-callout-title { cursor: pointer; }
+.viewer-md .md-callout-body { margin-top: 6px; }
+.viewer-md .md-callout-body > :last-child { margin-bottom: 0; }
+.md-callout[data-callout="abstract"], .md-callout[data-callout="info"],
+.md-callout[data-callout="todo"] { --co: oklch(0.55 0.13 240); }
+.md-callout[data-callout="tip"], .md-callout[data-callout="success"] { --co: oklch(0.55 0.13 155); }
+.md-callout[data-callout="question"], .md-callout[data-callout="warning"] { --co: oklch(0.6 0.14 65); }
+.md-callout[data-callout="failure"], .md-callout[data-callout="danger"],
+.md-callout[data-callout="bug"] { --co: oklch(0.55 0.17 25); }
+.md-callout[data-callout="example"] { --co: oklch(0.52 0.15 300); }
+.md-callout[data-callout="quote"] { --co: var(--ink-3); }
 
 /* ---------------------------------------------------------
    Documents in the viewer (ui/documents.ts)

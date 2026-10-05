@@ -12,18 +12,23 @@ export type Run = {
   i?: boolean,
   s?: boolean,
   code?: boolean,
+  /** Obsidian's ==highlight==. */
+  hl?: boolean,
   href?: string,
   raw?: boolean,
 };
 
 /** The look of a run without its words. */
-export type Marks = Pick<Run, 'b' | 'i' | 's' | 'code' | 'href'>;
-/** The three marks the toolbar toggles, plus code, which Markdown's backticks give. */
-export type MarkKey = 'b' | 'i' | 's' | 'code';
-export const MARK_KEYS: readonly MarkKey[] = ['b', 'i', 's', 'code'];
+export type Marks = Pick<Run, 'b' | 'i' | 's' | 'code' | 'hl' | 'href'>;
+/** The four marks the toolbar toggles, plus code, which Markdown's backticks give. */
+export type MarkKey = 'b' | 'i' | 's' | 'hl' | 'code';
+export const MARK_KEYS: readonly MarkKey[] = ['b', 'i', 's', 'hl', 'code'];
 
 export type ListKind = 'bullet' | 'number' | 'task';
-export type Level = 1 | 2 | 3;
+/** Markdown's six. The ribbon and its keys offer the first three; the rest are typed or read. */
+export type Level = 1 | 2 | 3 | 4 | 5 | 6;
+/** A count of `#` as a heading level, held to the six there are. */
+export const toLevel = (n: number): Level => (n <= 1 ? 1 : n >= 6 ? 6 : n === 2 ? 2 : n === 3 ? 3 : n === 4 ? 4 : 5);
 
 /** `before` is the blank lines above a block in its file, kept so an untouched stretch keeps its spacing. */
 type Base = { before: string[] };
@@ -593,8 +598,8 @@ export function blockShortcut(doc: Doc, at: Pos): Edit | null {
     return task ? to({ kind: 'li', list: 'task', checked: task[1] !== ' ' }) : null;
   }
   if (b.kind !== 'p') return null;
-  const h = /^(#{1,3}) $/.exec(head);
-  if (h) return to({ kind: 'h', level: h[1].length === 1 ? 1 : h[1].length === 2 ? 2 : 3 });
+  const h = /^(#{1,6}) $/.exec(head);
+  if (h) return to({ kind: 'h', level: toLevel(h[1].length) });
   if (/^[-*+] $/.test(head)) return to({ kind: 'li', list: 'bullet' });
   const num = /^(\d{1,9})[.)] $/.exec(head);
   if (num) return to({ kind: 'li', list: 'number', start: Number(num[1]) });
@@ -618,13 +623,14 @@ export function fenceShortcut(doc: Doc, at: Pos): Edit | null {
 const INLINE_SHORTCUTS: [MarkKey, RegExp][] = [
   ['b', /(\*\*|__)([^*_\s](?:[^*_]*[^*_\s])?)\1$/],
   ['s', /~~([^~\s](?:[^~]*[^~\s])?)~~$/],
+  ['hl', /==([^=\s](?:[^=]*[^=\s])?)==$/],
   ['code', /`([^`]+)`$/],
   ['i', /(?:^|[^*\w])(\*)([^*\s](?:[^*]*[^*\s])?)\*$/],
   ['i', /(?:^|[^_\w])(_)([^_\s](?:[^_]*[^_\s])?)_$/],
 ];
 
 /**
- * `**word**`, `*word*`, `~~word~~` and `` `word` `` typed out: the markers go
+ * `**word**`, `*word*`, `~~word~~`, `==word==` and `` `word` `` typed out: the markers go
  * and the word takes the look, the moment the closing marker is typed. Only
  * over plain words - never across a raw run or inside code. `exit` is the mark
  * the caret leaves, so what is typed next is not in it.

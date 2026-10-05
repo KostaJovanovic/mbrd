@@ -383,8 +383,15 @@
 .card-md pre { margin: 0 0 0.5em; overflow: hidden; }
 /* Links are dead on a card — the viewer is where the document is read. */
 .card-md a { color: inherit; pointer-events: none; text-decoration: underline; }
-/* Tables cannot be legible in 300 world units; the viewer draws them. */
-.card-md table { display: none; }
+/* Tables cannot be legible in 300 world units; the viewer draws them. So
+   with properties and footnotes, which are the document's furniture. */
+.card-md :is(table, .md-props, .md-footnotes) { display: none; }
+/* Obsidian's own, in the card's quieter dress (the viewer's is viewer.css). */
+.card-md mark { background: var(--highlight); color: var(--highlight-ink); }
+.card-md :is(.md-wikilink, .md-tag) { color: var(--accent-deep); }
+.card-md :is(.md-math, .md-embed) { font-family: var(--font-mono); font-size: 0.9em; }
+.card-md .md-callout { margin: 0 0 0.5em; padding-left: 0.6em; border-left: 2px solid var(--accent-deep); }
+.card-md .md-callout-title { font-weight: 600; }
 /* Tombstone card: what is drawn where a file used to be. Centred, unlike
    other cards, because a marker is centred on the space it marks. Muted
    throughout — the accent would announce an absence in the same voice the

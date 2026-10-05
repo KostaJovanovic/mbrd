@@ -298,7 +298,9 @@ test('block markers typed at a line start become what they mean', () => {
     assert.equal(e.doc.blocks[0].kind, kind, text);
     assert.equal(blockText(e.doc.blocks[0]), 'x', text);
   }
-  assert.equal(type('#### x').doc.blocks[0].kind, 'p', 'only three heading levels');
+  // Markdown's six, as Obsidian has them; a seventh # is words.
+  assert.equal(type('###### x').doc.blocks[0].level, 6, 'six heading levels');
+  assert.equal(type('####### x').doc.blocks[0].kind, 'p', 'and no seventh');
   assert.equal(type('a # x').doc.blocks[0].kind, 'p', 'only at the start');
 });
 

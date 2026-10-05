@@ -578,7 +578,13 @@
 }
 /* Links disabled — tile is one tap target, links are live in the viewer */
 .feed-text-md a { color: inherit; pointer-events: none; text-decoration: underline; }
-.feed-text-md table { display: none; }
+.feed-text-md :is(table, .md-props, .md-footnotes) { display: none; }
+/* Obsidian's own, dressed as on a card (items.css). */
+.feed-text-md mark { background: var(--highlight); color: var(--highlight-ink); }
+.feed-text-md :is(.md-wikilink, .md-tag) { color: var(--accent-deep); }
+.feed-text-md :is(.md-math, .md-embed) { font-family: var(--font-mono); font-size: 0.9em; }
+.feed-text-md .md-callout { margin: 0 0 0.5em; padding-left: 0.6em; border-left: 2px solid var(--accent-deep); }
+.feed-text-md .md-callout-title { font-weight: 600; }
 
 /* Ghost card brings its own fill and shadow — no doubling */
 .feed-tile[data-kind="hint"] {
