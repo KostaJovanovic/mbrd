@@ -25,7 +25,7 @@ import { isTurning, rotateModel } from '../canvas/model.ts';
 // an element that is already on screen. Both for keepFrame() below.
 import { nodeFor } from '../canvas/items.ts';
 import { frameOnScreen } from '../canvas/poster.ts';
-import { canEdit, canView, openViewer } from '../ui/viewer.ts';
+import { canEdit, canView, openViewer, openViewerAmong } from '../ui/viewer.ts';
 import { canEditPicture, openDarkroom } from '../ui/darkroom.ts';
 import { resetSize } from '../ui/board-actions.ts';
 import { saveBlob } from '../storage/storage.ts';
@@ -92,6 +92,10 @@ export function itemMetaCommands() {
       if (canView(id)) openViewer(id, { thumb: nodeFor(id)?.getBoundingClientRect() ?? null });
     },
     canViewItem: (id: string) => canView(id),
+    /** Open these N: the viewer on the first in reading order, its steps held to them. */
+    viewableSelected: () => [...selection].filter(canView).length,
+    openSelection: () => openViewerAmong(selection,
+      id => nodeFor(id)?.getBoundingClientRect() ?? null),
     /**
      * The order the viewer steps through: reading order, rows from the top
      * and left to right in each, over what is on show - not a card the tag

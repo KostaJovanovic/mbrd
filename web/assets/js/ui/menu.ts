@@ -124,6 +124,8 @@ export interface MenuCommands {
   connectSelection: () => void;
   selectLike: (id: string) => void;
   selectLikeThese: () => void;
+  viewableSelected: () => number;
+  openSelection: () => void;
   canSelectSameTags: (id: string) => boolean;
   selectSameTags: (id: string) => void;
   selectTagged: (tag: string) => void;
@@ -700,6 +702,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: 'Open', icon: 'i-expand', accel: editable ? '' : 'dbl-click',
       hidden: !viewable && !linkURL,
       action: () => linkURL ? cmds!.openLink(id) : cmds!.openViewer(id) },
+    // Several: the viewer on the first, its arrows held to these.
+    { label: `Open these ${count}`, icon: 'i-expand', hidden: !many || cmds!.viewableSelected() < 2,
+      action: () => cmds!.openSelection() },
     // Open reads a document; this writes in it.
     { label: 'Edit', icon: 'i-edit-text', hidden: !writable,
       action: () => cmds!.editDocument(id) },

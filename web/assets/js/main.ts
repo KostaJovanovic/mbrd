@@ -85,7 +85,7 @@ import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as
 import { initAudio } from './canvas/audio.ts';
 import { cue, initCuelume, setCueLog, cueLog, dumpCueLog, soundLevel, setSoundLevel } from './cuelume/engine.ts';
 import { initFeed, revealInFeed } from './ui/feed.ts';
-import { initViewer, openViewer, flushEditor, holdTyping } from './ui/viewer.ts';
+import { initViewer, openViewer, flushEditor, holdTyping, setRevealInFeed } from './ui/viewer.ts';
 import { initDarkroom } from './ui/darkroom.ts';
 import { initInventory } from './ui/inventory.ts';
 import { initPlaylist } from './ui/playlist.ts';
@@ -367,6 +367,7 @@ initMenu(vp, cmds);
 // Fence prompt after rubber-band selection.
 initFencePrompt(vp);
 initSearch(vp, revealInFeed);
+setRevealInFeed(revealInFeed);
 // Skipped on /patch: idle fade would hide the only controls on a prose page.
 // And on #bench, where a fade landing mid-scenario would be measured.
 if (!isPatch && !benchPage) initIdle(vp);

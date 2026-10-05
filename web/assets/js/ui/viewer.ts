@@ -193,6 +193,27 @@ let hold: { id: number, x: number, y: number, timer: number } | null = null;
 let heldOpen = false;
 const cancelHold = () => { if (hold) clearTimeout(hold.timer); hold = null; };
 
+/** Open these N: the cards the arrows and swipes are held to for this viewing, or null for all. */
+let among: Set<string> | null = null;
+
+/**
+ * Open the first of `ids` in reading order, with the steps held to them until
+ * the viewer closes - a selection looked through on its own.
+ */
+export function openViewerAmong(ids: Iterable<string>, thumbOf: (id: string) => DOMRect | null) {
+  const set = new Set(ids);
+  const first = cmds?.viewOrder().find(id => set.has(id) && canView(id));
+  if (!first) return false;
+  openViewer(first, { thumb: thumbOf(first) });
+  among = set;
+  paintSteps();
+  return true;
+}
+
+/** Show in Feed, injected: the Feed imports this module. See setRevealInFeed(). */
+let revealInFeed: ((id: string) => boolean) | null = null;
+export function setRevealInFeed(fn: (id: string) => boolean) { revealInFeed = fn; }
+
 /** The menu, at a point or under a button. */
 function openViewerMenu(rect: { left: number, right: number, top: number, bottom: number }, owner?: Element) {
   if (!shownId) return;
@@ -267,6 +288,8 @@ export function initViewer(commands?: ViewerCommands) {
   // Escape reaches the dialog as a close request whatever had focus; the
   // teardown must run too, or the next viewing inherits a video still playing.
   dlg.addEventListener('close', teardown);
+  // Open these N lasts one viewing.
+  dlg.addEventListener('close', () => { among = null; });
   // However it shut, a close still animating is over, and its held frames go with it.
   dlg.addEventListener('close', () => { if (closing) finishClose(); });
   // A press while a picture shrinks home is somebody already back at the board.
@@ -472,7 +495,7 @@ function slide(dir: number, old: HTMLImageElement, shown: number) {
 /** The nearest viewable item from the one on show, going `dir`, or null. */
 function neighbour(dir: number): string | null {
   if (!shownId || !cmds) return null;
-  const order = cmds.viewOrder();
+  const order = among ? cmds.viewOrder().filter(id => among!.has(id)) : cmds.viewOrder();
   const at = order.indexOf(shownId);
   if (at < 0) return null;
   for (let i = at + dir; i >= 0 && i < order.length; i += dir) {
@@ -936,6 +959,17 @@ function viewerEntries(id: string): MenuEntry[] {
         closeViewer();
         select([id]);
         cmds?.zoomToSelection();
+      },
+    },
+    // The Feed's way back to the tile: its wall scrolled there and the tile lit,
+    // as Find does it.
+    {
+      label: 'Show in Feed',
+      icon: 'i-zoom-to',
+      hidden: !revealInFeed || board.layoutMode !== 'mobile',
+      action: () => {
+        closeViewer(true);
+        revealInFeed?.(id);
       },
     },
     // A document being read turns to writing where it is: the same viewing, reopened to edit.
