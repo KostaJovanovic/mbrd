@@ -15,7 +15,7 @@ import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
 import { makeByteBudget, overPixelBudget, pixelCrossing, IMPORT_LIMITS } from './budget.ts';
 import { allow, isAllowed, isOversize, lift, fileKey, mb as consentMb } from '../consent.ts';
 import {
-  classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame,
+  classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame, isRetryable,
   videoDrawsBlank, pictureIsFlat, swatchHex, SWATCH_DEFAULT,
 } from '../canvas/renderers.ts';
 import { iframeURL, embedFor } from '../canvas/embed.ts';
@@ -458,7 +458,7 @@ const KEPT_META = ['tags', 'locked', 'fit'] as const;
  * in here on purpose, key by key - a card's rotation or crop belonged to the
  * old picture and would be wrong on the new one.
  */
-export async function replaceItemFile(id: string, file: File) {
+export async function replaceItemFile(id: string, file: File, retry = false) {
   if (!byId(id)) return;
   // The header first, as applyCover() asks it: a small file that declares
   // 65535 x 65535 is a question before it is a decode.
@@ -484,12 +484,48 @@ export async function replaceItemFile(id: string, file: File) {
     toast(`Found the file for ${card.name || 'this card'}`);
     return;
   }
+  // A retry that came out a named card again changes nothing, so it makes no
+  // undo step either.
+  if (retry && draft.type !== 'image') {
+    toast(`Still no picture for ${card.name || file.name} - this browser cannot draw it`);
+    return;
+  }
   const { x: _x, y: _y, ...rest } = draft;
   const meta: ItemMeta = { ...rest.meta };
   for (const key of KEPT_META) if (key in card.meta) meta[key] = structuredClone(card.meta[key]);
   const w = card.w;
   const h = rest.w > 0 && rest.h > 0 ? Math.round(w * rest.h / rest.w) : card.h;
-  if (retypeItem(id, { ...rest, w, h, rot: 0, meta }, 'Replace file')) toast(`Replaced with ${file.name}`);
+  // A retry is the same file, so a rename still stands.
+  const name = retry ? card.name : rest.name;
+  if (!retypeItem(id, { ...rest, name, w, h, rot: 0, meta }, retry ? 'Retry picture' : 'Replace file')) return;
+  toast(retry ? `Made a picture for ${card.name || file.name}` : `Replaced with ${file.name}`);
+}
+
+/** Cards being retried now. A second press while the first is reading does nothing. */
+const retrying = new Set<string>();
+
+/**
+ * A named card holding a picture - the importer could not draw it when it
+ * arrived (a HEIC before WebCodecs was ready, a RAW whose preview was refused,
+ * one over the pixel budget somebody said no to) - read again from its own
+ * bytes. Whatever has changed since, a decoder that loaded, a yes to the
+ * ceiling, the card becomes the picture; nothing changed, it stays as it is.
+ */
+export async function retryPicture(id: string) {
+  const card = byId(id);
+  const asset = card?.asset ? getAsset(card.asset.hash) : null;
+  if (!card || !asset || !isRetryable(card) || retrying.has(id)) return;
+  const origName = card.meta?.origName;
+  const name = typeof origName === 'string' && origName ? origName : asset.name || card.name || 'picture';
+  const file = new File([asset.blob], name, { type: asset.mime || asset.blob.type || '' });
+  retrying.add(id);
+  const job = busy('Making a picture');
+  try {
+    await replaceItemFile(id, file, true);
+  } finally {
+    job.end();
+    retrying.delete(id);
+  }
 }
 
 /** Item awaiting a cover picture. Cleared on read and in pickFiles() (cancelled pickers fire no change). */

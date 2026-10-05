@@ -282,6 +282,13 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
       if (id) unpacker?.(id);
       return;
     }
+    // Retry on a picture that arrived as a named card.
+    const retry = t?.closest('.card-retry');
+    if (retry) {
+      const id = itemIdFromEvent(retry);
+      if (id) retrier?.(id);
+      return;
+    }
     // The song under a Spotless card.
     const song = t?.closest('.spotless-song');
     if (song) {
@@ -515,6 +522,14 @@ let unpacker: ((id: string) => void) | null = null;
  */
 export function setUnpack(fn: ((id: string) => void) | null) {
   unpacker = fn;
+}
+
+let retrier: ((id: string) => void) | null = null;
+
+/** What Retry on a named picture card does (retryPicture() in import/drop.ts).
+ *  Injected for the reason setUnpack() is; unwired, the button does nothing. */
+export function setRetryPicture(fn: ((id: string) => void) | null) {
+  retrier = fn;
 }
 
 let songDealer: ((id: string) => void) | null = null;

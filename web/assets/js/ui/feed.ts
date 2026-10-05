@@ -39,6 +39,7 @@ import { armedSticker, disarm } from './sticker-window.ts';
 import { openViewer, canView } from './viewer.ts';
 import { openPanel as openHeaderPanel } from './mobile-header.ts';
 import { unpackItem } from '../import/unpack.ts';
+import { retryPicture } from '../import/drop.ts';
 import { dealSong } from './clean/clean.ts';
 import { renderMarkdown } from './markdown.ts';
 import { shownHash, type Item } from '../board-model.ts';
@@ -421,16 +422,17 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   // Every press, whatever made it. Capture, so the tile menu's hold reads it.
   root.addEventListener('pointerdown', e => { pressType = e.pointerType; },
     { capture: true, passive: true });
-  // Unzip and Open on an archive or folder tile, and the song on a Spotless
-  // one. Capture too, so the tile's
-  // own tap - open the viewer - never sees a press meant for the button.
+  // Unzip and Open on an archive or folder tile, Retry on a picture that came
+  // in as a named card, and the song on a Spotless one. Capture too, so the
+  // tile's own tap - open the viewer - never sees a press meant for the button.
   root.addEventListener('click', e => {
-    const button = e.target instanceof Element ? e.target.closest('.card-unpack, .spotless-song') : null;
+    const button = e.target instanceof Element ? e.target.closest('.card-unpack, .card-retry, .spotless-song') : null;
     const id = button && tileIdAt(button);
     if (!id) return;
     e.preventDefault();
     e.stopPropagation();
     if (button.classList.contains('spotless-song')) void dealSong(id);
+    else if (button.classList.contains('card-retry')) void retryPicture(id);
     else void unpackItem(id);
   }, true);
 

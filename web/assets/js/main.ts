@@ -38,7 +38,7 @@ import { initClean, dealSong } from './ui/clean/clean.ts';
 import { initPaper } from './canvas/paper.ts';
 import { initMobileFrame } from './canvas/mobile-frame.ts';
 import { repaintGround, forgetLookInk } from './canvas/ground.ts';
-import { initItems, resetItems, setUnpack, setSpotlessSong } from './canvas/items.ts';
+import { initItems, resetItems, setUnpack, setRetryPicture, setSpotlessSong } from './canvas/items.ts';
 import { resetModels } from './canvas/model.ts';
 import { initWeb, joinDump } from './canvas/web.ts';
 import { initGhosts } from './canvas/ghosts.ts';
@@ -46,7 +46,7 @@ import { initStills } from './canvas/stills.ts';
 import { initHires } from './canvas/hires.ts';
 import { initInput } from './canvas/input.ts';
 import { initPictureShapes } from './canvas/picture-shape.ts';
-import { initDrop, importFiles, setImportPrompt, setImportRevealer, noteToFile } from './import/drop.ts';
+import { initDrop, importFiles, setImportPrompt, setImportRevealer, noteToFile, retryPicture } from './import/drop.ts';
 import { unpackItem } from './import/unpack.ts';
 import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
@@ -382,6 +382,8 @@ initTimeline(cmds);
 initDrop(vp);
 // Unzip and Open on a card. Injected: canvas/ may not reach import/.
 setUnpack(id => { void unpackItem(id); });
+// Retry on a picture that came in as a named card, the same way.
+setRetryPicture(id => { void retryPicture(id); });
 // The song button on the Spotless card, the same way and for the same reason.
 setSpotlessSong(id => { void dealSong(id); });
 // HUD (zoom cluster, undo/redo, readouts). After buildPanel() and cmds.

@@ -1818,7 +1818,11 @@ const RENDERERS = {
   },
 
   generic(item: Item) {
-    return cardShell(item, extOf(item.name) || 'file');
+    const card = cardShell(item, extOf(item.name) || 'file');
+    // A picture the importer could not draw: one press reads it again
+    // (retryPicture() in import/drop.ts), delegated as Unzip is.
+    if (isRetryable(item)) card.append(cardButton(item, 'card-retry', 'i-reload', 'Retry'));
+    return card;
   },
 
   /** An archive, dropped whole: its name, and Unzip. See import/unpack.ts. */
@@ -1856,21 +1860,37 @@ function packCard(item: Item, kind: string, verb: string, foot: string | null) {
     const meta = card.querySelector('.card-meta');
     if (meta) meta.textContent = foot;
   }
+  card.append(cardButton(item, 'card-unpack', UNPACK.icon, verb));
+  return card;
+}
+
+/** The pill under a card's name: Unzip, Open, Retry. Pressed by delegation. */
+function cardButton(item: Item, cls: string, icon: string, verb: string) {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'card-unpack';
+  button.className = cls;
   button.setAttribute('aria-label', `${verb} ${titleOf(item)}`);
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('class', 'ico');
   svg.setAttribute('aria-hidden', 'true');
   const use = document.createElementNS(SVG_NS, 'use');
-  use.setAttribute('href', `assets/icons.svg#${UNPACK.icon}`);
+  use.setAttribute('href', `assets/icons.svg#${icon}`);
   svg.append(use);
   const word = document.createElement('span');
   word.textContent = verb;
   button.append(svg, word);
-  card.append(button);
-  return card;
+  return button;
+}
+
+/**
+ * A named card whose file is a picture - one the importer fell back on because
+ * it could not draw it then. Asked of the extension and MIME the card kept,
+ * through classify(), so it is the same answer the import gave.
+ */
+export function isRetryable(item: Pick<Item, 'type' | 'name' | 'meta'>): boolean {
+  if (item.type !== 'generic') return false;
+  const ext = (metaStr(item.meta?.ext) || extOf(item.name || '')).replace(/^\./, '');
+  return !!ext && classify(new File([], `x.${ext}`, { type: metaStr(item.meta?.mime) })) === 'image';
 }
 
 /**
