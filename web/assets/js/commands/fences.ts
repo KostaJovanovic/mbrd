@@ -6,7 +6,7 @@ import { toast } from '../notify.ts';
 import {
   addItems, anchorQuietly, baseStep, board, byId, fenceAt, fenceBox, fenceFollowers, fenceOf,
   isFence, isFurniture, isRider, nextFenceName, select, selection, startFresh,
-  isRolled, setFenceRolled, setFenceTint,
+  isRolled, setFenceRolled, setFenceTint, commit, lastCommand, takeBack,
 } from '../state.ts';
 import { itemBounds, MAX_SIZE, MIN_SIZE } from '../geometry.ts';
 import { editItemName } from '../canvas/items.ts';
@@ -55,17 +55,15 @@ function fenceable(): boolean {
 // The rectangle a fence would occupy.
 const wouldFence = (rect: Band | null) => fenceBox(rect, itemBounds(fenced()), baseStep());
 
+// A clamped fence would be smaller than what it was drawn to hold.
+const tooFar = (box: { w: number, h: number }) => box.w > MAX_SIZE || box.h > MAX_SIZE;
+
 // Create a fence over rect/selection. z goes below enclosed cards so
-// raising the fence carries them correctly. Opens the name editor immediately.
-function drawFence(rect: Band | null): void {
+// raising the fence carries them correctly. Answers the new fence's id.
+function addFence(rect: Band | null): string | null {
   const inside = fenced();
   const box = wouldFence(rect);
-  if (!box) return;
-  // A clamped fence would be smaller than what it was drawn to hold.
-  if (box.w > MAX_SIZE || box.h > MAX_SIZE) {
-    toast('Those are too far apart to fence');
-    return;
-  }
+  if (!box || tooFar(box)) return null;
   const under = inside.length ? inside : board.items.filter((i: Boxed) => !isFurniture(i));
   const [fence] = addItems([{
     type: 'fence',
@@ -73,25 +71,75 @@ function drawFence(rect: Band | null): void {
     x: box.x, y: box.y, w: box.w, h: box.h,
     z: Math.min(0, ...under.map(i => i.z || 0)) - 1,
   }], 'Add a fence');
-  if (!fence) return;
-  // Free for now, so it can be moved into place, then anchored so clicks on
-  // cards inside it do not drag the fence. See the fresh-fence clock in sticky.ts.
-  startFresh(fence.id, () => anchorQuietly(fence.id));
-  select([fence.id]);
-  requestAnimationFrame(() => editItemName(fence.id));
+  return fence?.id ?? null;
+}
+
+// Free for now, so it can be moved into place, then anchored so clicks on
+// cards inside it do not drag the fence. See the fresh-fence clock in sticky.ts.
+// Opens the name editor immediately.
+function welcomeFence(id: string) {
+  startFresh(id, () => anchorQuietly(id));
+  select([id]);
+  requestAnimationFrame(() => editItemName(id));
+}
+
+function drawFence(rect: Band | null): void {
+  const box = wouldFence(rect);
+  if (box && tooFar(box)) { offerGather(); return; }
+  const id = addFence(rect);
+  if (id) welcomeFence(id);
+}
+
+/** Too far apart to fence where they are: offered the gather, never refused. */
+function offerGather() {
+  toast('Those are too far apart to fence where they are', '',
+    { label: 'Gather and fence', run: gatherAndFence });
+}
+
+/**
+ * Lay the selection out about its middle (masonry), then fence it, as one undo
+ * step. Each half commits as it always does; both are then withdrawn and
+ * committed again together, so Ctrl+Z takes back the fence and the gather at
+ * once.
+ */
+function gatherAndFence() {
+  if (!fenceable()) return;
+  const items = fenced().map(i => byId(i.id)).filter(it => !!it);
+  if (!items.length) return;
+  const was = lastCommand();
+  rearrange(items, { name: 'masonry', label: 'Gather' });
+  const gathered = lastCommand();
+  const id = addFence(null);
+  const made = lastCommand();
+  if (!id || !made || made === gathered) {
+    if (gathered !== was) takeBack(gathered);
+    toast('Even gathered, those will not fit in one fence');
+    return;
+  }
+  if (gathered && gathered !== was) {
+    takeBack(made);
+    takeBack(gathered);
+    commit('Gather and fence',
+      () => { gathered.redo(); made.redo(); },
+      () => { made.undo(); gathered.undo(); },
+      gathered.weight + made.weight);
+  }
+  welcomeFence(id);
 }
 
 export function fenceCommands() {
   return {
-    // Menu path: fence the selection (requires 2+, since there is no band).
+    // Menu path: fence the selection. One card is a region too, as the band
+    // already allows.
     fenceSelection: () => {
       if (!fenceable()) return;
-      if (fenced().length < 2) {
-        toast('Pick two or more cards to fence');
+      if (!fenced().length) {
+        toast('Pick a card to fence');
         return;
       }
       drawFence(null);
     },
+    gatherAndFence: () => gatherAndFence(),
 
     // Marquee path: offer a fence beside the pointer after a rubber band.
     // Suppressed for tiny empty bands and for subsets of an existing fence.

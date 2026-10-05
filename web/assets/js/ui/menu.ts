@@ -799,7 +799,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       sub: alignDistributeEntries(id) },
     // Group only. Also reachable via rubber-band prompt — this covers shift-click
     // selections where there is no band. The Feed has no fences.
-    { label: `Fence these ${count}`, icon: 'i-fence', accel: 'Ctrl G', hidden: mobile || !many,
+    { label: many ? `Fence these ${count}` : 'Fence it', icon: 'i-fence', accel: 'Ctrl G',
+      hidden: mobile || (!many && cmds!.isFenceItem(id)),
       action: () => cmds!.fenceSelection() },
     // Every line touching the selection, gone in one step. Canvas only, where
     // lines are drawn; hidden when there are none to take.

@@ -8,6 +8,9 @@ import { byId, addItems, select, setBoardMode } from '../web/assets/js/state.ts'
 import { createCommands } from '../web/assets/js/commands.ts';
 import { fresh, photo, fence } from './state-fixtures.js';
 
+// A new fence opens its name editor on the next frame; there is no frame here.
+globalThis.requestAnimationFrame ??= () => 0;
+
 const commands = () => createCommands(
   { toWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0 },
   { resetAppearance() {}, setWhimsy() {} });
@@ -39,6 +42,27 @@ test('Fit to contents closes a fence round what is in it, in one undo step', asy
   assert.ok(fen.x - fen.w / 2 < card.x - card.w / 2 && fen.x + fen.w / 2 > card.x + card.w / 2);
   undo();
   assert.equal(byId(f.id).w, 2000);
+});
+
+test('one card can be fenced from the menu', async () => {
+  const { board } = await import('../web/assets/js/state.ts');
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  select([a.id]);
+  commands().fenceSelection();
+  assert.equal(board.items.filter(i => i.type === 'fence').length, 1);
+});
+
+test('Gather and fence is one undo step', async () => {
+  const { board, undo } = await import('../web/assets/js/state.ts');
+  const [a, b] = addItems([photo({ x: 0, y: 0 }), photo({ x: 90000, y: 0 })]);
+  addItems([photo({ x: -9000, y: 9000 })]);
+  select([a.id, b.id]);
+  commands().gatherAndFence();
+  assert.equal(board.items.filter(i => i.type === 'fence').length, 1);
+  assert.ok(Math.abs(byId(a.id).x - byId(b.id).x) < 1000, 'gathered');
+  undo();
+  assert.equal(board.items.filter(i => i.type === 'fence').length, 0);
+  assert.equal(byId(b.id).x, 90000, 'and back where it was');
 });
 
 test('Nudge fence moves only what is inside, and grows the fence', () => {
