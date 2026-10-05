@@ -20,7 +20,7 @@ import {
   declareOp, registerOp,
   stuckFollowers, stuckTo, stuckPlacement, fenceOf, fenceBox, baseStep,
   lastCommand, undoAction,
-  isContent, rolledAway, rolledFences, fenceFollowers, connectedTo, travelling,
+  isContent, itemTags, rolledAway, rolledFences, fenceFollowers, connectedTo, travelling,
 } from './state.ts';
 import { kindName } from './canvas/item-dom.ts';
 import { alignTargets, distributeTargets, matchSizeTargets, separateOverlaps, itemBounds } from './geometry.ts';
@@ -234,6 +234,17 @@ function registerLayoutOps() {
     const items = layoutItems(asIds(params.ids));
     if (items.length) rearrange(items, { name: params.name ? String(params.name) : undefined });
   });
+}
+
+/**
+ * Select every card on the board that passes `keep`, as the Select fold's
+ * rows do: content only, and nothing a rolled fence has folded away - or the
+ * next Delete would take what nobody can see. Says how many.
+ */
+function selectWhere(keep: (it: Item) => boolean) {
+  const rolled = rolledFences();
+  select(board.items.filter(i => isContent(i) && !rolledAway(i, rolled) && keep(i)).map(i => i.id));
+  toast(selection.size ? `Selected ${selection.size} item${selection.size === 1 ? '' : 's'}` : 'Nothing to select');
 }
 
 /** Said as the multi-select mode comes on, by either door. The standing mark is
@@ -488,6 +499,27 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
         .map(i => i.id));
       toast(`Selected ${selection.size} ${kind}${selection.size === 1 ? '' : 's'}`);
     },
+    /** Every kind in the selection, as All like this does for one. */
+    selectLikeThese: () => {
+      const kinds = new Set(board.items.filter(i => selection.has(i.id)).map(kindName));
+      if (!kinds.size) return;
+      const rolled = rolledFences();
+      select(board.items
+        .filter(i => isContent(i) && !rolledAway(i, rolled) && kinds.has(kindName(i)))
+        .map(i => i.id));
+      toast(`Selected ${selection.size} item${selection.size === 1 ? '' : 's'}`);
+    },
+    /** Every card carrying all of this card's tags. */
+    canSelectSameTags: (id: string) => itemTags(byId(id)).length > 0,
+    selectSameTags: (id: string) => {
+      const want = itemTags(byId(id));
+      if (!want.length) return;
+      selectWhere(i => want.every(t => itemTags(i).includes(t)));
+    },
+    /** Everything carrying one tag, from the Tags fold. */
+    selectTagged: (tag: string) => selectWhere(i => itemTags(i).includes(tag)),
+    /** What is not selected now, and nothing that is. Out of sight stays out. */
+    invertSelection: () => selectWhere(i => !selection.has(i.id)),
     /** What a fence holds, nested fences and their cards included. */
     canSelectFenceContents: (id: string) => isFence(byId(id)) && fenceFollowers([id]).length > 0,
     selectFenceContents: (id: string) => {

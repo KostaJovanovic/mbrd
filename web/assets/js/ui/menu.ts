@@ -122,6 +122,12 @@ export interface MenuCommands {
   selectionLineCount: () => number;
   removeSelectionConnections: () => void;
   selectLike: (id: string) => void;
+  selectLikeThese: () => void;
+  canSelectSameTags: (id: string) => boolean;
+  selectSameTags: (id: string) => void;
+  selectTagged: (tag: string) => void;
+  invertSelection: () => void;
+  hasSelection: () => boolean;
   canSelectFenceContents: (id: string) => boolean;
   selectFenceContents: (id: string) => void;
   canSelectJoined: (id: string) => boolean;
@@ -684,8 +690,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Sets the board can already name, from the card that names them. Single-
     // card: "like this" needs one this. Only the kind row on the Feed, which
     // has no fences to look inside and no lines drawn.
-    { label: 'Select', icon: 'i-select-all', hidden: many || track,
-      sub: !many && !track ? selectEntries(id, mobile) : undefined },
+    // With several picked, the one row that reads a selection: every kind in it.
+    { label: 'Select', icon: 'i-select-all', hidden: track,
+      sub: !track ? selectEntries(id, mobile, many) : undefined },
     // No accel on notes — double-click belongs to Edit text there.
     // A link opens its site (or, for YouTube, the viewer's player) - see
     // openLink. Every other viewable item opens in the viewer.
@@ -853,9 +860,14 @@ function lineRemoval(mobile: boolean): MenuEntry[] {
 }
 
 /** The card menu's Select fold - see selectLike in commands.ts. */
-function selectEntries(id: string, mobile: boolean): MenuEntry[] {
+function selectEntries(id: string, mobile: boolean, many: boolean): MenuEntry[] {
+  if (many) {
+    return [{ label: 'More like these', icon: 'i-select-all', action: () => cmds!.selectLikeThese() }];
+  }
   return [
     { label: 'All like this', icon: 'i-select-all', action: () => cmds!.selectLike(id) },
+    { label: 'With the same tags', icon: 'i-tag',
+      hidden: !cmds!.canSelectSameTags(id), action: () => cmds!.selectSameTags(id) },
     { label: 'What is in it', icon: 'i-fence',
       hidden: mobile || !cmds!.canSelectFenceContents(id), action: () => cmds!.selectFenceContents(id) },
     { label: 'What it is joined to', icon: 'i-connect',
@@ -930,6 +942,14 @@ function tagEntries(): MenuEntry[] {
   // Separator only when there are tags above it.
   if (rows.length) rows.push({ sep: true });
   rows.push({ label: 'New tag…', icon: 'i-plus', action: () => cmds!.addTag() });
+  // The board's cards by tag, beside the rows that tag these - the filter
+  // fold's Select those is the same idea for several tags at once.
+  if (tags.length) {
+    rows.push({ label: 'Select everything tagged', icon: 'i-select-all',
+      sub: tags.map(({ tag, count }) => ({
+        label: `${tag}  (${count})`, icon: 'i-tag', action: () => cmds!.selectTagged(tag),
+      })) });
+  }
   return rows;
 }
 
@@ -1051,6 +1071,8 @@ function canvasEntries(at: Point): MenuEntry[] {
       action: () => cmds!.paste(at) },
     { label: 'Select all', icon: 'i-select-all', accel: 'Ctrl A',
       action: () => cmds!.selectAll() },
+    { label: 'Invert selection', icon: 'i-select-all', hidden: !cmds!.hasSelection(),
+      action: () => cmds!.invertSelection() },
     // Touch multi-select — see multiSelectEntry.
     ...multiSelectEntry(),
     // Filter count in the label so the state is visible without opening the fold.
