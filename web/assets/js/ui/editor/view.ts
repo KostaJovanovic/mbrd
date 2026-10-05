@@ -23,6 +23,7 @@ import { ask } from '../dialog.ts';
 import { makeEditable, markClosed, readToken } from '../../util.ts';
 import { baseMs, fastMs, reducedMotion } from '../../canvas/viewport.ts';
 import { toast } from '../../notify.ts';
+import { readPref, writePref } from '../../prefs.ts';
 import { menuButton, openAnchored } from '../menu.ts';
 import type { MenuEntry } from '../menu.ts';
 
@@ -68,6 +69,14 @@ const TYPING_GAP_MS = 1200;
 const UNDO_MAX = 500;
 /** Matches painted at once. Past this the bar still counts them all. */
 const PAINT_MAX = 2000;
+/** The page zooms the status bar steps through, Word's stops and a few more. */
+const ZOOMS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+const ZOOM_PREF = 'mbrd.editorZoom';
+/** Ctrl+wheel travel, in pixels, that makes one zoom step: a mouse notch is 100. */
+const ZOOM_WHEEL = 50;
+/** The stop nearest a remembered zoom, so a value from an older list still lands on one. */
+const nearestZoom = (z: number) =>
+  ZOOMS.reduce((best, s) => (Math.abs(s - z) < Math.abs(best - z) ? s : best), 1);
 
 // ---------------------------------------------------------------------------
 // Building
@@ -1072,7 +1081,57 @@ export function mountEditor(opts: EditorOptions): Editor {
   const counts = h('div', 'ed-counts');
   counts.setAttribute('aria-live', 'polite');
   if (screen) counts.title = 'Pages are an estimate from the standard layout: Courier 12, about 55 lines a page.';
-  status.append(counts, timer);
+
+  // Page zoom, at the right of the status bar as Word has it: the sheet and its
+  // writing together, the furniture left alone, and kept for the next document.
+  // Ctrl+wheel over the desk steps it as well. No keys: Ctrl+plus and Ctrl+minus
+  // are the window's zoom, in the desktop app's View menu and in the browser.
+  let zoom = nearestZoom(parseFloat(readPref(ZOOM_PREF) ?? '') || 1);
+  const zoomOutBtn = button('Zoom out', () => stepZoom(-1), { icon: 'assets/icons.svg#i-zoom-out' });
+  const zoomInBtn = button('Zoom in', () => stepZoom(1), { icon: 'assets/icons.svg#i-zoom-in' });
+  const zoomLevel = button('Zoom: back to 100%', () => setZoom(1), { text: '' });
+  zoomLevel.classList.add('ed-zoom-level');
+  const zoomCtl = h('div', 'ed-zoom');
+  zoomCtl.setAttribute('role', 'group');
+  zoomCtl.setAttribute('aria-label', 'Zoom');
+  zoomCtl.append(zoomOutBtn, zoomLevel, zoomInBtn);
+  const paintZoom = () => {
+    root.style.setProperty('--ed-zoom', String(zoom));
+    zoomLevel.textContent = `${Math.round(zoom * 100)}%`;
+    zoomOutBtn.disabled = zoom <= ZOOMS[0];
+    zoomInBtn.disabled = zoom >= ZOOMS[ZOOMS.length - 1];
+  };
+  /** To `to`, holding the line at the middle of the desk where it was. */
+  const setZoom = (to: number) => {
+    if (to === zoom) return;
+    const mid = scroller.clientHeight / 2;
+    const at = (scroller.scrollTop + mid) / Math.max(1, scroller.scrollHeight);
+    zoom = to;
+    paintZoom();
+    scroller.scrollTop = at * scroller.scrollHeight - mid;
+    writePref(ZOOM_PREF, zoom);
+  };
+  const stepZoom = (by: 1 | -1) => {
+    const n = ZOOMS.indexOf(zoom) + by;
+    if (n >= 0 && n < ZOOMS.length) setZoom(ZOOMS[n]);
+  };
+  // A trackpad pinch arrives as a Ctrl+wheel too, in small deltas: summed to a
+  // step rather than a step per event, or one pinch would run the whole range.
+  let pinch = 0;
+  scroller.addEventListener('wheel', e => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    // Firefox counts a mouse notch in lines, three of them.
+    pinch += e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    if (Math.abs(pinch) < ZOOM_WHEEL) return;
+    stepZoom(pinch < 0 ? 1 : -1);
+    pinch = 0;
+  }, { passive: false });
+  paintZoom();
+
+  const statusEnd = h('div', 'ed-status-end');
+  statusEnd.append(timer, zoomCtl);
+  status.append(counts, statusEnd);
   const plural = (n: number, one: string) => `${n.toLocaleString()} ${n === 1 ? one : one + 's'}`;
 
   const paintCount = () => {

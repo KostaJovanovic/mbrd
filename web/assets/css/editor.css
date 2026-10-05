@@ -384,6 +384,17 @@
   user-select: none;
 }
 .ed-counts { display: flex; gap: 12px; }
+.ed-status-end { display: flex; align-items: center; gap: 12px; }
+/* Page zoom: out, the level (which puts it back to 100%), in. */
+.ed-zoom { display: flex; align-items: center; }
+.ed-zoom .ed-btn { min-width: 26px; height: 24px; padding: 0 4px; }
+.ed-zoom .ed-btn .ico { width: 14px; height: 14px; }
+.ed-zoom .ed-zoom-level {
+  min-width: 4.2em;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  justify-content: center;
+}
 .ed-count { white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* ── The desk and the page ──────────────────────────────────────────────── */
@@ -415,10 +426,12 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-width: 680px;
-  min-height: 880px;
+  /* Page zoom (--ed-zoom, the status bar's): the paper grows with its writing,
+     until the desk is full and the lines wrap shorter instead. */
+  max-width: calc(680px * var(--ed-zoom, 1));
+  min-height: calc(880px * var(--ed-zoom, 1));
   margin: 0 auto;
-  padding: clamp(24px, 8vw, 72px);
+  padding: calc(clamp(24px, 8vw, 72px) * var(--ed-zoom, 1));
   /* A sheet of paper is cut square at every whimsy, whatever the furniture's corners. */
   border-radius: 0;
   background: var(--paper-card);
@@ -445,7 +458,7 @@
   background: none;
   color: var(--ink);
   font-family: var(--font-display);
-  font-size: calc(var(--t-body) * 1.9);
+  font-size: calc(var(--t-body) * 1.9 * var(--ed-zoom, 1));
   font-weight: 600;
   line-height: 1.2;
   outline: none;
@@ -459,7 +472,7 @@
   outline: none;
   color: var(--ink);
   caret-color: var(--accent-deep);
-  font-size: var(--t-body);
+  font-size: calc(var(--t-body) * var(--ed-zoom, 1));
   line-height: 1.65;
   /* A soft line break is a newline in a run, and spaces are the writer's. */
   white-space: pre-wrap;
@@ -467,7 +480,7 @@
 }
 .is-plain .ed-page {
   font-family: var(--font-mono);
-  font-size: var(--t-small);
+  font-size: calc(var(--t-small) * var(--ed-zoom, 1));
   line-height: 1.6;
 }
 
@@ -603,7 +616,7 @@
     min-height: calc(100dvh - var(--kb, 0px) - var(--ed-top) - 16px);
     padding: 22px 20px 48px;
   }
-  .ed-name { font-size: calc(var(--t-body) * 1.55); }
+  .ed-name { font-size: calc(var(--t-body) * 1.55 * var(--ed-zoom, 1)); }
 }
 
 /* ── What is on the page ────────────────────────────────────────────────── */
@@ -660,7 +673,7 @@
    The standard page: Courier, single-spaced, a wider left margin for the
    binding, and each element at its place across a line of sixty characters -
    which is why the indents are in ch. A blank line above is data-gap. */
-.is-screen .ed-sheet { padding-left: clamp(24px, 10vw, 104px); }
+.is-screen .ed-sheet { padding-left: calc(clamp(24px, 10vw, 104px) * var(--ed-zoom, 1)); }
 .is-screen .ed-page {
   font-family: 'Courier Prime', 'Courier New', Courier, var(--font-mono);
   line-height: 1.25;
