@@ -52,6 +52,15 @@
   font-size: clamp(11px, calc(var(--half-min, 120px) * 0.09), 20px);
 }
 
+/* A dragged card put down goes straight down. Softish's --ease-back
+   overshoots by half again, so a card let go sank past its place and came
+   back up. The pickup keeps the spring; only the drop (.is-dropping, set for
+   one --dur-base by setDragging() in canvas/items.ts) loses it. One timing for
+   the whole list, since the three twins order their lists differently. */
+:root[data-whimsy="0"] :is(.item, .item-shadow, .item-ring).is-dropping {
+  transition-timing-function: var(--ease);
+}
+
 /* Round, not nearly round. --leaf is 20px at this end, which caps a 35px
    control to a pill but left the 42-45px glass buttons and the two short
    drawer buttons a pixel or two short of one: a circle drawn slightly wrong.

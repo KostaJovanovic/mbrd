@@ -15,7 +15,7 @@ import type { Bounds } from '../geometry.ts';
 import type { Item } from '../board-model.ts';
 import { TITLE_ID, shownName } from '../board-model.ts';
 import type { Viewport } from './viewport.ts';
-import { cullMargin, fastMs, reducedMotion } from './viewport.ts';
+import { baseMs, cullMargin, fastMs, reducedMotion } from './viewport.ts';
 import {
   buildContent, fontFamilyOf, paintStyleTileFaces, releaseImages, retitleContent,
 } from './renderers.ts';
@@ -138,14 +138,31 @@ export function slideFrom(was: ReadonlyMap<string, { x: number, y: number }>, ms
  * Mark cards as carried, for the length of a drag: the pickup (lift, lean,
  * grow) that items.css and canvas.css style under .is-dragging. Called by
  * canvas/input.ts when a press becomes a move and again when it ends.
+ *
+ * The end leaves .is-dropping on for one --dur-base: the way down, which a
+ * tier can ease differently from the way up (quality.css puts Softish's card
+ * straight down rather than through the board and back).
  */
 export function setDragging(ids: readonly string[], on: boolean) {
   for (const id of ids) {
-    nodes.get(id)?.classList.toggle('is-dragging', on);
-    shadows.get(id)?.classList.toggle('is-dragging', on);
+    clearTimeout(dropping.get(id));
+    dropping.delete(id);
+    const els = [nodes.get(id), shadows.get(id)];
+    for (const el of els) {
+      el?.classList.toggle('is-dragging', on);
+      el?.classList.toggle('is-dropping', !on);
+    }
+    if (on) continue;
+    dropping.set(id, setTimeout(() => {
+      dropping.delete(id);
+      for (const el of els) el?.classList.remove('is-dropping');
+      paintRings();
+    }, baseMs()));
   }
   paintRings();
 }
+/** The cards still on their way down from a drag, and the timer that ends it. */
+const dropping = new Map<string, ReturnType<typeof setTimeout>>();
 /**
  * The card a finger is holding down on, shrinking towards the long-press menu
  * (.item.is-pressing, items.css), or null to let it spring back. One at a
