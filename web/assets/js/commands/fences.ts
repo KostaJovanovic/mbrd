@@ -12,6 +12,7 @@ import { itemBounds, MAX_SIZE, MIN_SIZE } from '../geometry.ts';
 import { editItemName } from '../canvas/items.ts';
 import { openFencePrompt } from '../ui/fence-prompt.ts';
 import { rearrange } from '../ui/board-actions.ts';
+import { canvasOnly } from './view.ts';
 
 /** A world-space rectangle from the marquee. */
 interface Band {
@@ -48,7 +49,7 @@ export function sharedFence(items: Boxed[]): Boxed | null {
 // Desktop only: fences have no Mobile geometry to measure against.
 function fenceable(): boolean {
   if (board.layoutMode !== 'mobile') return true;
-  toast('Fences are a canvas thing');
+  canvasOnly('Fences are a canvas thing');
   return false;
 }
 

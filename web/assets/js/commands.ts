@@ -62,7 +62,7 @@ import { armClear, fitFence, nudgeBoard, rearrange } from './ui/board-actions.ts
 import { fileCommands } from './commands/file.ts';
 import { connectionCommands } from './commands/connections.ts';
 import { fenceCommands, sharedFence } from './commands/fences.ts';
-import { viewCommands } from './commands/view.ts';
+import { viewCommands, canvasOnly } from './commands/view.ts';
 import { itemMetaCommands } from './commands/item-meta.ts';
 import type { CommandViewport } from './commands/view.ts';
 import type { ViewPerf } from './perf/view-perf.ts';
@@ -426,7 +426,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // declines (no free positions). Anchored cards never move, but Align and
     // Same size can still measure from them.
     alignSelection: (edge: string) => {
-      if (board.layoutMode === 'mobile') { toast('Aligning is a canvas thing'); return; }
+      if (board.layoutMode === 'mobile') { canvasOnly('Aligning is a canvas thing'); return; }
       // Riders come along at their own offset.
       const cards = layoutCards();
       const items = cards.filter(i => !isLocked(i));
@@ -446,7 +446,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       slid(travelling(ids), () => alignIds(ids, edge, label, held));
     },
     distributeSelection: (axis: 'x' | 'y') => {
-      if (board.layoutMode === 'mobile') { toast('Spacing out is a canvas thing'); return; }
+      if (board.layoutMode === 'mobile') { canvasOnly('Spacing out is a canvas thing'); return; }
       // Anchored cards are left out: an even spacing cannot be kept round a
       // card that will not move. Said when that is what stopped it.
       const cards = layoutCards();
@@ -463,7 +463,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     /** The card the menu was opened on is the measure, anchored or not - it
      *  does not change size either way. The rest keep the same exclusions. */
     matchSizeSelection: (ref: string, axis: 'w' | 'h') => {
-      if (board.layoutMode === 'mobile') { toast('Sizing is a canvas thing'); return; }
+      if (board.layoutMode === 'mobile') { canvasOnly('Sizing is a canvas thing'); return; }
       const items = layoutCards().filter(i => i.id === ref || !isLocked(i));
       if (items.length < 2 || !items.some(i => i.id === ref)) {
         toast('Pick two or more cards, then open the menu on the one to match');

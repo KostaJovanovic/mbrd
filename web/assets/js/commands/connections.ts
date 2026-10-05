@@ -15,6 +15,7 @@ import {
   activeConnection, clearActiveConnection, connectionAt, setActiveConnection,
 } from '../canvas/web.ts';
 import { ask } from '../ui/dialog.ts';
+import { canvasOnly } from './view.ts';
 import { syncConnChip } from '../ui/conn-chip.ts';
 import { connectArmed, connectTap, setArmed } from '../ui/toolbar.ts';
 
@@ -65,7 +66,7 @@ export function connectionCommands() {
   return {
     connect: () => {
       if (board.layoutMode === 'mobile') {
-        toast('Connections are a canvas thing');
+        canvasOnly('Connections are a canvas thing');
         return;
       }
       if (connectArmed()) { setArmed(false); return; }
@@ -154,7 +155,7 @@ export function connectionCommands() {
     // Run the spanning-tree generator over the selection, or the whole board.
     connectSelection: () => {
       if (board.layoutMode === 'mobile') {
-        toast('Connections are a canvas thing');
+        canvasOnly('Connections are a canvas thing');
         return;
       }
       const pool = joinable(board.items.filter((i: Joinable) =>
@@ -173,7 +174,7 @@ export function connectionCommands() {
     // The whole board whatever is selected - the Join flyout's second row.
     joinEverything: () => {
       if (board.layoutMode === 'mobile') {
-        toast('Connections are a canvas thing');
+        canvasOnly('Connections are a canvas thing');
         return;
       }
       const pool = joinable(board.items);

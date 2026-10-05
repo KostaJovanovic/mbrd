@@ -395,8 +395,11 @@ function refuseEdit() {
   const now = Date.now();
   if (now - refusedAt < 2500) return;
   refusedAt = now;
-  toast('The board cannot change while the timeline plays. Press Pause first.');
+  toast('The board cannot change while the timeline plays', '', { label: 'Pause', run: pauseTimeline });
 }
+
+/** Stop a replay, for a message that refused something because one was running. */
+export function pauseTimeline() { pause(); }
 
 function paintPlay() {
   // The board is read-only while Play runs, and so is the chrome that edits

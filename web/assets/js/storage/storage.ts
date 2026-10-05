@@ -1196,7 +1196,11 @@ export async function switchBoard(id: string) {
       // instead of arriving as an unpack failure. The row stays on the shelf
       // either way: it is a pointer, and Locate is how it is repaired.
       if (!(await platform.files.exists(ref))) {
-        toast('That file has moved or been deleted - use Locate to find it', 'error');
+        // The repair on the message itself, and the board opened once it is found.
+        toast('That file has moved or been deleted', 'error', {
+          label: 'Locate…',
+          run: () => { void relocateLibraryBoard(id).then(found => { if (found) void switchBoard(id); }); },
+        });
         return false;
       }
       file = await platform.files.read(ref);

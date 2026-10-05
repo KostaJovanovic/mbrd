@@ -10,6 +10,7 @@ import {
 } from '../state.ts';
 import { cue } from '../cuelume/engine.ts';
 import { toast } from '../notify.ts';
+import { pauseTimeline } from './timeline-view.ts';
 import { allAssets, assetURL, getAsset, forgetAssets } from '../storage/assets.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { icon } from './menu.ts';
@@ -509,7 +510,7 @@ async function freeThePast(): Promise<void> {
   // inert while it plays (paintPlay); this one is outside that lock, so it
   // says so instead.
   if (timelinePlaying()) {
-    toast('The timeline cannot be changed while it plays. Press Pause first.');
+    toast('The timeline cannot be changed while it plays', '', { label: 'Pause', run: pauseTimeline });
     return;
   }
   // Scrubbed back, the board *is* the past: the cards on it hold the older

@@ -49,6 +49,21 @@ export interface ViewDeps {
   perf: ViewPerf;
 }
 
+/** Back to the canvas, as the Canvas command does it. */
+function toCanvas() {
+  if (goHome('canvas')) return;
+  if (selectBoardMode('desktop')) toast('Back to the canvas');
+}
+
+/**
+ * A command the Feed cannot do, refused with the way to where it can: the
+ * message carries a Switch to canvas button rather than leaving somebody to
+ * find the switch themselves.
+ */
+export function canvasOnly(message: string) {
+  toast(message, '', { label: 'Switch to canvas', run: toCanvas });
+}
+
 export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: ViewDeps) {
   return {
     /**
@@ -82,10 +97,7 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
       select(ids);
     },
     /** Back to freeform canvas. Idempotent — Feed and Playlist are toggles, this is not. */
-    canvas: () => {
-      if (goHome('canvas')) return;
-      if (selectBoardMode('desktop')) toast('Back to the canvas');
-    },
+    canvas: toCanvas,
     /** Feed lens toggle. Already-up → back to canvas. setLens before mode switch so entry lands right. */
     feed: () => {
       if (goHome('feed')) return;

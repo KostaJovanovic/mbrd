@@ -4,7 +4,7 @@
 // tour-specific right-click menu. Stops resolved live on every read — survives
 // undo that removes a stop. Desktop only (Mobile has no free camera).
 
-import { bus, board, byId, canTour, clearSelection } from '../state.ts';
+import { bus, board, byId, canTour, clearSelection, setBoardMode } from '../state.ts';
 import type { Item } from '../board-model.ts';
 import { shownName } from '../board-model.ts';
 import { toast } from '../notify.ts';
@@ -98,7 +98,11 @@ export function initTour(viewport: Viewport) {
 export function startTour() {
   if (!bar) return false;
   if (vp.isMobile) {
-    toast('The tour needs the canvas - the mobile board scrolls instead');
+    // The switch, and then the tour it was asked for.
+    toast('The tour needs the canvas', '', {
+      label: 'Switch to canvas',
+      run: () => { if (setBoardMode('desktop')) requestAnimationFrame(() => { startTour(); }); },
+    });
     return false;
   }
   if (!stops().length) {
