@@ -1157,6 +1157,16 @@ export function describeStep(step: Step): StepSubject {
   return { count: 0, name: '' };
 }
 
+/** The cards a step changed - added, edited or moved, in either layout - that
+ *  are on the board now. The bin is left out: nothing there can be picked. */
+export function stepCards(step: Step): string[] {
+  const ids = new Set<string>();
+  for (const section of [step.delta.items, step.delta.desktop, step.delta.mobile]) {
+    for (const id of Object.keys(section?.changed || {})) ids.add(id);
+  }
+  return [...ids].filter(id => !!byId(id));
+}
+
 /** Extract a name from a stored pair. Tolerant — unparseable values yield '', not an error. */
 function nameOfPair([before, after]: [string | null, string | null]): string {
   for (const raw of [after, before]) {

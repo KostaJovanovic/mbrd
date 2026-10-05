@@ -637,6 +637,11 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       const items = board.items.filter(i => selection.has(i.id));
       if (items.length) vp.fit(items, 120, travelMs());
     },
+    zoomToItems: (ids: string[]) => {
+      const wanted = new Set(ids);
+      const items = board.items.filter(i => wanted.has(i.id));
+      if (items.length) vp.fit(items, 120, travelMs());
+    },
     // null guard for the Feed (no point); composeNote takes back empty notes.
     addNoteAt: (at: Point | null) => {
       if (!at) return;

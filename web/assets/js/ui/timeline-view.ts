@@ -18,7 +18,7 @@ import {
   board,
   timelineSteps, timelineAt, timelineStale, goTo, editStep, stepEditable,
   timelineBytes, trimmable, trimTimeline, describeStep, nameStep, deleteTimeline,
-  deleteStepUndoably, deleteAhead, setTimelinePlaying,
+  deleteStepUndoably, deleteAhead, setTimelinePlaying, stepCards, select,
 } from '../state.ts';
 
 /**
@@ -78,6 +78,8 @@ const PAUSE = { icon: 'i-tl-pause', said: 'Pause' };
  */
 export interface TimelineCommands {
   fit: () => void;
+  /** A step's menu: fly to the cards it changed, leaving the selection alone. */
+  zoomToItems: (ids: string[]) => void;
 }
 
 let cmds: TimelineCommands | null = null;
@@ -679,6 +681,16 @@ function stepEntries(position: number): MenuEntry[] {
   }];
   if (edits.length) entries.push({ sep: true }, ...edits);
   if (!step || stale) return entries;
+  // What the step changed, as the board stands now. Not while Play runs: the
+  // board is read-only then, and the camera is the replay's.
+  const touched = playing ? [] : stepCards(step);
+  if (touched.length) {
+    entries.push(
+      { sep: true },
+      { label: 'Select what this changed', icon: 'i-select-all', action: () => select(touched) },
+      { label: 'Zoom to it', icon: 'i-zoom-to', action: () => cmds?.zoomToItems(touched) },
+    );
+  }
   entries.push(
     { sep: true },
     { label: step.name ? 'Rename this step' : 'Name this step', action: () => { void namePoint(position); } },

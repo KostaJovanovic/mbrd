@@ -68,7 +68,7 @@ import {
   adoptTimeline, timelineSteps, timelineAt, timelineStale, timelineHashes, goTo,
   nameStep, declareOp, registerOp, editStep, rebuildFrom, stepEditable,
   timelineBytes, trimmable, trimTimeline, TRIM_BYTES, TRIM_DAYS, deleteStep, deleteAhead,
-  deleteStepUndoably,
+  deleteStepUndoably, stepCards,
   replayTo, serializeTimeline, describeStep, timelinePlaying, setTimelinePlaying,
   rewriteRecorded,
 } from './timeline.ts';
@@ -78,7 +78,7 @@ export {
   timelineSteps, timelineAt, timelineStale, timelineHashes, replayTo, goTo,
   nameStep, declareOp, registerOp, editStep, rebuildFrom, stepEditable,
   timelineBytes, trimmable, trimTimeline, TRIM_BYTES, TRIM_DAYS, deleteStep, deleteAhead,
-  deleteStepUndoably, serializeTimeline, describeStep,
+  deleteStepUndoably, stepCards, serializeTimeline, describeStep,
 };
 
 export { bus, selection, isDirty, markDirty, select, clearSelection, deselect };
