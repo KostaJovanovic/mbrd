@@ -171,14 +171,13 @@ public class MbrdShell extends Plugin {
      *  names the folder, as the desktop's does. */
     @PluginMethod
     public void startupNotes(PluginCall call) {
+        String folder = MbrdRoot.isPublic()
+            ? ""
+            : "mbrd is keeping your boards in " + MbrdRoot.boards().getPath() + ", inside the app, "
+                + "so an uninstall would remove them. Allow file access at the next start to keep them in Documents/mbrd.";
+        String crash = MbrdWebViewClient.takeCrashNote();
         JSObject r = new JSObject();
-        r.put(
-            "note",
-            MbrdRoot.isPublic()
-                ? ""
-                : "mbrd is keeping your boards in " + MbrdRoot.boards().getPath() + ", inside the app, "
-                    + "so an uninstall would remove them. Allow file access at the next start to keep them in Documents/mbrd."
-        );
+        r.put("note", folder.isEmpty() ? crash : crash.isEmpty() ? folder : folder + " " + crash);
         call.resolve(r);
     }
 

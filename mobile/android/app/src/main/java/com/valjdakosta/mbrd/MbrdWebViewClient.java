@@ -1,10 +1,17 @@
 package com.valjdakosta.mbrd;
 
+import android.app.Activity;
 import android.content.Context;
 import android.net.Uri;
+import android.os.Build;
+import android.os.SystemClock;
+import androidx.annotation.RequiresApi;
+import android.view.ViewGroup;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
+import android.widget.Toast;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeWebViewClient;
 import com.getcapacitor.Logger;
@@ -34,6 +41,8 @@ import org.json.JSONObject;
  *                    reach, and nothing uses them
  *   everything else  MbrdRouter picks the file, Capacitor's server reads it, and
  *                    the CSP from mbrd-csp.json goes on it unless the path is exempt
+ *
+ * And a renderer that dies: the activity is made again rather than the app lost.
  */
 final class MbrdWebViewClient extends BridgeWebViewClient {
 
@@ -68,6 +77,53 @@ final class MbrdWebViewClient extends BridgeWebViewClient {
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
         return intercept(request);
+    }
+
+    // ---- a renderer that died ---------------------------------------------------
+
+    /** Two crashes this close together are a board that crashes on load. */
+    private static final long CRASH_LOOP_MS = 30_000;
+    private static long lastCrash = 0;
+    /** Why the page reloaded by itself, read once by the next startupNotes. */
+    private static String crashNote = "";
+
+    static synchronized String takeCrashNote() {
+        String note = crashNote;
+        crashNote = "";
+        return note;
+    }
+
+    /**
+     * Without this a renderer that runs out of memory takes the whole app down.
+     * The dead WebView cannot be used again, so it goes, and the activity is
+     * made again around a new one: the board comes back from its file and the
+     * autosave. Desktop twin: crashed() in desktop/main.ts.
+     */
+    // Android 8 and later. Before that a dead renderer always takes the app down.
+    @RequiresApi(Build.VERSION_CODES.O)
+    @Override
+    public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+        boolean oom = !detail.didCrash();
+        Logger.error(TAG, "renderer gone, " + (oom ? "killed for memory" : "crashed"), null);
+        Activity activity = bridge.getActivity();
+        if (view.getParent() instanceof ViewGroup) ((ViewGroup) view.getParent()).removeView(view);
+        view.destroy();
+        if (activity == null || activity.isFinishing()) return true;
+        long now = SystemClock.elapsedRealtime();
+        boolean looping = lastCrash != 0 && now - lastCrash < CRASH_LOOP_MS;
+        lastCrash = now;
+        if (looping) {
+            Toast.makeText(activity, "mbrd stopped twice in a row on this board. Its file is as it was last saved.", Toast.LENGTH_LONG).show();
+            activity.finish();
+            return true;
+        }
+        synchronized (MbrdWebViewClient.class) {
+            crashNote = oom
+                ? "The board ran out of memory and was reloaded. Anything after the last autosave may be missing."
+                : "The board stopped unexpectedly and was reloaded. Anything after the last autosave may be missing.";
+        }
+        activity.recreate();
+        return true;
     }
 
     WebResourceResponse intercept(WebResourceRequest request) {

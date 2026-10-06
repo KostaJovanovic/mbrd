@@ -45,6 +45,9 @@ let started = false;
 
 // Read once at boot by the renderer; empty on ordinary runs.
 let startupNote = '';
+// Why the board reloaded by itself, read once by the reload. See crashed().
+let crashNote = '';
+let lastCrash = -Infinity;
 
 // The `portable` marker is beside the exe. updates.ts never runs an installer
 // over a portable copy, which would put a second copy somewhere else.
@@ -275,6 +278,44 @@ function writeState(win: BrowserWindow): void {
   }
 }
 
+/** Two crashes this close together are a board that crashes on load, and a
+ *  third reload would only loop. */
+const CRASH_LOOP_MS = 30_000;
+
+/**
+ * The board's renderer died - out of memory on a large board, usually. Without
+ * this the window stays open and blank. The board comes back from its file and
+ * the autosave, which is at most one interval behind, and says what happened.
+ */
+function crashed(contents: WebContents, reason: string): void {
+  log('error', 'board renderer gone', { reason });
+  // A quit or a closing window takes the renderer down on purpose.
+  if (quitting || reason === 'clean-exit' || contents.isDestroyed()) return;
+  const now = Date.now();
+  const looping = now - lastCrash < CRASH_LOOP_MS;
+  lastCrash = now;
+  if (looping) {
+    const win = current();
+    const options: MessageBoxOptions = {
+      type: 'error',
+      message: 'The board keeps stopping',
+      detail: 'mbrd stopped twice in a row while showing this board. Its file is on disk as it was last saved. '
+        + 'Reload to try again, or quit and open a different board.',
+      buttons: ['Reload', 'Quit'],
+      defaultId: 0,
+    };
+    void (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options)).then(({ response }) => {
+      if (response === 0 && !contents.isDestroyed()) contents.reload();
+      else app.quit();
+    });
+    return;
+  }
+  crashNote = reason === 'oom'
+    ? 'The board ran out of memory and was reloaded. Anything after the last autosave may be missing.'
+    : 'The board stopped unexpectedly and was reloaded. Anything after the last autosave may be missing.';
+  contents.reload();
+}
+
 function createWindow(): BrowserWindow {
   const saved = readState();
   const options: BrowserWindowConstructorOptions = {
@@ -330,6 +371,7 @@ function createWindow(): BrowserWindow {
   view.webContents.on('page-title-updated', (_event, title) => {
     if (!boardShown) showPage(title);
   });
+  view.webContents.on('render-process-gone', (_event, details) => crashed(view.webContents, details.reason));
 
   /* Full screen is tracked from the events, not read back from the window.
      Electron on Windows fires these before isFullScreen() returns the new value,
@@ -986,7 +1028,11 @@ function wireApp(): void {
   });
 
   // Startup messages (e.g. portable fallback), read once at boot.
-  ipcMain.handle('app:startupNotes', () => startupNote);
+  ipcMain.handle('app:startupNotes', () => {
+    const note = [startupNote, crashNote].filter(Boolean).join(' ');
+    crashNote = '';
+    return note;
+  });
 
   // The answer goes to the title bar's Update button, so the page gets nothing back.
   ipcMain.handle('updates:check', () => { void updates.checkForUpdates(); });
