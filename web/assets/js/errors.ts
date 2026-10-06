@@ -31,6 +31,12 @@ const seen = new Set<string>();
 let told = 0;
 /** Re-entry guard: a toast that throws must not be reported through the toast. */
 let inside = false;
+/** The last few faults, past MAX_TOLD too, for Report a problem to copy. Never sent. */
+const RECENT_MAX = 10;
+const recent: string[] = [];
+
+/** The faults this session has seen, oldest first, one line each. */
+export const recentFaults = (): readonly string[] => recent;
 
 // ---------------------------------------------------------------------------
 // Wiring
@@ -59,6 +65,7 @@ function teardown(): void {
   }
   host = null;
   seen.clear();
+  recent.length = 0;
   told = 0;
   inside = false;
 }
@@ -97,6 +104,8 @@ function report(cause: unknown, given: string, hint: string, context: string): v
     where = placeOf(cause, hint);
     what = messageOf(cause, given);
     console.error(`[mbrd] ${context}${where ? ' in ' + where : ''}:`, cause ?? what);
+    recent.push(`${context}${where ? ' in ' + where : ''}: ${what.slice(0, 300)}`);
+    if (recent.length > RECENT_MAX) recent.shift();
   } catch {
     // Nowhere left to report it.
   }

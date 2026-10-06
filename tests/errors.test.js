@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { initErrors, setBoardProbe, reportCaught } from '../web/assets/js/errors.ts';
+import { initErrors, setBoardProbe, reportCaught, recentFaults } from '../web/assets/js/errors.ts';
 import { setOverlays } from '../web/assets/js/notify.ts';
 import { boardSafety } from '../web/assets/js/storage/session.ts';
 import { loadBoard, markDirty } from '../web/assets/js/state.ts';
@@ -384,6 +384,23 @@ test('the console is written to on every occurrence, told about or not', () => {
     assert.equal(said.length, 1);
     assert.equal(lines.length, 5);
     assert.match(String(lines[0][0]), /^\[mbrd\] uncaught error in app\.js:1:24601:/);
+  } finally {
+    console.error = real;
+  }
+});
+
+test('Report a problem reads the last ten faults, past the toast ceiling too', () => {
+  const real = console.error;
+  console.error = () => {};
+  try {
+    withErrors(() => ({ state: 'saved' }), () => {
+      for (let i = 0; i < 12; i++) reportCaught(new Error(`fault ${i}`), 'emit');
+      const faults = recentFaults();
+      assert.equal(faults.length, 10);
+      assert.match(faults[0], /fault 2$/);
+      assert.match(faults[9], /^emit.*fault 11$/);
+    });
+    assert.equal(recentFaults().length, 0, 'the teardown forgets them');
   } finally {
     console.error = real;
   }

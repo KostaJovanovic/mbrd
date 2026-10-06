@@ -12,7 +12,7 @@ import { hasContent } from '../onboarding.ts';
 import {
   boardSafety, exportBoard, lastSaveFailure, newBoard,
   openBoard, packForShare, pushBoardToCloud, saveBlob, shareBoard,
-  startSyncingBoard, stopSyncingBoard, storageBreakdown, boardFolder, saveDocument,
+  startSyncingBoard, stopSyncingBoard, storageBreakdown, storageReport, boardFolder, saveDocument,
 } from '../storage/storage.ts';
 import { shareLinkFor } from '../storage/cloud/provider.ts';
 import type { CloudFile, ShareProvider } from '../storage/cloud/provider.ts';
@@ -29,7 +29,31 @@ import type { ExportKind } from '../ui/export-options.ts';
 import { saveWithCooldown } from '../ui/board-actions.ts';
 import { isDesktop, platform } from '../platform/platform.ts';
 import { exampleBoard } from '../storage/example.ts';
+import { recentFaults } from '../errors.ts';
+import { VERSION } from '../version.js';
+import { ISSUES } from './view.ts';
 import { startTour } from '../ui/tour.ts';
+
+/**
+ * What a bug report wants and nothing it does not: the version, the browser,
+ * the board's size and safety, storage, and the last errors. No board content,
+ * no names, no paths - a title or a file name can be private.
+ */
+async function diagnostics(): Promise<string> {
+  const { state } = boardSafety();
+  const store = isDesktop() ? null : await storageReport().catch(() => null);
+  const mb = (n: number | null | undefined) => (typeof n === 'number' ? formatBytes(n) : '?');
+  const faults = recentFaults();
+  return [
+    `mbrd ${VERSION} (${isDesktop() ? 'app' : 'web'}, ${board.layoutMode} layout)`,
+    `browser: ${navigator.userAgent}`,
+    `screen: ${screen.width}x${screen.height} @${devicePixelRatio}, window ${innerWidth}x${innerHeight}`,
+    `board: ${board.items.length} items, ${historyDepth().undo} undo steps, ${state}`,
+    store ? `storage: ${mb(store.used)} of ${mb(store.quota)}, persisted ${store.persisted ?? 'not asked'}` : '',
+    lastSaveFailure() ? `last save failure: ${lastSaveFailure()}` : '',
+    faults.length ? 'errors:\n' + faults.map(f => '  ' + f).join('\n') : 'errors: none this session',
+  ].filter(Boolean).join('\n');
+}
 
 /** A filesystem-safe download name from the board title. */
 function boardArtefactName(ext: string): string {
@@ -211,6 +235,17 @@ export function fileCommands() {
       await platform.updates.install();
     },
     library: () => openLibrary(),
+    // Report a problem: nothing is sent. The details go on the clipboard, and
+    // the issues page opens for the person to paste them into, or not.
+    reportProblem: async () => {
+      const text = await diagnostics();
+      console.info('[mbrd] diagnostics:\n' + text);
+      let copied = false;
+      try { await navigator.clipboard.writeText(text); copied = true; } catch { /* no clipboard grant */ }
+      window.open(ISSUES, '_blank', 'noopener,noreferrer');
+      toast(copied ? 'The details are copied - paste them into the report'
+        : 'The details could not be copied - they are in the console');
+    },
     // Debug readouts: each toasts the summary and logs the detail. In the apps
     // there is no browser to name: a board is a file, and the only copy.
     boardSafe: () => {

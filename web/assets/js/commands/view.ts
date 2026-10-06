@@ -27,6 +27,8 @@ import type { ViewPerf } from '../perf/view-perf.ts';
  * desktop's updater opens the same page (desktop/updates.ts).
  */
 export const RELEASES = 'https://github.com/KostaJovanovic/mbrd-release/releases/latest';
+/** Where Report a problem sends somebody, with the details on their clipboard. */
+export const ISSUES = 'https://github.com/KostaJovanovic/mbrd-release/issues/new';
 import { togglePlayback } from '../canvas/audio.ts';
 import { currentLens, setLens } from '../ui/board-view.ts';
 import {

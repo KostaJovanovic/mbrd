@@ -1222,6 +1222,12 @@ export const SECTIONS: Section[] = [
         { cmd: 'patch-notes', label: 'Patch notes', closesPanel: true,
           title: () => 'Every version since the first. Your board is saved and waiting when you come back' },
       ] },
+      // Nothing is sent: the details go on the clipboard and the person pastes
+      // them, so the no-telemetry promise holds and a report still has them.
+      { type: 'buttons', buttons: [
+        { cmd: 'report-problem', label: 'Report a problem',
+          title: () => 'Copy the version, the browser and the last errors, then open the issues page to paste them into' },
+      ] },
       // Where the apps are, on the web, and the update check, in the app. Two
       // rows for the reason the Save pair is two: `when` belongs to a row.
       { type: 'buttons', when: () => !isDesktop(), buttons: [

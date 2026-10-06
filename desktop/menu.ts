@@ -132,7 +132,7 @@ const MENU: { id: string, label: string, rows: Row[] }[] = [
       { separator: true },
       // Opens the log directory on disk.
       { id: 'help.logs', label: 'Show Logs', main: 'logs' },
-      { id: 'help.report', label: 'Report a Problem', url: 'https://github.com/KostaJovanovic/mbrd-release/issues' },
+      { id: 'help.report', label: 'Report a Problem', cmd: 'reportProblem' },
     ],
   },
 ];
