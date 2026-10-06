@@ -21,6 +21,11 @@
      A layout per frame on the board: still to be measured (audit 10-05 #2). */
   transition: bottom var(--dur-base) var(--ease);
 }
+/* The board is a tab stop (canvas/input.ts, walkCards). A press focuses it too,
+   and that needs no mark; reached from the keyboard, a line inside its edge
+   says the keys now walk the cards, whose selection ring is the rest. */
+#viewport:focus { outline: none; }
+#viewport:focus-visible { box-shadow: inset 0 0 0 var(--sel-line) var(--select); }
 /* Wherever the Timeline fades (chrome.css: idle, a tour, cleaning) the board
    takes its band. Stopping above an invisible bar left an empty strip of paper
    with the grid ending at it and the cards cut off along it - which read as

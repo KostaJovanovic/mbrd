@@ -28,7 +28,7 @@ import {
   setDragging, barHeight, refreshRings, setPressing, seenPlaces, slideFrom,
 } from './items.ts';
 import { noteFloor } from './notes.ts';
-import { leanAtSize } from './item-dom.ts';
+import { leanAtSize, itemAccessibleName } from './item-dom.ts';
 import { linkURL } from './renderers.ts';
 import { isPicture, cardRatio } from './picture-shape.ts';
 import { embedFor, embedFloor } from './embed.ts';
@@ -744,6 +744,30 @@ export function readWheel(
   panX += moved.dx;
   panY += moved.dy;
   return { kind, ...moved, factor: 1 };
+}
+
+/** How far apart two top edges can be and still be read as one row, in world units. */
+const WALK_ROW = 96;
+
+/**
+ * The order Tab walks the cards in: reading order, rows from the top and each
+ * row left to right. A row is a band of top edges, so cards a few pixels out of
+ * line still read as one. Pure, for tests/input.test.js.
+ */
+export function walkOrder<T extends { id: string, x: number, y: number, w: number, h: number }>(items: readonly T[]): T[] {
+  // World y points up, so the top edge is the centre plus half the height.
+  const top = (i: T) => i.y + i.h / 2;
+  const left = (i: T) => i.x - i.w / 2;
+  const down = [...items].sort((a, b) => top(b) - top(a));
+  // A row runs while a top edge is within WALK_ROW of the row's first, so
+  // there is no band boundary for two neighbours to fall either side of.
+  const rows: T[][] = [];
+  for (const item of down) {
+    const last = rows[rows.length - 1];
+    if (last && top(last[0]) - top(item) <= WALK_ROW) last.push(item);
+    else rows.push([item]);
+  }
+  return rows.flatMap(r => r.sort((a, b) => left(a) - left(b) || (a.id < b.id ? -1 : 1)));
 }
 
 /**
@@ -3466,6 +3490,48 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    *  keys that would change it stand down. The arrows and Escape answer both. */
   const onlyLooking = () => !!(cmds.inTour?.() || cmds.tourEditing?.());
 
+  // ---- the keyboard's way to a card ----------------------------------------
+  //
+  // The board is one tab stop. With the focus on it, Tab and Shift+Tab select
+  // the next and previous card in reading order, bring it into view and say
+  // what it is; Enter, the arrows, Delete and the Menu key then act on it as
+  // they already did. Past the last card, Tab leaves as it would anywhere, and
+  // Escape then Tab leaves at once. A selection rather than a roving tabindex:
+  // the ring is already the focus mark, and a board can hold thousands of cards
+  // that would each be a tab stop.
+  el.tabIndex = 0;
+  el.setAttribute('role', 'application');
+  el.setAttribute('aria-roledescription', 'board');
+  el.setAttribute('aria-label', 'Board. Tab and Shift+Tab step through the cards, Enter opens one, Escape then Tab leaves the board.');
+  const spoken = document.createElement('div');
+  spoken.className = 'vh';
+  spoken.setAttribute('aria-live', 'polite');
+  document.body.append(spoken);
+  /** Escape was pressed on the board: the next Tab is the page's. */
+  let leaving = false;
+  el.addEventListener('blur', () => { leaving = false; });
+
+  function walkCards(e: KeyboardEvent): boolean {
+    if (e.target !== el || vp.isMobile || onlyLooking()) return false;
+    if (leaving) { leaving = false; return false; }
+    const rolled = rolledFences();
+    const cards = walkOrder(board.items.filter(i => i.type !== 'ghost' && !rolledAway(i, rolled)));
+    if (!cards.length) return false;
+    const at = selection.size === 1 ? cards.findIndex(c => selection.has(c.id)) : -1;
+    const next = at < 0 ? (e.shiftKey ? cards.length - 1 : 0) : at + (e.shiftKey ? -1 : 1);
+    if (next < 0 || next >= cards.length) return false;
+    const card = cards[next];
+    select([card.id]);
+    // Into view when any of it is off the screen, at the zoom already set.
+    const a = vp.toScreen(card.x - card.w / 2, card.y + card.h / 2);
+    const b = vp.toScreen(card.x + card.w / 2, card.y - card.h / 2);
+    if (a.x < vp.left || a.y < vp.top || b.x > vp.left + vp.width || b.y > vp.top + vp.height) {
+      vp.centreOn({ x: card.x, y: card.y }, baseMs());
+    }
+    spoken.textContent = `${itemAccessibleName(card)}, ${next + 1} of ${cards.length}`;
+    return true;
+  }
+
   addEventListener('keydown', e => {
     // Before every early return: the wheel asks about the key wherever the focus is.
     if (e.key === 'Control') ctrlDown = true;
@@ -3621,6 +3687,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         else cmds.openViewer?.(only);
         e.preventDefault();
       } break;
+      // Tab walks the cards while the board itself has the focus - see walkCards().
+      case 'Tab': if (walkCards(e)) e.preventDefault(); break;
       // The Menu key and Shift+F10, the keyboard's right-click. Without these
       // every card action was a mouse action: Find could select a card and
       // nothing could then reach its menu, though the menu itself is walked
@@ -3660,6 +3728,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // group the mode was for. A second Escape then clears that group, which
         // is Escape meaning what it always did one layer further in.
         if (isMultiSelect()) { cmds.toggleMultiSelect?.(); markClosed(e); break; }
+        // On the board itself, Escape is also the way off it: the next Tab
+        // leaves for the page rather than walking the cards again.
+        if (e.target === el) leaving = true;
         // All three run, and the mark says whether any had something to close.
         const selected = selection.size > 0;
         clearSelection();

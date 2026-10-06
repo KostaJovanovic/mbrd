@@ -7,9 +7,16 @@ import {
   liftWithButtonsHeld, readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
   carryFloor, carryHold, carryPlace, drewRectangle, marqueeHit,
   GESTURE_MOVES, gestureTransition, pressIntent,
-  resizeAxisOn, nudgeDelta,
+  resizeAxisOn, nudgeDelta, walkOrder,
 } from '../web/assets/js/canvas/input.ts';
 import { cellInset, MIN_SIZE, MAX_SIZE } from '../web/assets/js/geometry.ts';
+
+test('Tab walks the cards in reading order, a row a few pixels out of line still one row', () => {
+  const card = (id, x, top) => ({ id, x, y: top - 50, w: 100, h: 100 });
+  // World y points up: a top edge of 200 is above one of 0.
+  const order = walkOrder([card('c', 300, 0), card('b', 300, 200), card('a', 0, 190), card('d', 0, 0)]);
+  assert.deepEqual(order.map(c => c.id), ['a', 'b', 'd', 'c']);
+});
 
 test('double taps match within the touch timing and distance windows', () => {
   const first = { x: 100, y: 200, at: 1_000 };

@@ -17,6 +17,7 @@ test('a named item announces its own name', () => {
 test('an unnamed item falls back to a human type word, not "generic"', () => {
   assert.equal(itemAccessibleName({ type: 'image' }), 'Untitled picture');
   assert.equal(itemAccessibleName({ type: 'note' }), 'Untitled note');
+  assert.equal(itemAccessibleName({ type: 'note', meta: { text: '\n# Shopping\nmilk' } }), 'Note: Shopping');
   assert.equal(itemAccessibleName({ type: 'model' }), 'Untitled model');
   assert.equal(itemAccessibleName({ type: 'generic' }), 'Untitled item');
   assert.equal(itemAccessibleName({}), 'Untitled item');

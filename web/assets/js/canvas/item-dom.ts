@@ -40,7 +40,7 @@ export type ItemLike = Item;
 export interface ItemFragment {
   type?: string;
   name?: string;
-  meta?: { ext?: unknown } | null;
+  meta?: { ext?: unknown, text?: unknown } | null;
 }
 
 /**
@@ -65,7 +65,12 @@ const TYPE_LABEL: Record<string, string> = {
  */
 export function itemAccessibleName(item?: ItemFragment | null): string {
   const name = typeof item?.name === 'string' ? shownName({ type: item.type, name: item.name }).trim() : '';
-  const base = name || `Untitled ${TYPE_LABEL[item?.type ?? ''] || 'item'}`;
+  // A note with no name is called by its first line, which is what it says on it.
+  const text = item?.type === 'note' && typeof item.meta?.text === 'string' ? item.meta.text : '';
+  const said = text.split('\n').map(l => l.replace(/^#+\s*/, '').trim()).find(Boolean)?.slice(0, 80) ?? '';
+  // The title card's words are the board's, not an item name.
+  const base = name || (said ? `Note: ${said}` : item?.type === 'title' ? 'The board’s title'
+    : `Untitled ${TYPE_LABEL[item?.type ?? ''] || 'item'}`);
   // Suffixed rather than announced by a separate element, because what an
   // anchor changes is what this card *is* to somebody driving by keyboard: it
   // is the one that will not move. The badge in the corner is the same sentence
@@ -478,10 +483,9 @@ export function buildItem(item: ItemLike, tilt: string, picked: boolean): HTMLDi
   if (item.type === 'ghost') el.classList.add('ghost-mount');
   writeFit(el, item);
   writeAdjust(el, item);
-  // A named, self-describing card for assistive technology. The full
-  // keyboard-selection model (roving tabindex, arrow navigation) is a separate,
-  // browser-verified change; naming and role are the part that is safe to ship
-  // without a focus-order regression. See AUD-09.
+  // A named, self-describing card for assistive technology. The keyboard
+  // reaches it through the board, which is the tab stop: Tab selects the next
+  // card in reading order (walkCards() in canvas/input.ts). See AUD-09.
   el.setAttribute('role', 'group');
   el.setAttribute('aria-roledescription', 'board item');
   el.setAttribute('aria-label', itemAccessibleName(item));
