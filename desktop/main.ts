@@ -128,6 +128,7 @@ function main(): void {
         + 'your boards in ' + boardsFolder + ' and its settings in ' + app.getPath('userData') + '.';
       log('warn', 'portable fallback', { note: startupNote });
     }
+    files.setBackupDir(join(app.getPath('userData'), 'backups'));
     serveWeb();
     wireStore();
     wireFiles();

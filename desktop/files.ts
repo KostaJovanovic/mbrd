@@ -8,6 +8,7 @@ import { dialog, BrowserWindow } from 'electron';
 import { readFile, access, open as openFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { writeAtomic } from './atomic.mts';
+import { keepBackup } from './backups.mts';
 import { openTrust } from './trust.mts';
 import type { Trust } from './trust.mts';
 import {
@@ -175,7 +176,29 @@ export async function pickImport(win: BrowserWindow | null): Promise<Handed[]> {
 export async function write(path: unknown, data: unknown): Promise<void> {
   const target = checked(path);
   if (!(data instanceof ArrayBuffer)) throw new Error('expected bytes to write');
+  await backup(target);
   await writeAtomic(target, Buffer.from(data), target + '.mbrd-tmp', true);
+}
+
+/** Where the rolling copies go: the data folder, so a portable copy keeps them beside it. */
+let backupDir = '';
+
+export function setBackupDir(dir: string): void {
+  backupDir = dir;
+}
+
+/** For Help > Show Backups. Empty before main has set it. */
+export const backupFolder = (): string => backupDir;
+
+/** A copy of the file as it is, before a save changes it (backups.mts). Never blocks the save. */
+async function backup(target: string): Promise<void> {
+  if (!backupDir) return;
+  try {
+    const copy = await keepBackup(target, backupDir);
+    if (copy) log('info', 'kept a backup', { copy });
+  } catch (err) {
+    log('warn', 'could not keep a backup', { target, err: String(err) });
+  }
 }
 
 /**
@@ -195,6 +218,7 @@ export async function append(path: unknown, data: unknown, at: unknown): Promise
   if (typeof at !== 'number' || !Number.isSafeInteger(at) || at < 0) {
     throw new Error('expected the length the file had');
   }
+  await backup(target);
   const handle = await openFile(target, 'r+');
   try {
     const { size } = await handle.stat();

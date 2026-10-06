@@ -7,7 +7,9 @@
 import { app, Menu, shell } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { MenuItem, MenuModel } from './chrome/bridge.ts';
+import { mkdir } from 'node:fs/promises';
 import { logDir } from './log.ts';
+import { backupFolder } from './files.ts';
 
 const isMac = process.platform === 'darwin';
 
@@ -31,7 +33,7 @@ interface Row {
   label?: string;
   cmd?: string;
   view?: ViewAction;
-  main?: 'logs' | 'quit' | 'data' | 'updates';
+  main?: 'logs' | 'quit' | 'data' | 'updates' | 'backups';
   url?: string;
   /** In the hidden Menu only: a role cannot run from the drawn one. */
   role?: MenuItemConstructorOptions['role'];
@@ -132,6 +134,8 @@ const MENU: { id: string, label: string, rows: Row[] }[] = [
       { separator: true },
       // Opens the log directory on disk.
       { id: 'help.logs', label: 'Show Logs', main: 'logs' },
+      // The rolling copies files.ts keeps before a save overwrites a board.
+      { id: 'help.backups', label: 'Show Backups', main: 'backups' },
       { id: 'help.report', label: 'Report a Problem', cmd: 'reportProblem' },
     ],
   },
@@ -208,6 +212,10 @@ function clickOf(row: Row, actions: MenuActions): (() => void) | undefined {
     case 'logs': return () => {
       const dir = logDir();
       if (dir) void shell.openPath(dir);
+    };
+    case 'backups': return () => {
+      const dir = backupFolder();
+      if (dir) void mkdir(dir, { recursive: true }).then(() => shell.openPath(dir));
     };
     case 'data': return () => actions.showData();
     case 'updates': return () => actions.checkUpdates();

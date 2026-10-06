@@ -9,6 +9,7 @@ import android.webkit.WebView;
 import androidx.webkit.JavaScriptReplyProxy;
 import androidx.webkit.WebMessageCompat;
 import androidx.webkit.WebViewCompat;
+import com.getcapacitor.Logger;
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -199,11 +200,15 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
             case "file":
                 // The temp suffix desktop/files.ts's write() uses.
                 last = MbrdFiles.checked(m.getString("path"));
+                backup(last);
                 file = new File(last.getPath() + ".mbrd-tmp");
                 break;
-            case "append":
-                beginAppend(MbrdFiles.checked(m.getString("path")), m.getLong("at"), m.optLong("size", -1));
+            case "append": {
+                File board = MbrdFiles.checked(m.getString("path"));
+                backup(board);
+                beginAppend(board, m.getLong("at"), m.optLong("size", -1));
                 return;
+            }
             case "create":
                 // A new board in the folder (desktop/boards.ts's create()). The
                 // temp name ends in -tmp, so the folder's list skips it.
@@ -222,6 +227,15 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
         target = file;
         dest = last;
         out = new BufferedOutputStream(new FileOutputStream(file), 1 << 20);
+    }
+
+    /** A copy of the board as it is, before the save changes it (MbrdBackups). Never stops the save. */
+    private static void backup(File board) {
+        try {
+            MbrdBackups.keep(board, new File(MbrdBoards.folder(), MbrdBackups.DIR), System.currentTimeMillis());
+        } catch (IOException | RuntimeException e) {
+            Logger.warn("MbrdBytes", "could not keep a backup of " + board.getName() + ": " + e.getMessage());
+        }
     }
 
     /**

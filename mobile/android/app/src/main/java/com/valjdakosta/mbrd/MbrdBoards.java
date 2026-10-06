@@ -22,7 +22,8 @@ import java.util.Locale;
  * (MbrdNames.plainName and nthName). A new board's bytes come through MbrdBytes
  * (target "create"), which takes its name from freeFile() here at the end.
  * Android has no bin for a file that is not a picture or a clip, so the bin is
- * .trash/ inside the folder, where a board stays BIN_DAYS days.
+ * .trash/ inside the folder, where a board stays BIN_DAYS days. Beside it is
+ * .backups/, the rolling copies MbrdBackups keeps before a save.
  */
 @CapacitorPlugin(name = "MbrdBoards")
 public class MbrdBoards extends Plugin {
