@@ -122,10 +122,19 @@ Documented so "Safari support" does not imply feature parity on every point rele
   download (`storage/storage.ts`).
 - **No `launchQueue` / `file_handlers`.** "Open with mbrd" from the OS is absent
   rather than broken; the `launchQueue` use in `main.ts` is guarded.
-- **Best-effort storage.** WebKit may evict the IndexedDB copy under pressure.
-  The first explicit Save requests `navigator.storage.persist()`, and the receipt
-  says "export a file to keep a durable copy" when persistence was not granted.
-  The exported `.mbrd` is always the durable path.
+- **Best-effort storage, and a seven-day clock.** WebKit may evict the IndexedDB
+  copy under pressure, and since Intelligent Tracking Prevention it deletes all
+  of a site's script-writable storage - IndexedDB included - after seven days of
+  Safari use without a visit to the site. A Home Screen web app keeps its own
+  count. The first edit requests `navigator.storage.persist()` (not the first
+  Save, which many people never press), the Save receipt says "export a file to
+  keep a durable copy" when persistence was not granted, and after forty edits
+  with no file written one toast offers the file (`storage/storage.ts`). The
+  privacy page says the same in plain words. The exported `.mbrd` is always the
+  durable path.
+- **Web Locks** (Safari 15.4) make one tab the writer of the session slot
+  (`storage/session.ts`). Below 15.4 there is no lock and every tab writes, as
+  before - which is the case the lock exists to stop.
 - **Backdrop blur** needs `-webkit-backdrop-filter` before Safari 18; the two
   blurred surfaces (audio play button over cover art, the dialog scrim) carry it.
 - **The Audio Session API is Safari-only, and that is where it is needed.** The

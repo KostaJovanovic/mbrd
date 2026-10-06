@@ -99,6 +99,67 @@ let suspended = false;
 let lastFailure = '';
 /** Whether the "some bytes are missing" toast has already been shown. */
 let warnedIncomplete = false;
+/** Failed writes in a row that were not a full store, and how long to wait
+ *  after each before the next try. Past the last, the cache goes off. */
+let failures = 0;
+const RETRY_MS = [2000, 8000, 30000];
+
+// ---------------------------------------------------------------------------
+// One tab writes
+// ---------------------------------------------------------------------------
+//
+// Every tab of this site shares one session slot, and each snapshot deletes the
+// stored pictures its own board does not name - so two tabs on two boards would
+// delete each other's pictures and take turns overwriting the slot. A Web Lock
+// held for the life of the tab makes one of them the writer. Any other tab
+// keeps its board on screen, says that its changes are not kept, asks before it
+// closes on them, and takes over the moment the writer closes.
+
+const LOCK = 'mbrd-session';
+const OTHER_TAB = 'mbrd is open in another tab, and that is the tab this browser keeps - changes here are not saved until it closes';
+/** Null until asked; then whether this tab holds the slot. */
+let owner: boolean | null = null;
+let claiming: Promise<boolean> | null = null;
+
+/** The engine's lock manager, where there is one (Safari 15.4 and later). */
+function lockManager(): LockManager | null {
+  const nav = globalThis.navigator;
+  return nav && 'locks' in nav && typeof nav.locks?.request === 'function' ? nav.locks : null;
+}
+
+/** Whether this tab may write the slot. Without Web Locks every tab may, as before. */
+function claimSlot(): Promise<boolean> {
+  const locks = lockManager();
+  if (!locks) return Promise.resolve(true);
+  if (owner !== null) return Promise.resolve(owner);
+  claiming ??= new Promise<boolean>(resolve => {
+    // Held by a promise that never settles, so released only when the tab goes.
+    locks.request(LOCK, { ifAvailable: true }, lock => {
+      resolve(!!lock);
+      return lock ? new Promise<never>(() => {}) : undefined;
+    }).catch(() => resolve(true));
+  }).then(got => {
+    owner = got;
+    if (!got) waitForSlot(locks);
+    return got;
+  });
+  return claiming;
+}
+
+/** A second tab: say so, guard the close, and take the slot when it frees. */
+function waitForSlot(locks: LockManager) {
+  setRefused(true);
+  toast(OTHER_TAB, 'error');
+  void locks.request(LOCK, () => {
+    owner = true;
+    lastFailure = '';
+    setRefused(false);
+    toast('This tab is the one this browser keeps now');
+    noteChange();
+    void autosaveTick();
+    return new Promise<never>(() => {});
+  }).catch(() => {});
+}
 
 /**
  * The browser refused a write, and the cache is off for the rest of the board.
@@ -281,6 +342,10 @@ async function writeSnapshot() {
   // the whole board back into the store.
   await d!.settled?.();
   if (d!.fileBacked?.()) return writeToFile();
+  if (!(await claimSlot())) {
+    lastFailure = OTHER_TAB;
+    return false;
+  }
   try {
     // Read before the serialise, so no await falls between the id and the board.
     const boardId = await d!.boardId?.();
@@ -331,9 +396,22 @@ async function writeSnapshot() {
     }
     warnedIncomplete = false;
     lastFailure = '';
+    failures = 0;
     return true;
   } catch (err) {
-    // Quota or a private-mode refusal: stop trying and say so once.
+    // A full store is final. Anything else may be the engine having a bad
+    // moment - a transaction aborted, a store closed under a version change -
+    // so it is tried again a few times, further apart, before it is given up.
+    const quota = isRecord(err) && err.name === 'QuotaExceededError';
+    if (!quota && failures < RETRY_MS.length) {
+      const wait = RETRY_MS[failures++];
+      console.warn(`[mbrd] autosave failed, trying again in ${wait / 1000}s:`, err);
+      lastFailure = 'The last save into this browser failed - it is being tried again';
+      setTimeout(() => { void autosaveTick(); }, wait);
+      return false;
+    }
+    // Quota, a private-mode refusal, or a failure that kept coming back: stop
+    // trying and say so once.
     cacheOk = false;
     console.warn('[mbrd] autosave disabled:', err);
     lastFailure = 'This browser will not store the board (full, or blocked) - export it to a file';
@@ -598,6 +676,9 @@ export function boardSafety(): BoardSafety {
   if (!cacheOk) {
     return { state: 'unsaved', detail: 'your board is not being kept in this browser, export it to a file' };
   }
+  if (owner === false && isDirty()) {
+    return { state: 'unsaved', detail: 'another tab is the one this browser keeps, export this board to a file' };
+  }
   // Still booting — what is in the store is not known yet.
   if (!opened) {
     return { state: 'unknown', detail: 'your board was still being read back, so what is in this browser is not known yet' };
@@ -624,7 +705,9 @@ export function resetSessionLatches() {
   suspended = false;
   warnedIncomplete = false;
   lastFailure = '';
-  setRefused(false);
+  failures = 0;
+  // A second tab is still a second tab on a fresh board.
+  setRefused(owner === false);
 }
 
 /** Clear `suspended` only (not `cacheOk`). After a failed handover the board

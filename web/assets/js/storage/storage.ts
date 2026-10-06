@@ -142,7 +142,7 @@ bus.on('items', reportDocument);
 // Save
 // ---------------------------------------------------------------------------
 
-/** Ask the engine for durable storage, once, on first explicit Save.
+/** Ask the engine for durable storage, once, on the first edit or Save.
  *  WebKit may evict best-effort origins under pressure (Safari audit S1).
  *  The answer affects the receipt, never whether the save itself succeeded —
  *  the durable copy is always the exported .mbrd file. */
@@ -159,6 +159,27 @@ async function ensurePersistence() {
   }
   return persistent;
 }
+
+/**
+ * On the web the browser's store is the only copy until somebody saves a file,
+ * and nothing said so. Two things change that. The first real edit asks for
+ * durable storage, not the first Save, which most people never press. And
+ * after NUDGE_EDITS edits with no file written since the board opened, one
+ * toast per board says where the board is and offers the file. The apps keep
+ * every board as a file already.
+ */
+const NUDGE_EDITS = 40;
+let sinceCopy = 0;
+let nudged = false;
+bus.on('history', () => {
+  if (isDesktop() || notUsersBoard()) return;
+  void ensurePersistence();
+  if (++sinceCopy < NUDGE_EDITS || nudged || !hasContent()) return;
+  nudged = true;
+  toast('This board is kept only in this browser - save a copy as a file to keep it safe', '',
+    { label: 'Save a copy', run: () => { void exportBoard(); } });
+});
+bus.on('board:load', () => { sinceCopy = 0; nudged = false; });
 
 /** Durability answer + storage estimate. Reports only — asking here would
  *  make a Debug row request a permission. Estimate is the engine's (vague,
@@ -328,6 +349,7 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
 
     // Exporting is also a save — bytes are on disk.
     if (edits === gen) markDirty(false);
+    sinceCopy = 0;
     toast('Exported ' + (picking && doc ? doc.name : fileNameFor(board.title)));
     return true;
   } catch (err) {

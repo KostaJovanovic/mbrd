@@ -1201,6 +1201,14 @@ export const SECTIONS: Section[] = [
         { cmd: 'restart', label: 'Reload mbrd', closesPanel: true,
           title: () => 'Save and load the page again' },
       ] },
+      // The one readout that is not a developer's - "if I close this tab, is
+      // my board still here tomorrow?" - so it is here and not in the Debug
+      // fold, where it sat until the 1.0 audit (research/release-1.0-gaps).
+      { type: 'buttons', buttons: [
+        { cmd: 'board-safe', label: 'Is my work safe?',
+          title: () => (isDesktop() ? 'Whether the board on screen is written to its file'
+            : 'Whether the board on screen is kept in this browser, and what would lose it') },
+      ] },
       // The changelog, directly under Reload rather than in a section of its
       // own. It had one, two headings up, on the argument that a thing to read
       // is not housekeeping - which was true and did not earn a heading: one
@@ -1315,11 +1323,6 @@ export const SECTIONS: Section[] = [
       // pressed it, the console line for whoever is reading it back off a bug
       // report. See the four commands in commands/file.ts.
       { type: 'buttons', advanced: true, buttons: [
-        // The one question here that is not a developer's - "if I close this
-        // tab, is my board still here tomorrow?" - and until now it was
-        // answerable only after a crash, because errors.ts was the only reader
-        // of boardSafety().
-        { cmd: 'board-safe', label: 'Is my work safe?' },
         // In the apps a board is a file, so the question is where they are.
         { cmd: 'storage-state', label: 'Storage', when: () => !isDesktop() },
         { cmd: 'storage-state', label: 'Boards folder', when: isDesktop },

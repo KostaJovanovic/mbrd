@@ -14,7 +14,7 @@ import { memoryStore, hash } from './helpers.js';
 import { setStoreBackend } from '../web/assets/js/storage/idb.ts';
 import {
   initSession, initSessionStorage, autosave, restoreSession, clearSession,
-  resetSessionLatches, drainSave, saveRefused, suspendCache,
+  resetSessionLatches, drainSave, saveRefused, suspendCache, lastSaveFailure,
 } from '../web/assets/js/storage/session.ts';
 import { loadBoard, addItems, board, setBoardMode, bus } from '../web/assets/js/state.ts';
 import { putAsset, clearAssets, getAsset } from '../web/assets/js/storage/assets.ts';
@@ -144,8 +144,10 @@ test('a refused write is announced and stays announced until the latches reset',
   // The HUD's standing "Not saved" mark and the close guard both hang off this.
   const heard = [];
   const off = bus.on('save:refused', on => heard.push(on));
-  store.set = async () => { throw new Error('QuotaExceededError'); };
-  store.setMany = async () => { throw new Error('QuotaExceededError'); };
+  // The shape a browser throws: a DOMException named for the quota.
+  const full = () => Object.assign(new Error('the store is full'), { name: 'QuotaExceededError' });
+  store.set = async () => { throw full(); };
+  store.setMany = async () => { throw full(); };
   addItems([asItem()]);
   assert.equal(await autosave(), false);
   assert.equal(saveRefused(), true);
@@ -153,6 +155,23 @@ test('a refused write is announced and stays announced until the latches reset',
   assert.equal(saveRefused(), false);
   assert.deepEqual(heard, [true, false]);
   off();
+});
+
+test('a write that fails for another reason is tried again before anything is given up', async () => {
+  const set = store.set;
+  const setMany = store.setMany;
+  store.set = async () => { throw new Error('transaction aborted'); };
+  store.setMany = async () => { throw new Error('transaction aborted'); };
+  try {
+    addItems([asItem()]);
+    assert.equal(await autosave(), false);
+    assert.equal(saveRefused(), false, 'one failure does not turn the cache off');
+    assert.match(lastSaveFailure(), /tried again/);
+  } finally {
+    store.set = set;
+    store.setMany = setMany;
+    resetSessionLatches();
+  }
 });
 
 test('turning the cache off on purpose is not a refusal', () => {
