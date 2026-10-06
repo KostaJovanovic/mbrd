@@ -3378,12 +3378,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // A hi-res wheel that panned for a moment before it was recognised - see
     // detent(). Undone in the same frame as the zoom, so it is never painted.
     if (w.undo) vp.panByScreen(w.undo.dx, w.undo.dy);
-    // A wheel notch is a discrete step, as + and - are, and glides like them so
-    // the eye can follow which way the board went. Short, since notches come in
-    // runs; zoomAnimAt() builds each on where the last was heading. A pinch or a
-    // pad's stream stays 1:1.
-    if (w.notch) vp.zoomAnimAt(e.clientX, e.clientY, w.factor, Math.round(zoomMs() * 0.6));
-    else vp.zoomAt(e.clientX, e.clientY, w.factor);
+    vp.zoomAt(e.clientX, e.clientY, w.factor);
   }, { passive: false });
 
   // ---- double click -----------------------------------------------------
