@@ -22,7 +22,7 @@ import {
 import {
   buildItem, buildRing, buildShadow, buildTitleControls, farKind, itemAccessibleName,
   resetTilt, restingTilt, retilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook, writeNoteTint,
-  writeMissing,
+  writeMissing, fillCaption, fitCaption,
 } from './item-dom.ts';
 import { POSTER_TIME } from './video.ts';
 import { clearDisplay } from './display.ts';
@@ -74,7 +74,10 @@ let vp: Viewport | null = null;
 let lastHoverId: string | null = null;
 let hoverGroup = new Set<string>();
 function setHoverLift(id: string, on: boolean) {
-  nodes.get(id)?.classList.toggle('is-hover', on);
+  const card = nodes.get(id);
+  card?.classList.toggle('is-hover', on);
+  // The caption shows on hover, so that is when whether it fits is worth asking.
+  if (on && card) fitCaption(card);
   shadows.get(id)?.classList.toggle('is-hover', on);
   // Same frame as the card, so the ring runs the card's transition with it.
   if (ringLayerEl) paintRing(id);
@@ -1647,10 +1650,7 @@ function rebuild(id: string) {
   // rebuilt so the handle beside it keeps its identity, and with it any focus
   // the keyboard had put there.
   const label = el.querySelector<HTMLElement>('.item-bar > .item-label');
-  if (label) {
-    label.textContent = shownName(item);
-    label.hidden = !item.name;
-  }
+  if (label) fillCaption(label, item);
   // The headline is the same string on the same schedule, and it is a sibling
   // too. A note is why this cannot be skipped as "renames only": a note's name
   // is its first line, rewritten on every edit, and an edit arrives here as an

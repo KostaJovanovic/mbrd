@@ -491,12 +491,9 @@ export type WheelSample = {
  * `undo` is the pan this burst already made before it turned out to be a hi-res
  * wheel, in the same sign as `dx` / `dy`. The caller gives it back before the
  * zoom, in the same frame, so the board never shows the in-between position.
- *
- * `notch` is a zoom from a burst read as a wheel: one discrete step, which the
- * caller glides as the +/- keys do. A pinch or a pad's stream never has it.
  */
 export type WheelAction = {
-  kind: WheelKind, dx: number, dy: number, factor: number, undo?: Delta, notch?: boolean,
+  kind: WheelKind, dx: number, dy: number, factor: number, undo?: Delta,
 };
 
 /** The device this burst of wheel events is being read as, and when it last spoke. */
@@ -723,7 +720,7 @@ export function readWheel(
   // of single figures and the wheel's coefficient would move almost nothing.
   if (e.ctrlKey) {
     return prefs.mode === 'scroll'
-      ? { kind: 'zoom', dx, dy, notch: kind === 'zoom',
+      ? { kind: 'zoom', dx, dy,
           factor: zoom(kind === 'zoom' ? WHEEL_ZOOM_RATE : PINCH_ZOOM_RATE, prefs.reverse) }
       : { kind: 'pan', dx: 0, dy: dy || dx, factor: 1 };
   }
@@ -733,15 +730,15 @@ export function readWheel(
   // and keeps doing exactly that, unrail and all. `zoom-all` is the other place
   // the two come apart: it overrides the device, which is all it is for.
   if (prefs.mode === 'zoom-all') {
-    return { kind: 'zoom', dx, dy, notch: kind === 'zoom', factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
+    return { kind: 'zoom', dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
   }
   if (kind === 'zoom') {
     if (prefs.mode === 'scroll') return { kind: 'pan', dx, dy, factor: 1 };
-    if (!relatched) return { kind, dx, dy, notch: true, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
+    if (!relatched) return { kind, dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
     // The whole detent so far is the zoom, and what it already panned goes back.
     const undo = { dx: panX, dy: panY };
     panX = panY = 0;
-    return { kind, dx, dy, notch: true, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse, burstDy), undo };
+    return { kind, dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse, burstDy), undo };
   }
   const moved = unrail(dx, dy);
   panX += moved.dx;

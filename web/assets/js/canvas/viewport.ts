@@ -1005,9 +1005,7 @@ export class Viewport {
   // Animated moves
   //
   // Driven by a deliberate step - a button, a keyboard shortcut, "zoom to this
-  // item" - and by a mouse-wheel notch, which is the same discrete step as + and
-  // - from another device: cut, a 17% jump gives no idea which way the board
-  // went. Continuous manipulation (drag, pinch, a pad's two-finger stream) stays
+  // item". Direct manipulation (wheel, drag, pinch, a pad's two-finger stream) stays
   // instantaneous, because a hand on the board should never feel like it is
   // dragging the view through syrup; every one of those paths calls stopAnim()
   // so grabbing the canvas mid-flight takes over immediately.

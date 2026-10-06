@@ -44,6 +44,23 @@
   pointer-events: none;
 }
 .item-label[hidden] { display: none; }
+/* The name as stem and extension (fillCaption, canvas/item-dom.ts): the stem
+   gives way, fading out over its last letters where it is too long, and the
+   extension keeps its place on the right whatever the length. A mask rather
+   than a painted gradient, because the plate is paper, a fence's tint, or no
+   plate at all on Harsh. A rename puts plain text back, so it edits as before. */
+.item-label:has(> .item-label-stem):not([hidden]) { display: flex; }
+.item-label-stem {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.item-label-stem.is-long {
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 2.5em);
+  mask-image: linear-gradient(to left, transparent, #000 2.5em);
+}
+.item-label-ext { flex: none; }
 
 /* Bar hidden on unnamed cards and on types that draw the name inside the card.
    .item-bar-always exempts fences — an unnamed fence with no plate has no hit

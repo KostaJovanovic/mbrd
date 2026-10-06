@@ -49,6 +49,8 @@
   line-height: var(--chin);
   padding: 0 var(--mat);
   text-align: center;
+  /* The caption is a stem-and-extension row (item-chrome.css), centred alike. */
+  justify-content: center;
   font-size: clamp(11px, calc(var(--half-min, 120px) * 0.09), 20px);
 }
 

@@ -372,19 +372,6 @@ test('a mouse wheel still zooms, whatever it counts in', () => {
   assert.ok(wheel({ deltaY: -100, timeStamp: 30_000 }).factor > 1);
 });
 
-test('a wheel notch is marked to glide, and a pinch is not', () => {
-  // The notch is a discrete step like + and -, so the board animates it; a
-  // pinch is a stream under the fingers and stays 1:1.
-  assert.equal(wheel({ deltaY: 100 }).notch, true);
-  const pinch = wheel({ deltaY: 4, ctrlKey: true, timeStamp: 5_000 });
-  assert.equal(pinch.kind, 'zoom');
-  assert.ok(!pinch.notch);
-  // A pad in zoom-all mode zooms as a stream too.
-  resetWheelKind();
-  assert.ok(!readWheel({ deltaX: 0, deltaY: 2.5, deltaMode: 0, ctrlKey: false, shiftKey: false,
-    timeStamp: 0 }, 800, false, { mode: 'zoom-all', reverse: false }).notch);
-});
-
 test('two fingers on a pad pan, in both axes at once', () => {
   // The case this was written for: a laptop swipe used to zoom the board,
   // throwing away its sideways half entirely.

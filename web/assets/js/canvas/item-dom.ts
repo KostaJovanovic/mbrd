@@ -750,9 +750,37 @@ function bottomBar(item: ItemLike): HTMLDivElement {
 function nameplate(item: ItemLike): HTMLDivElement {
   const label = document.createElement('div');
   label.className = 'item-label';
-  label.textContent = shownName(item);
-  label.hidden = !item.name;
+  fillCaption(label, item);
   return label;
+}
+
+/**
+ * Write a name into a caption: the stem, which fades out where it runs past
+ * the plate, and the extension after it, which always shows - "a-very-long-
+ * name…" said nothing about whether it was the .psd or the .png. The fade is
+ * drawn only on a stem that overflows (`is-long`, set by fitCaption()).
+ */
+export function fillCaption(label: HTMLElement, item: ItemLike) {
+  const name = shownName(item);
+  const dot = name.lastIndexOf('.');
+  const ext = dot > 0 && /^\.[\p{L}\p{N}]{1,8}$/u.test(name.slice(dot)) ? name.slice(dot) : '';
+  const stem = document.createElement('span');
+  stem.className = 'item-label-stem';
+  stem.textContent = ext ? name.slice(0, dot) : name;
+  label.replaceChildren(stem);
+  if (ext) {
+    const tail = document.createElement('span');
+    tail.className = 'item-label-ext';
+    tail.textContent = ext;
+    label.append(tail);
+  }
+  label.hidden = !item.name;
+}
+
+/** Fade the caption's stem if it runs past the plate - measured at hover, when the plate shows. */
+export function fitCaption(card: HTMLElement) {
+  const stem = card.querySelector<HTMLElement>(':scope > .item-bar .item-label-stem');
+  if (stem) stem.classList.toggle('is-long', stem.scrollWidth > stem.clientWidth + 1);
 }
 
 /**
