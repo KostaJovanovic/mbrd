@@ -223,6 +223,7 @@ type FiledLook = {
   vars: Record<string, unknown>,
   auto?: boolean,
   derived?: boolean,
+  dark?: boolean,
 };
 
 function filedLook(appearance: Record<string, unknown>, vars: Record<string, unknown>): Look {
@@ -233,6 +234,8 @@ function filedLook(appearance: Record<string, unknown>, vars: Record<string, unk
   if (appearance.whimsy != null) look.whimsy = appearance.whimsy;
   if (appearance.auto === false) look.auto = false;
   if (appearance.derived === true && Object.keys(vars).length) look.derived = true;
+  // Only `true` means dark; anything else in the file is the light default.
+  if (appearance.dark === true) look.dark = true;
   // SAFETY: every difference between FiledLook and Look is a value this
   // function deliberately did not check, and the paragraph above names each one
   // and says which module does check it.

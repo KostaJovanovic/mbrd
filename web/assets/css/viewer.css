@@ -25,7 +25,7 @@
 /* display:flex on [open] only — a flat flex outranks UA display:none. */
 #viewer[open] { display: flex; flex-direction: column; }
 #viewer::backdrop {
-  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  background: color-mix(in srgb, var(--shade) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
@@ -162,7 +162,7 @@
 /* Dims and blurs the board rather than hiding it, so the inset card reads as
    floating over the work, not a new full screen. */
 #viewer[data-media]::backdrop {
-  background: color-mix(in srgb, var(--ink) 58%, transparent);
+  background: color-mix(in srgb, var(--shade) 58%, transparent);
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
 }

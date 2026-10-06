@@ -80,6 +80,12 @@
   opacity: calc(0.8 * var(--grain));
   pointer-events: none;
 }
+/* In the dark, turned over as base.css turns #grain. */
+:root[data-scheme="dark"] .ed-grain {
+  filter: invert(1);
+  mix-blend-mode: screen;
+  opacity: calc(0.6 * var(--grain));
+}
 
 /* ── The ribbon ─────────────────────────────────────────────────────────────
    Word's, without its tabs: every group in one row, each its commands and its

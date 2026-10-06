@@ -633,15 +633,14 @@ export function setGrips(el: HTMLElement, want: boolean): void {
 }
 
 /**
- * The title card's two pop-up buttons: a pen to the RIGHT that opens the shared
- * masthead style panel, and a T to the LEFT that drops into inline rename of the
- * board name (single tap). Renaming is also a double-tap of the card itself (see
- * the dblclick handler in input.ts). Only the title card has them, built once and
- * kept - the CSS shows them on hover or while the card is selected. Children of
- * `.item` like the grips, so they ride the card's transform and hold a constant
- * on-screen size through --iz. The clicks themselves are caught by
- * canvas/input.ts (which owns cmds), the way grip and widget hits are - this only
- * draws the buttons.
+ * The title card's pop-up button: a pen to the RIGHT that opens the shared
+ * masthead style panel. Renaming is a double-tap of the card itself (see the
+ * dblclick handler in input.ts), F2 or the menu's Rename. Only the title card
+ * has it, built once and kept - the CSS shows it on hover or while the card is
+ * selected. A child of `.item` like the grips, so it rides the card's transform
+ * and holds a constant on-screen size through --iz. The click itself is caught
+ * by canvas/input.ts (which owns cmds), the way grip and widget hits are - this
+ * only draws the button.
  */
 export function buildTitleControls(el: HTMLElement): void {
   if (el.querySelector(':scope > .item-pen')) return;
@@ -671,13 +670,8 @@ export function buildTitleControls(el: HTMLElement): void {
     nib.append(p);
   }
   pen.append(nib);
-  const rename = document.createElement('button');
-  rename.type = 'button';
-  rename.className = 'item-rename';
-  rename.setAttribute('aria-label', 'Rename board');
-  rename.title = 'Rename board';
-  rename.textContent = 'T';
-  el.append(pen, rename);
+  // No T button beside it: the name is renamed by a double-click, F2 or the menu.
+  el.append(pen);
 }
 
 /**

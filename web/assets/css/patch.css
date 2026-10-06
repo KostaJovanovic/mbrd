@@ -40,6 +40,12 @@ body.is-patch::before {
   mix-blend-mode: multiply;
   opacity: calc(0.8 * var(--grain));
 }
+/* In the dark, turned over as base.css turns #grain. */
+:root[data-scheme="dark"] body.is-patch::before {
+  filter: invert(1);
+  mix-blend-mode: screen;
+  opacity: calc(0.6 * var(--grain));
+}
 
 .pn-inner {
   max-width: 880px;
@@ -474,7 +480,7 @@ body.is-patch::before {
     3% 0, 97% 4%, 100% 22%, 96% 41%, 100% 62%, 97% 82%, 99% 100%,
     2% 96%, 0 78%, 4% 58%, 0 38%, 3% 19%
   );
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 18%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shade) 18%, transparent);
 }
 /* Pressed down at the other end on alternate rows, since the plate under it
    leans the other way. */
@@ -501,7 +507,7 @@ body.is-patch::before {
   width: 9px;
   height: 9px;
   right: -5px;
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 34%, transparent);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--shade) 34%, transparent);
 }
 
 /* =========================================================

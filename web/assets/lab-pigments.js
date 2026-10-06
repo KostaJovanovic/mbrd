@@ -659,6 +659,98 @@ function paletteFromAccent(picked, { tier = 1 } = {}) {
   vars["--accent-fg"] = contrast(chosen, light) >= contrast(chosen, vars["--ink"]) ? light : vars["--ink"];
   return vars;
 }
+var DARK_PAPER = [0.245, 0.215, 0.175];
+var DARK_DEPTH = 0.6;
+var DARK_DEPTH_MAX = 0.03;
+var DARK_SHEET_DYE = 2.2;
+var DARK_SHEET_C = [0.024, 0.016, 0.012];
+var MUD_H = 90;
+var MUD_WIDTH = 25;
+var DARK_UNMUD = 36;
+var DARK_NEAR_L = 0.71;
+var DARK_NEAR_SPAN = 16;
+var unmud = (h) => h - DARK_UNMUD * Math.max(0, 1 - Math.abs((h - MUD_H + 540) % 360 - 180) / MUD_WIDTH);
+var DARK_INK = 0.93;
+var DARK_CARD_LIFT = 0.045;
+var DARK_SPREAD = 0.7;
+var DARK_PRINT_C = [0.06, 0.04, 0.025];
+var DARK_ACCENT_GROUND = 4.5;
+var DARK_VOICE_GROUND = 3.6;
+var DARK_DEEP_SHARE = 0.7;
+var DARK_REACH = 0.72;
+var DARK_VOICE_REACH = 0.64;
+var DARK_DEEP_ROOF = 0.88;
+var DARK_LINE = 0.42;
+var RAMP = ["--paper-2", "--paper-3", "--rule", "--rule-2", "--ink", "--ink-2", "--ink-3"];
+function lift(t, h, paper, ground, reach = DARK_REACH, near = 0) {
+  const share = clamp(t.C / Math.max(maxChroma(t.L, h, BOLD_C), 1e-4), 0, 1);
+  const at = (L2) => share * maxChroma(L2, h, BOLD_C);
+  let L = t.L;
+  while (L < CUSP_HI && contrast(hex(L, at(L), h), paper) < ground) L += BOLD_STEP;
+  L = Math.min(Math.max(L, Math.min(cuspL(h), reach)), CUSP_HI);
+  if (near > 0) {
+    L = Math.max(L, L + (DARK_NEAR_L - L) * near);
+    const wall = maxChroma(L, h, BOLD_C);
+    return { L, C: at(L) + (wall - at(L)) * near };
+  }
+  return { L, C: at(L) };
+}
+function darkSheet(vars, tier = 1) {
+  const read = (key) => /^#[0-9a-f]{6}$/i.test(vars[key] || "") ? oklch(...parseHex(vars[key])) : null;
+  const paper = read("--paper"), ink = read("--ink");
+  const sheetH = unmud(paper?.h ?? ink?.h ?? 0);
+  const fromP = paper?.L ?? SHEET["--paper"].L, fromI = ink?.L ?? SHEET["--ink"].L;
+  const depth = tier === 1 ? clamp((fromI - SHEET["--ink"].L) * DARK_DEPTH, -DARK_DEPTH_MAX, DARK_DEPTH_MAX) : 0;
+  const P = (DARK_PAPER[tier] ?? DARK_PAPER[1]) + depth;
+  const printC = DARK_PRINT_C[tier] ?? DARK_PRINT_C[1];
+  const sheetC = Math.min((paper?.C ?? 0) * DARK_SHEET_DYE, DARK_SHEET_C[tier] ?? DARK_SHEET_C[1]);
+  const ground = hex(P, sheetC, sheetH);
+  const out = {};
+  if (paper) out["--paper"] = ground;
+  if (read("--paper-card")) out["--paper-card"] = hex(P + DARK_CARD_LIFT, sheetC, sheetH);
+  const floors = FLOOR;
+  for (const key of RAMP) {
+    const t = read(key);
+    if (!t) continue;
+    const at = clamp((fromP - t.L) / Math.max(fromP - fromI, 0.1), 0, key === "--rule-2" ? DARK_LINE : 1);
+    let L = P + at ** DARK_SPREAD * (DARK_INK - P);
+    const C = at < 0.5 ? Math.min(t.C * DARK_SHEET_DYE, DARK_SHEET_C[tier] ?? DARK_SHEET_C[1]) : Math.min(t.C, printC);
+    const h = at < 0.5 ? unmud(t.h) : t.h;
+    const floor = floors[key];
+    while (floor && L < 1 && contrast(hex(L, C, h), ground) < floor) L += 0.02;
+    if (paper && (key === "--rule" || key === "--rule-2")) {
+      const was = contrast(vars[key], vars["--paper"]);
+      while (L > P && contrast(hex(L, C, h), ground) > was) L -= 0.01;
+    }
+    out[key] = hex(Math.min(L, 1), C, h);
+  }
+  const accent = read("--accent");
+  if (accent) {
+    const lost = paper ? apart(paper.h, accent.h) - apart(sheetH, accent.h) : 0;
+    const accentH = accent.h;
+    const a = lift(accent, accentH, ground, DARK_ACCENT_GROUND, DARK_REACH, clamp(lost / DARK_NEAR_SPAN, 0, 1));
+    out["--accent"] = hex(a.L, a.C, accentH);
+    if (vars["--accent-text"]) out["--accent-text"] = out["--accent"];
+    const deep = read("--accent-deep");
+    if (deep) {
+      const step = (accent.L - deep.L) * DARK_DEEP_SHARE;
+      const L = a.L + step <= DARK_DEEP_ROOF ? a.L + step : a.L - step;
+      out["--accent-deep"] = hex(L, a.C * (accent.C ? deep.C / accent.C : 1), deep.h);
+    }
+    const under = hex(Math.max(P - 0.06, 0.1), sheetC, sheetH);
+    const over = hex(0.985, sheetC / 2, sheetH);
+    if (vars["--accent-fg"]) {
+      out["--accent-fg"] = contrast(out["--accent"], under) >= contrast(out["--accent"], over) ? under : over;
+    }
+  }
+  for (const key of ["--accent-warm", "--leafy"]) {
+    const t = read(key);
+    if (!t) continue;
+    const v = lift(t, t.h, ground, DARK_VOICE_GROUND, DARK_VOICE_REACH);
+    out[key] = hex(v.L, v.C, t.h);
+  }
+  return out;
+}
 function midHue(a, b) {
   const d = (b - a + 540) % 360 - 180;
   return (a + d / 2 + 360) % 360;
@@ -741,6 +833,7 @@ export {
   contrast,
   counterTurn,
   cuspL,
+  darkSheet,
   dominantColors,
   extractPalette,
   hex,

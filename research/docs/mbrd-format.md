@@ -269,7 +269,11 @@ Desktop-only and are pinned down in a Mobile profile.
 
 `settings.appearance` is the board's own look: a palette name and a bag of CSS
 custom properties. **`vars` is the only part of a `.mbrd` that reaches the
-browser as code**, and it is gated accordingly — see **Safety**.
+browser as code**, and it is gated accordingly — see **Safety**. `dark` is
+`true` when the board is shown in the dark theme (Look → Dark theme); present
+only then, and anything but `true` reads as light, the default. The pigments in
+`vars` stay the light ones either way — the dark twins are worked out on screen.
+A reader that ignores it opens the board light. Additive, no `version` bump.
 
 `mobileHeader` is the typography of the board's name, shared by the Mobile
 masthead and the Desktop title card. It is **board-level** (one style for both

@@ -19,6 +19,13 @@
   /* Fraction of --radius so the Corner slider still moves it. */
   --shape-radius: calc(var(--radius) * 0.12);
 }
+/* A print in the dark is a dim print, not a white one and not a dark card: the
+   card stock lifted a third of the way to the ink, so it keeps the palette's
+   own warmth or coolness and still stands off every card around it. Mixed
+   towards white it went a flat grey that read as dirt on a coloured board. */
+:root[data-scheme="dark"][data-whimsy="0"] .item[data-type="image"]:not([data-bare]) {
+  --item-bg: color-mix(in oklab, var(--paper-card) 68%, var(--ink));
+}
 /* Absolute + explicit size, not inset offsets — a replaced element with auto
    width resolves to intrinsic size, not the gap between offsets. */
 :root[data-whimsy="0"] .item[data-type="image"]:not([data-bare]) .item-body img {
@@ -100,7 +107,8 @@
    note's paper (cards.css), which this rule outranks and so has to read. */
 :root[data-whimsy="2"] .item[data-type="note"] .card {
   background: var(--note-sheet, var(--note-paper));
-  box-shadow: inset 0 0 0 var(--board-hairline) var(--ink);
+  /* --item-border, which is the ink here in the light and a dimmer line in the dark. */
+  box-shadow: inset 0 0 0 var(--board-hairline) var(--item-border);
 }
 
 /* Lozenges become squares. */

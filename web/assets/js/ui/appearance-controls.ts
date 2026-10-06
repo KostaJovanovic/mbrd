@@ -34,6 +34,7 @@ export type Look = {
   vars: Record<string, string>,
   auto?: boolean,
   derived?: boolean,
+  dark?: boolean,
 };
 
 /** Deps injected by initAppearanceControls(). */

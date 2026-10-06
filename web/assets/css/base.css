@@ -103,7 +103,7 @@ body {
   background-image:
     radial-gradient(58% 44% at 18% 12%, color-mix(in srgb, var(--accent) calc(3% * var(--wash)), transparent), transparent 70%),
     radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, var(--leafy) calc(4% * var(--wash)), transparent), transparent 72%),
-    radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--ink) calc(5% * var(--vignette)), transparent));
+    radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--shade) calc(5% * var(--vignette)), transparent));
 }
 
 /* Paper grain. Multiply because soft-light collapses at 98% lightness.
@@ -124,6 +124,19 @@ body {
 #grain {
   position: fixed;
   inset: 0;
+}
+
+/* The same tooth in the dark, turned over. Multiply into a dark sheet has
+   nothing left to sink, so the tile is inverted and screened instead: it lifts
+   specks out of the dark the way it sinks them into the light. A shade under
+   the light strength, because a step off a dark ground reads larger. The
+   fences' and the editor's grain take the same turn in their own sheets. */
+:root[data-scheme="dark"] #grain,
+:root[data-scheme="dark"] #mobile-board-frame::after,
+:root[data-scheme="dark"] .feed-sheet::before {
+  filter: invert(1);
+  mix-blend-mode: screen;
+  opacity: calc(0.6 * var(--grain) * var(--grain-fade, 1));
 }
 
 /* --- Icons (assets/icons.svg). Inherited props cross into the <use> shadow tree. --- */

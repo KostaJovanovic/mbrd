@@ -1230,6 +1230,8 @@
   border-color: var(--accent-deep);
   color: var(--accent-fg);
 }
+/* In the dark --accent-deep is the lighter one, a pale ring round the fill. */
+:root[data-scheme="dark"] #tour-editor .tour-add.is-primary:not(:disabled) { border-color: transparent; }
 /* And the same button pointing the other way: everything selected is already on
    the tour, so the only thing left to offer is taking it off. One button, one
    subject, and which direction it is facing is the label and the colour rather

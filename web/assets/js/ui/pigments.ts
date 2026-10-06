@@ -1128,6 +1128,202 @@ export function paletteFromAccent(picked: string, { tier = 1 }: { tier?: number 
   return vars;
 }
 
+// ---------------------------------------------------------------------------
+// The dark sheet
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the dark sheet sits at each tier, in OKLCh L. Softish a shade lifted,
+ * so it is still a coloured paper rather than a night; Harsh nearest black,
+ * the poster that acid colours were made for (tokens.css, 3b).
+ */
+const DARK_PAPER = [0.245, 0.215, 0.175];
+/**
+ * How deep each palette's night goes, from how dark its light ink was. In the
+ * light the four sheets agree about white and are told apart by their print -
+ * Orca's 16:1 ink against Tea rose's softer one (tokens.css, section 2). In the
+ * dark that difference moves to the sheet, or the four are one charcoal: Orca
+ * the deepest, Tea rose the softest. The middle only; the ends have a sheet of
+ * their own already.
+ */
+const DARK_DEPTH = 0.6, DARK_DEPTH_MAX = 0.03;
+/**
+ * How much of its own hue the dark sheet takes, against the light one's. A
+ * light sheet is held near neutral so it does not cast the photographs, and
+ * at the bottom of the scale the same chroma reads as none at all, which left
+ * four palettes on one grey. Capped per tier, below any cast a picture shows.
+ */
+const DARK_SHEET_DYE = 2.2;
+const DARK_SHEET_C = [0.024, 0.016, 0.012];
+/**
+ * The one hue a dark sheet may not keep. A light sheet at 90 degrees is cream;
+ * the same angle at the bottom of the scale is olive-brown, and every surface
+ * built from it - cards, wells, the notes mixed into them - goes the colour of
+ * mud. Papyrus's Softish board was all of it. Warm sheets in that band are
+ * turned towards red, where dark and warm is walnut or leather, by up to
+ * DARK_UNMUD degrees at the band's middle and nothing at its edges, so Absinthe's
+ * green-gold and Tea rose's pink do not move. Its chroma stays: drained to a
+ * warm charcoal it was tried, and lost the board its warmth.
+ */
+const MUD_H = 90, MUD_WIDTH = 25, DARK_UNMUD = 36;
+/**
+ * Where the accent climbs when that turn brings the sheet near it. Turning
+ * Papyrus's cream out of the mud put the walnut 6 degrees from its terracotta,
+ * where in the light the two stand 43 apart, and the orange melted into the
+ * board. Turning the accent away was tried and made it coral - pink, not
+ * Papyrus. It keeps its hue and stands off by lightness instead: a lighter
+ * orange, by as much of the way here as the hues lost of their 16 degrees.
+ */
+const DARK_NEAR_L = 0.71, DARK_NEAR_SPAN = 16;
+const unmud = (h: number) =>
+  h - DARK_UNMUD * Math.max(0, 1 - Math.abs(((h - MUD_H + 540) % 360) - 180) / MUD_WIDTH);
+/** The print on it. Not white: white on near-black is glare, not type. */
+const DARK_INK = 0.93;
+/** A card stands above the sheet, and in the dark nearer is lighter. */
+const DARK_CARD_LIFT = 0.045;
+/** Under 1 spreads the steps nearest the sheet, which the eye reads smaller in the
+ *  dark - and keeps the hover well (--paper-2) clear above the card it shows on. */
+const DARK_SPREAD = 0.7;
+/** The most colour light print may carry before it reads as coloured type, per tier:
+ *  Softish writes in a coloured pen, Harsh in white. */
+const DARK_PRINT_C = [0.06, 0.04, 0.025];
+/** The accent has to read as words on the dark sheet; washes and second voices only as marks. */
+const DARK_ACCENT_GROUND = 4.5;
+/** 3 let leafy through at L 0.57, a mud nobody would call a second voice. */
+const DARK_VOICE_GROUND = 3.6;
+/** How much of the light accent-to-deep step --accent-deep keeps, taken the other way. */
+const DARK_DEEP_SHARE = 0.7;
+/** How far up a pigment may climb towards its hue's cusp - see lift(). The
+ *  second voices stop a step under the accent, so the three stay told apart
+ *  by lightness as well as hue, as the light palettes are. */
+const DARK_REACH = 0.72;
+const DARK_VOICE_REACH = 0.64;
+/** Above this a deeper accent has no room to rise, and goes down instead - Harsh's neon. */
+const DARK_DEEP_ROOF = 0.88;
+
+/** How far across --rule-2 may go. Harsh draws its lines at full ink, which in the
+ *  dark is a white line that glares; this keeps every tier's line a line. */
+const DARK_LINE = 0.42;
+/** The sheet's ramp: every token between paper and ink, each keeping its place on the way across. */
+const RAMP = ['--paper-2', '--paper-3', '--rule', '--rule-2', '--ink', '--ink-2', '--ink-3'];
+
+/**
+ * A pigment raised until it clears `ground` against the dark sheet - toGround()
+ * turned upwards - keeping its place against the wall rather than its chroma.
+ * A preset's accent is the wall at its light lightness, and carrying that
+ * clipped number up left Absinthe's acid an olive and Orca's teal a grey-green;
+ * the same share of what the hue holds at the new lightness is the same colour,
+ * risen. A photograph's softer pigment keeps its softness the same way.
+ */
+function lift(t: Tone, h: number, paper: string, ground: number, reach = DARK_REACH, near = 0): Tone {
+  const share = clamp(t.C / Math.max(maxChroma(t.L, h, BOLD_C), 1e-4), 0, 1);
+  const at = (L: number) => share * maxChroma(L, h, BOLD_C);
+  let L = t.L;
+  while (L < CUSP_HI && contrast(hex(L, at(L), h), paper) < ground) L += BOLD_STEP;
+  // And on towards where the hue holds most colour, if that is higher: a teal
+  // clears the ground at L 0.59 with a tenth of the chroma it has at its cusp.
+  // Capped, so a light-cusping hue stays a pigment and does not become a light.
+  L = Math.min(Math.max(L, Math.min(cuspL(h), reach)), CUSP_HI);
+  // A sheet that came near the pigment's hue: the rest of the way, by lightness.
+  // Up there the wall is lower, so the share would wash it out: that climb goes at full colour.
+  if (near > 0) {
+    L = Math.max(L, L + (DARK_NEAR_L - L) * near);
+    const wall = maxChroma(L, h, BOLD_C);
+    return { L, C: at(L) + (wall - at(L)) * near };
+  }
+  return { L, C: at(L) };
+}
+
+/**
+ * A light palette's dark twin, token for token.
+ *
+ * One transform for everything: the four presets go through it once, in
+ * tools/gen-dark-palettes.mjs, and a Dynamic or hand-picked palette goes
+ * through it every time it is painted, so a board looks dark by the same
+ * rules whatever its colours came from. The board keeps the light palette;
+ * this is only what the screen shows, which is why a board saved in the dark
+ * opens light on a light machine.
+ *
+ * The ramp is mirrored rather than inverted: each token keeps how far it sat
+ * from the paper towards the ink, so a well is still a step off the sheet and
+ * a rule still a line. The card is the exception, lifted above the sheet
+ * instead of sinking under it. Pigments keep their hue and chroma and only
+ * rise, to where they read on the dark - toGround()'s walk, the other way.
+ *
+ * Only tokens the input carries as #rrggbb come back. `tier` picks the sheet.
+ */
+export function darkSheet(vars: Vars, tier = 1): Vars {
+  const read = (key: string) =>
+    (/^#[0-9a-f]{6}$/i.test(vars[key] || '') ? oklch(...parseHex(vars[key])) : null);
+  const paper = read('--paper'), ink = read('--ink');
+  const sheetH = unmud(paper?.h ?? ink?.h ?? 0);
+  const fromP = paper?.L ?? SHEET['--paper'].L, fromI = ink?.L ?? SHEET['--ink'].L;
+  const depth = tier === 1
+    ? clamp((fromI - SHEET['--ink'].L) * DARK_DEPTH, -DARK_DEPTH_MAX, DARK_DEPTH_MAX) : 0;
+  const P = (DARK_PAPER[tier] ?? DARK_PAPER[1]) + depth;
+  const printC = DARK_PRINT_C[tier] ?? DARK_PRINT_C[1];
+  const sheetC = Math.min((paper?.C ?? 0) * DARK_SHEET_DYE, DARK_SHEET_C[tier] ?? DARK_SHEET_C[1]);
+  const ground = hex(P, sheetC, sheetH);
+  const out: Vars = {};
+  if (paper) out['--paper'] = ground;
+
+  // The sheet's hue, not the card's own: a near-white card's angle is rounding noise.
+  if (read('--paper-card')) out['--paper-card'] = hex(P + DARK_CARD_LIFT, sheetC, sheetH);
+  // The three ink floors, asked by any ramp token's name.
+  const floors: Partial<Record<string, number>> = FLOOR;
+  for (const key of RAMP) {
+    const t = read(key);
+    if (!t) continue;
+    const at = clamp((fromP - t.L) / Math.max(fromP - fromI, 0.1), 0, key === '--rule-2' ? DARK_LINE : 1);
+    let L = P + at ** DARK_SPREAD * (DARK_INK - P);
+    // The paper's half of the ramp takes the sheet's dye, or the wells and rules
+    // read greyer than the sheet they are cut into; the print's half its own.
+    const C = at < 0.5 ? Math.min(t.C * DARK_SHEET_DYE, DARK_SHEET_C[tier] ?? DARK_SHEET_C[1])
+      : Math.min(t.C, printC);
+    // And the sheet's turn out of the mud; light print in that band is cream, and stays.
+    const h = at < 0.5 ? unmud(t.h) : t.h;
+    // The light floors, held the other way: up, not down.
+    const floor = floors[key];
+    while (floor && L < 1 && contrast(hex(L, C, h), ground) < floor) L += 0.02;
+    // A line stands off the dark as far as it stood off the light, and no further:
+    // placed by position alone, a rule came out twice as strong, a white outline.
+    if (paper && (key === '--rule' || key === '--rule-2')) {
+      const was = contrast(vars[key], vars['--paper']);
+      while (L > P && contrast(hex(L, C, h), ground) > was) L -= 0.01;
+    }
+    out[key] = hex(Math.min(L, 1), C, h);
+  }
+
+  const accent = read('--accent');
+  if (accent) {
+    const lost = paper ? apart(paper.h, accent.h) - apart(sheetH, accent.h) : 0;
+    const accentH = accent.h;
+    const a = lift(accent, accentH, ground, DARK_ACCENT_GROUND, DARK_REACH, clamp(lost / DARK_NEAR_SPAN, 0, 1));
+    out['--accent'] = hex(a.L, a.C, accentH);
+    // Already readable as words, so the text form is the fill again.
+    if (vars['--accent-text']) out['--accent-text'] = out['--accent'];
+    const deep = read('--accent-deep');
+    if (deep) {
+      const step = (accent.L - deep.L) * DARK_DEEP_SHARE;
+      const L = a.L + step <= DARK_DEEP_ROOF ? a.L + step : a.L - step;
+      out['--accent-deep'] = hex(L, a.C * (accent.C ? deep.C / accent.C : 1), deep.h);
+    }
+    // A raised accent wants a dark label, nearly always: whichever reads better.
+    const under = hex(Math.max(P - 0.06, 0.1), sheetC, sheetH);
+    const over = hex(0.985, sheetC / 2, sheetH);
+    if (vars['--accent-fg']) {
+      out['--accent-fg'] = contrast(out['--accent'], under) >= contrast(out['--accent'], over) ? under : over;
+    }
+  }
+  for (const key of ['--accent-warm', '--leafy']) {
+    const t = read(key);
+    if (!t) continue;
+    const v = lift(t, t.h, ground, DARK_VOICE_GROUND, DARK_VOICE_REACH);
+    out[key] = hex(v.L, v.C, t.h);
+  }
+  return out;
+}
+
 /** Halfway between two hues, the short way round the wheel. */
 function midHue(a: number, b: number) {
   const d = ((b - a + 540) % 360) - 180;

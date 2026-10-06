@@ -18,6 +18,14 @@ export function paletteSwatches(value: string): string[] {
   const dressed = value
     ? `:root[data-whimsy="${tier}"][data-palette="${value}"]`
     : `:root[data-whimsy="${tier}"]`;
+  // In the dark, the twins in tokens.css 3c as well, which come after and so win.
+  const selectors = new Set([want, dressed]);
+  if (document.documentElement.dataset.scheme === 'dark') {
+    const dark = ':root[data-scheme="dark"]';
+    const palette = value ? `[data-palette="${value}"]` : '';
+    selectors.add(dark + palette);
+    if (tier !== '1') selectors.add(`${dark}[data-whimsy="${tier}"]${palette}`);
+  }
   const found: Record<string, string> = {};
   for (const sheet of document.styleSheets) {
     let rules: CSSRuleList;
@@ -25,7 +33,7 @@ export function paletteSwatches(value: string): string[] {
     for (const rule of rules) {
       if (!(rule instanceof CSSStyleRule)) continue;
       // Later rules overwrite earlier — mirrors the cascade, no second pass needed.
-      if (rule.selectorText !== want && rule.selectorText !== dressed) continue;
+      if (!selectors.has(rule.selectorText)) continue;
       for (const t of SWATCH_TOKENS) {
         const v = rule.style.getPropertyValue(t).trim();
         if (v) found[t] = v;

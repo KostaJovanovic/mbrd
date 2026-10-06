@@ -626,6 +626,15 @@
   border-color: var(--accent-deep);
   color: var(--accent-fg);
 }
+/* In the dark --accent-deep is the lighter of the two (it is also text there),
+   and Harsh's ink is near-white: either edge is a pale ring round the fill.
+   The fill is its own edge, hovered or not (the background runs under a clear
+   border). After the Harsh rule, which this ties and follows. */
+:root[data-scheme="dark"] .btn-row button.primary,
+:root[data-scheme="dark"] .btn-row button[aria-pressed="true"],
+:root[data-scheme="dark"] .btn-row button[aria-pressed="true"]:hover {
+  border-color: transparent;
+}
 /* Outlined until hover — reads as available, not as urged. */
 .btn-row button.danger { border-color: var(--danger); color: var(--danger); }
 @media (hover: hover) {
@@ -878,6 +887,12 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.6 8.4 6.6 11.4 12.4 4.9'/%3E%3C/svg%3E");
   background-size: 100% 100%;
   background-repeat: no-repeat;
+}
+/* In the dark the accent is light and its label dark (tokens.css 3c), so the tick is too. */
+:root[data-scheme="dark"] .check input:checked {
+  /* And no paler ring round it: in the dark --accent-deep is the lighter one. */
+  border-color: transparent;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-opacity='0.86' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.6 8.4 6.6 11.4 12.4 4.9'/%3E%3C/svg%3E");
 }
 
 .hint {

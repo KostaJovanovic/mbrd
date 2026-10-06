@@ -860,6 +860,18 @@ const press = (over = {}) => ({
   ...over,
 });
 
+test('Z held makes a primary press a zoom box, over a card or a control, but not in a tour', () => {
+  const box = { kind: 'zoomBox' };
+  assert.deepEqual(pressIntent(press({ zoomBox: true })), box);
+  assert.deepEqual(pressIntent(press({ zoomBox: true, onCard: 'a', wasSelected: true, onGrip: true, selectionSize: 1 })), box);
+  assert.deepEqual(pressIntent(press({ zoomBox: true, onCard: 'a', onWidget: true })), box);
+  // It only moves the view, so the Timeline's read-only board allows it.
+  assert.deepEqual(pressIntent(press({ zoomBox: true, viewOnly: true })), box);
+  // A tour's view is the tour's, and the middle button still pans.
+  assert.equal(pressIntent(press({ zoomBox: true, touring: true })).kind, 'frozen');
+  assert.deepEqual(pressIntent(press({ zoomBox: true, button: 1 })), { kind: 'pan', middle: true });
+});
+
 test('every press pans while the Timeline plays', () => {
   // The board is read-only then, and pan and zoom are all it keeps: a card, a
   // grip, a control in a card and a modified press all pan.

@@ -12,6 +12,7 @@ interface Stored {
   palette?: unknown;
   vars?: unknown;
   level?: unknown;
+  dark?: unknown;
 }
 
 /** The custom properties this page set, so a change can take them off again. */
@@ -44,7 +45,15 @@ export function applyLook(): void {
   if (typeof level === 'string' && /^(light|balanced|full)$/.test(level)) root.dataset.quality = level;
   else delete root.dataset.quality;
 
+  // Dark or light by index.html's rules - the board's look says - and in the
+  // dark the pigments' dark twins, which the board stores beside the look
+  // (ui/appearance.ts).
+  const dark = look.dark === true && CSS.supports('color', 'color-mix(in srgb, red, blue)');
+  if (dark) root.dataset.scheme = 'dark';
+  else delete root.dataset.scheme;
+
   const vars = safeVars(look.vars);
+  if (dark) Object.assign(vars, safeVars(read('mbrd.appearance.dark')));
   for (const key of applied) {
     if (key in vars) continue;
     root.style.removeProperty(key);

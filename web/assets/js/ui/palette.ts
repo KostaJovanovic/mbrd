@@ -243,6 +243,11 @@ function appRows(): Row[] {
   const out = APP.filter(a => !a.when || a.when())
     .flatMap(a => cmdRow(a.label, a.cmd, [a.place], W.app, { icon: a.icon, accel: a.accel }));
   out.push(row({ label: 'Settings', icon: 'i-gear', action: openSidebar }, ['View'], W.app));
+  // The right-click menu offers this only to a finger, and the box is opened
+  // from a keyboard, so it would never be here. Named as that menu names it.
+  const picking = cmds!.multiSelect();
+  out.push(row({ label: picking ? 'Done selecting' : 'Select multiple', icon: 'i-select-all',
+    check: picking, action: () => cmds!.toggleMultiSelect() }, ['Edit'], W.app));
   return out;
 }
 

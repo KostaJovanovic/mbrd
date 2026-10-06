@@ -739,8 +739,6 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   const flippable = !many && cmds!.canFlipUpAxis(id);
   // Single-item — you turn one model over.
   const turnable = !many && cmds!.canRotateModel(id);
-  // Z-order only meaningful when layers overlap. Never on Feed (packed, not stacked).
-  const stackable = !mobile && cmds!.selectionHasStackOverlap();
   // Selection-wide — taking nine stickies off is the same act as taking one off.
   const unstickable = !mobile && cmds!.canUnstick();
   // Not on Feed — an anchor holds a place, and the Feed packs by order.
@@ -820,17 +818,6 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Open reads a document; this writes in it.
     { label: 'Edit', icon: 'i-edit-text', hidden: !writable,
       action: () => cmds!.editDocument(id) },
-    // The card's own file, given back - beside Open, the other thing done to a
-    // file as a file. Single-item: a group is the board's export.
-    { label: 'Save the file', icon: 'i-download', hidden: many || !cmds!.canSaveItemFile(id),
-      action: () => cmds!.saveItemFile(id) },
-    { label: 'Send the file', icon: 'i-share', hidden: many || !cmds!.canSendItemFile(id),
-      action: () => cmds!.sendItemFile(id) },
-    // The card stays - its place, width, tags and lines - and holds another file.
-    // On a card whose file is gone the same picker is the way to find it: the
-    // file it lost heals the card (import/drop.ts), and any other replaces it.
-    { label: cmds!.itemFileMissing(id) ? 'Find the file…' : 'Replace file…', icon: 'i-swap',
-      hidden: many || !cmds!.canReplaceItemFile(id), action: () => cmds!.replaceItemFile(id) },
     // Copy/Paste instead of Duplicate — paste lands where the cursor is, on any
     // board. Ctrl+D still duplicates. i-duplicate icon on Copy deliberately.
     // Hidden when nothing picked may be copied - the cleaned board's card.
@@ -884,9 +871,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       sub: taggable ? tagEntries() : undefined },
     // ── How it sits on the board ──
     { sep: true, hidden: mobile && !lockable && !many },
-    // Mirrored pair — front/back.
-    { label: 'Bring to front', icon: 'i-front', accel: ']', hidden: !stackable, action: () => cmds!.raise() },
-    { label: 'Send to back', icon: 'i-back', accel: '[', hidden: !stackable, action: () => cmds!.lower() },
+    // No front/back rows: ] and [ still do it, and a drag already brings a card up.
     // Mirrored pair — Anchor until all locked, then Unanchor. Two rows (not
     // conditional icon) so tests/icons.test.js can grep for every icon literal.
     // "Anchor" not "Lock" — only geometry is fixed; stored key stays isLocked().
@@ -941,10 +926,21 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Not on Feed — there the tile menu is the only menu, and a board action
     // on it reads as something done to the tile.
     { label: 'Reload board', icon: 'i-reload', hidden: mobile, action: () => cmds!.reload() },
-    // ── Rename & delete ──
+    // ── The file, rename & delete ──
     // Rename at the foot — the last thing you do to a card you are keeping.
     // F2 accelerator for anyone who prefers the keyboard.
     { sep: true },
+    // The card's own file, given back - with Rename and Delete, the things done
+    // to the card as a whole. Single-item: a group is the board's export.
+    { label: 'Save the file', icon: 'i-download', hidden: many || !cmds!.canSaveItemFile(id),
+      action: () => cmds!.saveItemFile(id) },
+    { label: 'Send the file', icon: 'i-share', hidden: many || !cmds!.canSendItemFile(id),
+      action: () => cmds!.sendItemFile(id) },
+    // The card stays - its place, width, tags and lines - and holds another file.
+    // On a card whose file is gone the same picker is the way to find it: the
+    // file it lost heals the card (import/drop.ts), and any other replaces it.
+    { label: cmds!.itemFileMissing(id) ? 'Find the file…' : 'Replace file…', icon: 'i-swap',
+      hidden: many || !cmds!.canReplaceItemFile(id), action: () => cmds!.replaceItemFile(id) },
     { label: 'Rename', icon: 'i-rename', accel: 'F2', hidden: !renamable,
       action: rename ?? (() => editItemName(id)) },
     // A fence is not a card, and "Delete item" read as if it took its cards too.

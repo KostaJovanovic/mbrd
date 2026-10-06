@@ -14,6 +14,7 @@ import { currentLens } from './board-view.ts';
 import { keepsBelowTitle, setMediaFit } from './board-actions.ts';
 import { timelineShown, toggleTimeline } from './timeline-view.ts';
 import { paletteSwatches } from './palettes.ts';
+import { canDark, setDark } from './scheme.ts';
 import { itemBounds } from '../geometry.ts';
 import { toUnits, formatLength, paperMm, PAPERS } from '../measure.ts';
 import {
@@ -257,6 +258,8 @@ const KEYS: readonly KeyRow[] = [
   [['drag'], 'pan the board'],
   [['shift', '+', 'drag'], 'select a region'],
   [['space', '+', 'drag'], 'pan from anywhere'],
+  // A right click is still the menu: only a press that travels pans.
+  [['right-drag'], 'pan from anywhere'],
   [['wheel'], 'zoom to the cursor'],
   // Not a key, nor the wheel above it or the drag at the top: this is the
   // gesture legend as much as the keyboard one, and a touchpad is how most
@@ -276,8 +279,13 @@ const KEYS: readonly KeyRow[] = [
   // While Join is out: the pair joins and the tool stays armed for the next.
   [['shift', '+', 'click'], 'join, and keep joining'],
   [['drag', '+', 'shift'], 'move along one axis'],
+  [['drag', '+', 'alt'], 'resize from the centre'],
   [['+', '-'], 'zoom in, out'],
-  [['0', 'F'], 'recenter, fit'],
+  [['ctrl', '+', '+', '-', '0'], 'zoom in, out, 100%'],
+  [['Z', '+', 'drag'], 'zoom into a box'],
+  [['Z', '+', 'click'], 'zoom in (+alt out)'],
+  [['0', 'home'], 'recenter'],
+  [['F'], 'fit'],
   [['shift', '+', 'F'], 'zoom to the selection'],
   [['1'], '100% where you are'],
   [['←↑→↓'], 'nudge (+shift a step)'],
@@ -287,6 +295,7 @@ const KEYS: readonly KeyRow[] = [
   [['L'], 'anchor, unanchor'],
   [[']', '['], 'bring to front, send to back'],
   [['ctrl', '+', 'G'], 'fence the selection'],
+  [['ctrl', '+', 'shift', '+', 'G'], 'take its fence away'],
   [['esc'], 'cancel a drag, deselect, close'],
   [['?'], 'this list'],
   // The Menu key is the other way to the same thing, on keyboards that have one.
@@ -310,7 +319,6 @@ const KEYS: readonly KeyRow[] = [
   // The desktop menu's own accelerators (desktop/menu.ts).
   [['ctrl', '+', 'N'], 'new board', isDesktop],
   [['ctrl', '+', 'B'], 'your boards', isDesktop],
-  [['ctrl', '+', '0', '-', '+'], 'page zoom', isDesktop],
   [['F11'], 'full screen', isDesktop],
   [['ctrl', '+', 'R'], 'reload', isDesktop],
   [['ctrl', '+', 'W'], 'close window', isDesktop],
@@ -856,6 +864,12 @@ export const SECTIONS: Section[] = [
           { value: 'tearose', label: 'Tea rose' },
           { value: 'orca', label: 'Orca' },
         ] },
+      // Light or dark, beside the palette because it is the same question about
+      // colour, and like the palette the board's: `dark` in its look, saved in
+      // the .mbrd. Light is the default; idle where the browser has no
+      // color-mix(), which the dark palette is built on (ui/scheme.ts).
+      { id: 'opt-dark', type: 'check', label: 'Dark theme', idle: () => !canDark(),
+        get: () => board.settings.appearance.dark === true, set: v => setDark(v) },
       // The two face menus, in the fold with everything else that sets one
       // token at a time. They stood above it for a year on the argument that a
       // dropped face appears in them and a feature nobody can find is a feature

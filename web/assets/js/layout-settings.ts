@@ -52,6 +52,8 @@ export interface Look {
   vars?: Record<string, string>;
   auto?: boolean;
   derived?: boolean;
+  /** The board shown dark. Present only as true: absent is light, the default. */
+  dark?: boolean;
 }
 
 /** Board-wide vs layout-local halves. Local is vars only — palette and whimsy are board-wide by definition. */
@@ -75,6 +77,8 @@ export function splitAppearance(look: Look = {}): SplitLook {
   if (source.whimsy != null) shared.whimsy = source.whimsy;
   if (source.auto === false) shared.auto = false;
   if (source.derived === true && Object.keys(sharedVars).length) shared.derived = true;
+  // Board-wide like the palette: a board is dark in both layouts or in neither.
+  if (source.dark === true) shared.dark = true;
   return { shared, local: { vars: localVars } };
 }
 

@@ -30,7 +30,7 @@
 /* Only when open: unconditional display would override <dialog>'s display:none. */
 #pick[open] { display: grid; gap: 12px; }
 #pick::backdrop {
-  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  background: color-mix(in srgb, var(--shade) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }

@@ -137,16 +137,27 @@
        Kept in sync with look.js by tests/appearance.test.js. AUD-15. */
     var SAFE_VALUE = /^[-a-z0-9#%.,()/+*_'" ]{1,160}$/i;
     var SAFE_FN = /^(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|calc|min|max|clamp|var|cubic-bezier|steps|linear)$/;
-    var vars = s.vars || {};
-    for (var k in vars) {
-      if (!/^--[a-z0-9-]+$/i.test(k)) continue;
-      var v = vars[k];
-      if (typeof v !== 'string' || !SAFE_VALUE.test(v)) continue;
-      var fns = v.match(/[a-z][a-z0-9-]*\s*\(/gi) || [], ok = true;
-      for (var i = 0; i < fns.length; i++) {
-        if (!SAFE_FN.test(fns[i].replace(/\s*\($/, '').toLowerCase())) { ok = false; break; }
+    var put = function (vars) {
+      for (var k in vars) {
+        if (!/^--[a-z0-9-]+$/i.test(k)) continue;
+        var v = vars[k];
+        if (typeof v !== 'string' || !SAFE_VALUE.test(v)) continue;
+        var fns = v.match(/[a-z][a-z0-9-]*\s*\(/gi) || [], ok = true;
+        for (var i = 0; i < fns.length; i++) {
+          if (!SAFE_FN.test(fns[i].replace(/\s*\($/, '').toLowerCase())) { ok = false; break; }
+        }
+        if (ok) document.documentElement.style.setProperty(k, v);
       }
-      if (ok) document.documentElement.style.setProperty(k, v);
+    };
+    put(s.vars || {});
+    /* Dark or light: the board's look says, `dark` present only as true, and
+       only where color-mix() is - the two questions ui/scheme.ts asks once it
+       is up. In the dark the pigments above are painted over by their dark
+       twins, which ui/appearance.ts stores beside the look because working
+       them out takes ui/pigments.ts. */
+    if (s.dark === true && CSS.supports('color', 'color-mix(in srgb, red, blue)')) {
+      document.documentElement.dataset.scheme = 'dark';
+      put(JSON.parse(localStorage.getItem('mbrd.appearance.dark') || '{}') || {});
     }
   } catch (e) {}
 </script>
@@ -188,7 +199,7 @@
          when it started. All counted from the source. -->
     <p class="pn-tally">
       <span>49 releases</span>
-      <span>644 commits</span>
+      <span>645 commits</span>
       <span>since 24 July 2026</span>
     </p>
   </header>
@@ -1508,7 +1519,7 @@
   </ol>
 
   <footer class="pn-foot">
-    <span><span class="wm">mbrd</span> 0.644 by valjdakosta</span>
+    <span><span class="wm">mbrd</span> 0.645 by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>

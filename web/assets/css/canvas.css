@@ -46,6 +46,8 @@
 
 #viewport.is-panning { cursor: grabbing; }
 #viewport.can-pan    { cursor: grab; }
+/* Z held: the zoom box (canvas/input.ts). */
+#viewport.can-zoom   { cursor: zoom-in; }
 /* #viewport captures the pointer, so the cursor must be set here. */
 #viewport.is-moving  { cursor: grabbing; }
 /* Over a connection line. After can-pan so it wins the tie. */
@@ -336,6 +338,12 @@
      across the whole window and this is what stops it at the board's edge. */
   background: color-mix(in srgb, var(--accent) var(--mobile-board-accent), #fff);
   pointer-events: none;
+}
+/* In the dark the sheet is the card stock rather than white, and the surround
+   sinks rather than greys - a light wash over a dark page lifts it. */
+:root[data-scheme="dark"] #mobile-surround { background: color-mix(in srgb, var(--shade) 30%, transparent); }
+:root[data-scheme="dark"] #mobile-board-frame {
+  background: color-mix(in srgb, var(--accent) var(--mobile-board-accent), var(--paper-card));
 }
 :root[data-whimsy="0"] #mobile-board-frame { --mobile-board-accent: 7%; }
 :root[data-whimsy="2"] #mobile-board-frame { --mobile-board-accent: 4.5%; }
@@ -664,14 +672,12 @@
 /* No foot strip: the title card is a name and nothing else. */
 .item[data-type="title"] .item-bar { display: none; }
 
-/* The title card's two pop-up buttons, stacked off the RIGHT edge of the card:
-   the pen on top opens the shared style panel, the T below it drops into inline
-   rename of the board name. canvas/items.ts builds both on the card and leaves
-   them there; they show on hover or while the card is selected (the rule below).
-   Sized and offset in --iz (= 1/zoom) so they hold a constant on-screen size and
-   gap the way the resize grips do. */
-.item-pen,
-.item-rename {
+/* The title card's pop-up button, off the middle of its RIGHT edge: the pen opens
+   the shared style panel. canvas/items.ts builds it on the card and leaves it
+   there; it shows on hover or while the card is selected (the rule below). Sized
+   and offset in --iz (= 1/zoom) so it holds a constant on-screen size and gap the
+   way the resize grips do. */
+.item-pen {
   position: absolute;
   top: 50%;
   left: 100%;
@@ -701,23 +707,10 @@
   pointer-events: none;
   transition: opacity var(--dur-fast) var(--ease);
 }
-/* Straddle the card's mid-line: the pen sits half a button-and-gap above it, the
-   T the same below, so the pair is centred on the card's right edge. Written as
-   the arithmetic it is - half the button plus half the 6px gap - rather than as
-   the 18 that arithmetic came to when the button was 30, so the pair stays
-   centred and stays 6 apart if the token ever moves again. */
-.item-pen { transform: translateY(calc(-50% - (var(--icon-button) + 6px) / 2 * var(--iz, 1))); }
-.item-rename {
-  transform: translateY(calc(-50% + (var(--icon-button) + 6px) / 2 * var(--iz, 1)));
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: calc(16px * var(--iz, 1));
-  line-height: 1;
-}
+/* Centred on the card's mid-line. */
+.item-pen { transform: translateY(-50%); }
 .item[data-type="title"]:hover .item-pen,
-.item[data-type="title"]:hover .item-rename,
-.item[data-type="title"].is-selected .item-pen,
-.item[data-type="title"].is-selected .item-rename {
+.item[data-type="title"].is-selected .item-pen {
   opacity: 1;
   pointer-events: auto;
 }
@@ -776,17 +769,14 @@
 #world:not(.zoom-far) .item[data-type="title"]:hover::after,
 #world:not(.zoom-far) .item[data-type="title"].is-selected::after { pointer-events: auto; }
 @media (hover: hover) {
-  .item-pen:hover,
-  .item-rename:hover { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent-text); }
+  .item-pen:hover { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent-text); }
 }
-.item-pen:focus-visible,
-.item-rename:focus-visible { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent-text); }
+.item-pen:focus-visible { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent-text); }
 .item-pen svg { width: calc(var(--icon-glyph) * var(--iz, 1)); height: calc(var(--icon-glyph) * var(--iz, 1)); }
 /* Gone from the chrome rung (40%) down, with the anchor and pin badges
    (item-chrome.css): that far out they are clutter over a card too small to
    edit. The raise and the bridge above use the same rung. */
-#world.zoom-far .item-pen,
-#world.zoom-far .item-rename { display: none; }
+#world.zoom-far .item-pen { display: none; }
 /* Inline rename in progress: the caret's ring, and pre-wrap so a trailing space
    is typeable - the same treatment #mobile-board-title[contenteditable] gets. */
 .title-name[contenteditable="true"],

@@ -125,7 +125,10 @@ export function liftWithButtonsHeld(
 
 /** The keys that still work while the Timeline plays: they move the view or
  *  close something. See the keydown handler. */
-const VIEW_KEYS = new Set(['0', '1', 'f', 'F', '+', '=', '-', '_', 'Escape']);
+const VIEW_KEYS = new Set(['0', '1', 'f', 'F', '+', '=', '-', '_', 'z', 'Z', 'Home', 'Escape']);
+
+/** Ctrl with one of these is the board's zoom, not the page's - see the keydown handler. */
+const ZOOM_KEYS = new Set(['+', '=', '-', '_', '0']);
 
 /** How long a pause ends a run of nudges. A key held down repeats every 30-50
  *  ms; somebody tapping an arrow to place a card exactly taps well inside a
@@ -140,6 +143,7 @@ const NUDGE_RUN_MS = 1000;
 /** What a press turns out to be — one variant per branch of the cascade. */
 export type PressIntent =
   | { kind: 'widget' }
+  | { kind: 'zoomBox' }
   | { kind: 'pan', middle: boolean }
   | { kind: 'frozen' }
   | { kind: 'resize', id: string }
@@ -159,6 +163,8 @@ export type PressFacts = {
    *  stays a function of its argument alone. */
   additive: boolean;
   spaceDown: boolean;
+  /** Z held on a canvas board: a primary press draws the box to zoom into. */
+  zoomBox?: boolean;
   /** A control inside a card: a scrubber, a button, a note being edited. */
   onWidget: boolean;
   /** A resize handle, after the corner-yield look-through. */
@@ -190,13 +196,15 @@ export type PressFacts = {
 };
 
 /**
- * Nine branches in the handler's order — each step is load-bearing.
+ * Ten branches in the handler's order — each step is load-bearing.
+ * 0 Z zoom box (it only moves the view, so ahead of every claim but a tour's),
  * 1 widget (not with space/middle), 2 frozen tour, 3 space/middle pan,
  * 4 grip resize (single selection only), 5 double-tap marquee,
  * 6 touch tap-gate, 7 card move/locked-pan, 8 modified band, 9 empty.
  */
 export function pressIntent(f: PressFacts): PressIntent {
   const middle = f.button === 1;
+  if (f.zoomBox && f.button === 0 && !f.touring) return { kind: 'zoomBox' };
   // While the Timeline plays, the board changes under the replay and nothing
   // else may change it: every press pans, a control in a card included. Pan,
   // not frozen, because unlike a tour the view is the reader's.
@@ -1094,6 +1102,8 @@ type MarqueeGesture = {
   // `additive` is - startMarquee() is the one place that makes both, off the
   // same shift key - which the type cannot say and applyMarquee() relies on.
   base: string[] | null,
+  // Drawn with Z held: a box to zoom into, which selects nothing - see zoomInto().
+  zoom?: boolean,
 };
 
 /** One item's place and size when the drag began. */
@@ -1273,6 +1283,8 @@ type InputCommands = {
   raise?(): void,
   lower?(): void,
   fenceSelection?(): void,
+  /** Ctrl+Shift+G: ungroup - the fence round the selection taken away. */
+  unfenceSelection?(): void,
   // The tour's two keys, in the shape the three above use: the command answers
   // whether it took the press. See the Escape and arrow cases below.
   tourStop?(): boolean,
@@ -1382,6 +1394,22 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // The Control key, pressed on the keyboard. A pinch sets ctrlKey on its
   // wheel events without one, so this is how readWheel() tells them apart.
   let ctrlDown = false;
+  // Z held: the zoom box is armed, the way Space arms the pan. Cleared on the
+  // keyup and on a blur, as Space is.
+  let zDown = false;
+  /**
+   * A right press on a mouse, which is two gestures until it travels: a drag
+   * pans the board, a click opens the menu. Not part of the gesture, because the
+   * native `contextmenu` that decides the click arrives on the press on macOS
+   * and Linux and after the lift on Windows, so it has to outlive both ends.
+   * `owed` is a menu that arrived on the press and waits for the lift to be
+   * sure it was a click. `hit` is the card under the press, read then because
+   * the capture the press takes can retarget the contextmenu to the viewport.
+   */
+  let rightPress: { pointerId: number, x: number, y: number, hit: string | null,
+    dragged: boolean, owed: boolean } | null = null;
+  /** When a right drag ended, so Windows' contextmenu after its lift is swallowed. */
+  let rightDragAt = 0;
   // Linux/X11 pastes the primary selection on a middle click. A middle *click*
   // here should still paste - that is the platform's paste gesture - but a middle
   // *drag* means "pan", and the paste it fires on release would dump the
@@ -1642,6 +1670,25 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     el.classList.toggle(
       'can-pan', spaceDown && gesture.mode === 'idle' && !cmds.inTour?.(),
     );
+    // Z held: the magnifier, the whole time the box is armed or being drawn.
+    el.classList.toggle('can-zoom', zoomArmed());
+  }
+
+  /** Whether a press now draws a zoom box. Not on the Feed, whose zoom is locked to its width. */
+  const zoomArmed = () => zDown && !spaceDown && !vp.isMobile && !vp.zoomLocked && !cmds.inTour?.();
+
+  /**
+   * The end of a Z press: a box drawn frames that box, and a click zooms in by
+   * two about the point - out with Alt, as every zoom tool since Photoshop's.
+   */
+  function zoomInto(band: MarqueeGesture, clientX: number, clientY: number, out: boolean) {
+    if (drewRectangle(band, vp.zoom)) {
+      const x0 = Math.min(band.x0, band.x1), x1 = Math.max(band.x0, band.x1);
+      const y0 = Math.min(band.y0, band.y1), y1 = Math.max(band.y0, band.y1);
+      vp.fit([{ x: (x0 + x1) / 2, y: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 }], 0, zoomMs());
+    } else {
+      vp.zoomAnimAt(clientX, clientY, out ? 0.5 : 2, zoomMs());
+    }
   }
 
   function startPan(e: PointerEvent) {
@@ -1739,6 +1786,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   }
 
   function applyMarquee(band: MarqueeGesture) {
+    if (band.zoom) return;
     const x0 = Math.min(band.x0, band.x1), x1 = Math.max(band.x0, band.x1);
     const y0 = Math.min(band.y0, band.y1), y1 = Math.max(band.y0, band.y1);
     // The band is a world rectangle, so the spatial index narrows the field to
@@ -2087,6 +2135,25 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // ---- pointer pipeline -------------------------------------------------
 
   el.addEventListener('pointerdown', e => {
+    // A right press on a mouse pans if it travels and is the menu if it does
+    // not - see rightPress. Only from idle: a right button added to a held left
+    // one arrives as a pointermove, not here. Not during a tour, whose view is
+    // the tour's and whose right-click is its own menu, nor in the cleaning
+    // mode, whose right button puts the tool down. Not on a field being typed
+    // in, whose right-click is about its text.
+    if (e.button === 2 && e.pointerType === 'mouse' && gesture.mode === 'idle'
+        && !pointers.size && !cmds.inTour?.() && !cmds.cleanActive?.()
+        && !(e.target instanceof Element && e.target.closest('input, textarea, [contenteditable="true"], [contenteditable="plaintext-only"]'))) {
+      vp.onPress();
+      rightDragAt = 0;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      rightPress = {
+        pointerId: e.pointerId, x: e.clientX, y: e.clientY,
+        hit: itemIdFromEvent(e.target instanceof Element ? e.target : null), dragged: false, owed: false,
+      };
+      capturePointerSafely(el, e.pointerId);
+      return;
+    }
     // Right/aux: leave alone. Pen as well as mouse, which it did not used to be.
     // A stylus barrel button arrives as `button === 2` with `pointerType ===
     // 'pen'`, fell through this line, took capture, selected the card and
@@ -2208,15 +2275,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       pointers.delete(e.pointerId);
       return;
     }
-    // The title card's T button, caught the same way: it drops into inline rename
-    // of the board name and claims the press, so the card neither drags nor
-    // deselects underneath it.
-    if (!viewOnly && target?.closest('.item-rename')) {
-      cmds.editTitleText?.();
-      pointers.delete(e.pointerId);
-      return;
-    }
-    // Double-tap the title card itself → edit its name, the same as its T button.
+    // Double-tap the title card itself → edit its name.
     // A second press within the double-tap window that has not wandered claims the
     // gesture: no capture, no move, just the editor. The first press falls through
     // and selects as usual, recording itself for the second to match against.
@@ -2284,6 +2343,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // for exactly that reason.
       additive: e.shiftKey || e.ctrlKey || e.metaKey || isMultiSelect(),
       spaceDown,
+      zoomBox: zoomArmed() && e.pointerType !== 'touch',
       onWidget: !!widget,
       onGrip: !!grip,
       onCard: id,
@@ -2341,7 +2401,17 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // the one branch below that disagrees says so itself, by marking one again.
     cmds.clearActiveConnection?.();
 
-    if (intent.kind === 'frozen') {
+    if (intent.kind === 'zoomBox') {
+      // The band drawn as a box to zoom into rather than a selection: it picks
+      // nothing up and puts nothing down. zoomInto() acts on the lift.
+      e.preventDefault();
+      const p = vp.toWorld(e.clientX, e.clientY);
+      const band = enter('marquee', {
+        x0: p.x, y0: p.y, x1: p.x, y1: p.y, additive: false, base: null, zoom: true,
+      });
+      marquee.hidden = false;
+      drawMarquee(band);
+    } else if (intent.kind === 'frozen') {
       // A tour is running and this press does nothing - see pressIntent(). Not
       // an early return: the pointer is captured above so that the lift reaches
       // this module (that lift is what walks the tour on - see tourClick), and
@@ -2595,6 +2665,15 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       cancelPress();
       if (e.pointerType === 'touch') taps.lastEmpty = null;
     }
+    // A right press that travels is a pan from here on, and the menu it would
+    // have been is not owed any more.
+    if (rightPress?.pointerId === e.pointerId && !rightPress.dragged
+        && Math.hypot(e.clientX - rightPress.x, e.clientY - rightPress.y) > DRAG_SLOP) {
+      rightPress.dragged = true;
+      rightPress.owed = false;
+      enter('pan', { lastX: rightPress.x, lastY: rightPress.y });
+      el.classList.add('is-panning');
+    }
     if (gesture.mode === 'idle') return;
 
     // The branches are the modes, in the order they were always tested in. The
@@ -2660,7 +2739,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       return;
     }
 
-    track(e.clientX, e.clientY, e.shiftKey);
+    track(e.clientX, e.clientY, e.shiftKey, e.altKey);
     followEdge(e);
   });
 
@@ -2670,7 +2749,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    * the edge loop can run it again at a still pointer while the board pans
    * under it - see followEdge().
    */
-  function track(clientX: number, clientY: number, shiftKey: boolean) {
+  function track(clientX: number, clientY: number, shiftKey: boolean, altKey = false) {
     if (gesture.mode === 'marquee') {
       const p = vp.toWorld(clientX, clientY);
       gesture.x1 = p.x; gesture.y1 = p.y;
@@ -2789,11 +2868,18 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // XOR: shift inverts the default - except on a picture, which is always held.
       const picture = isPicture(it);
       const locked = picture || grip.lockAspect !== shiftKey;
+      // Alt: from the centre, as in every drawing program - the far side moves
+      // as far as the one in the hand, so the size changes by twice the travel
+      // and the centre stays put. Off the lattice, which a fixed centre cannot
+      // land both edges on.
+      const centred = altKey;
+      const snap = grip.snap && !centred;
+      const reach = centred ? 2 : 1;
       // A held proportion reads the pointer unsnapped and lands on the lattice
       // once, at the end of its branch: sides snapped first are steps, and the
       // proportion built from steps jumps a cell at a time.
-      let w = resizeAxis(signX, grip.box.x, grip.box.w, dx, grip.snap && !locked);
-      let h = resizeAxis(signY, grip.box.y, grip.box.h, dy, grip.snap && !locked);
+      let w = resizeAxis(signX, grip.box.x, grip.box.w, dx * reach, snap && !locked);
+      let h = resizeAxis(signY, grip.box.y, grip.box.h, dy * reach, snap && !locked);
       // Apply the card and carry its stuck notes with it. Each note is placed at
       // the fraction of the card it held when the drag began (grip.box is that
       // start box), so a note near a moving edge is dragged along by that edge and
@@ -2858,7 +2944,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // allow - within half a cell of the picture's own - and the grid wins
         // the remainder. Snapping is off most of the time and this does
         // nothing then; the proportion is exact again the moment it is.
-        if (grip.snap) {
+        if (snap) {
           // A picture takes the nearby cells nearest its shape rather than each
           // side's own nearest (latticePicture in geometry.ts).
           const step = stepNow();
@@ -2948,11 +3034,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // The opposite edge stays put, so the centre shifts by half the growth -
       // and on the axis an edge handle doesn't touch, signY is 0 and the item
       // grows symmetrically about its centre, which is what an aspect-locked
-      // side drag should do.
+      // side drag should do. From the centre, both edges move and it stays.
+      const shift = centred ? 0 : 1;
       applyResize({
         id: grip.id,
-        x: grip.box.x + signX * (w - grip.box.w) / 2,
-        y: grip.box.y + signY * (h - grip.box.h) / 2,
+        x: grip.box.x + shift * signX * (w - grip.box.w) / 2,
+        y: grip.box.y + shift * signY * (h - grip.box.h) / 2,
         // A sticker grown past the size a card may lean at lies flat, as the
         // card does, and takes its own angle back if it comes inside again.
         w, h, rot: leanAtSize({ ...it, w, h }, grip.box.rot ?? it.rot), z: it.z,
@@ -2965,16 +3052,16 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // the still pointer, so what is carried stays under it. Started once the drag
   // is under way with one pointer down, and stopped in releaseGesture(), the one
   // way back to idle.
-  let lastDrag: { x: number, y: number, shift: boolean } | null = null;
+  let lastDrag: { x: number, y: number, shift: boolean, alt: boolean } | null = null;
   let stopEdge: (() => void) | null = null;
   function followEdge(e: PointerEvent) {
-    lastDrag = { x: e.clientX, y: e.clientY, shift: e.shiftKey };
+    lastDrag = { x: e.clientX, y: e.clientY, shift: e.shiftKey, alt: e.altKey };
     if (stopEdge || pointers.size !== 1) return;
     if (gesture.mode !== 'marquee' && gesture.mode !== 'resize'
       && !(gesture.mode === 'move' && gesture.moved)) return;
     stopEdge = startEdgePan(vp, {
       point: () => lastDrag,
-      onPan: () => { if (lastDrag) track(lastDrag.x, lastDrag.y, lastDrag.shift); },
+      onPan: () => { if (lastDrag) track(lastDrag.x, lastDrag.y, lastDrag.shift, lastDrag.alt); },
     });
   }
 
@@ -2995,6 +3082,15 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // on the right or an aux button reports that button on the last release, and
     // skipping it left the card following a cursor with no button held.
     if (liftWithButtonsHeld(e)) return;
+    // A right press: a drag was a pan, and ends as one below; a click opens
+    // the menu that a contextmenu on the press left owed (macOS, Linux). On
+    // Windows the contextmenu follows this lift - see that listener.
+    if (rightPress?.pointerId === e.pointerId) {
+      const press = rightPress;
+      rightPress = null;
+      if (press.dragged) rightDragAt = performance.now();
+      else if (press.owed && e.type === 'pointerup') openMenuAt(press.x, press.y, press.hit);
+    }
     // Whether this pointer is one the pipeline was tracking. Read before the
     // delete below, because that is what the answer is about.
     //
@@ -3150,7 +3246,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // system taking the gesture away, and answering a question nobody finished
     // asking is worse than not offering. cmds owns whether there is anything
     // worth offering; all this knows is that a rectangle was drawn.
-    const banded = e.type === 'pointerup' && gesture.mode === 'marquee'
+    // A Z box is a zoom and never a fence.
+    const zoomed = e.type === 'pointerup' && gesture.mode === 'marquee' && gesture.zoom
+      ? gesture
+      : null;
+    const banded = e.type === 'pointerup' && gesture.mode === 'marquee' && !gesture.zoom
         && drewRectangle(gesture, vp.zoom)
       ? {
         x0: Math.min(gesture.x0, gesture.x1), y0: Math.min(gesture.y0, gesture.y1),
@@ -3160,6 +3260,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     finishGesture();
     if (unpick) deselect(unpick);
     if (banded) cmds.fencePrompt(e.clientX, e.clientY, banded);
+    if (zoomed) zoomInto(zoomed, e.clientX, e.clientY, e.altKey);
     if (thrown) vp.glide(thrown.vx, thrown.vy);
     if (tap) taps.lastEmpty = tap;
     setPanCursor();
@@ -3223,7 +3324,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // Nothing while the band is being dragged, and nothing when it closes on
       // empty board: a marquee that selected nothing is a click on the
       // background, and the app has no news for that.
-      if (gesture.mode === 'marquee' && selection.size) cue('sweep');
+      if (gesture.mode === 'marquee' && !gesture.zoom && selection.size) cue('sweep');
     } else if (gesture.mode === 'move' || gesture.mode === 'resize') {
       // Put it back, which is what "abort" has always said and never done.
       //
@@ -3333,7 +3434,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   function cancelGesture() {
     const g = gesture;
     if (g.mode !== 'move' && g.mode !== 'resize' && g.mode !== 'marquee' && g.mode !== 'press') return false;
-    const base = g.mode === 'marquee' ? g.base ?? [] : null;
+    // A zoom box selected nothing, so there is nothing to hand back.
+    const base = g.mode === 'marquee' && !g.zoom ? g.base ?? [] : null;
     abortGesture();
     if (base) select(base);
     return true;
@@ -3559,7 +3661,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     const mod = e.ctrlKey || e.metaKey;
     // While the Timeline plays only the keys that move the view, Escape, and
     // Ctrl+S, which saves the board as it stands in the replay.
-    if (timelinePlaying() && (mod ? e.key.toLowerCase() !== 's' : !(VIEW_KEYS.has(e.key) || e.code === 'Space'))) return;
+    if (timelinePlaying() && (mod
+      ? !(e.key.toLowerCase() === 's' || ZOOM_KEYS.has(e.key))
+      : !(VIEW_KEYS.has(e.key) || e.code === 'Space'))) return;
 
     // The konami code, one key at a time. The matcher is pure and lives in
     // ui/clean/, which this module may not import - so it is reached through
@@ -3615,10 +3719,22 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); cmds.open(); return; }
     // Ctrl+G: group, in every editor that has groups - a fence round the
     // selection, which is this board's word for one. The browser's own Ctrl+G
-    // (find next) has nothing to find on a board.
+    // (find next) has nothing to find on a board. Ctrl+Shift+G ungroups.
     if (mod && e.key.toLowerCase() === 'g' && !onlyLooking()) {
       e.preventDefault();
-      if (selection.size) cmds.fenceSelection?.();
+      if (!selection.size) return;
+      if (e.shiftKey) cmds.unfenceSelection?.();
+      else cmds.fenceSelection?.();
+      return;
+    }
+    // Ctrl with + - 0: the board's zoom, as in every canvas editor, and not the
+    // page's - the same steps as + and - alone, and 100% as 1 is. The Feed keeps
+    // the browser's, having no zoom of its own. Not with Alt, which with Ctrl is
+    // AltGr on half the keyboards in Europe.
+    if (mod && !e.altKey && ZOOM_KEYS.has(e.key) && !vp.isMobile) {
+      e.preventDefault();
+      if (e.key === '0') cmds.zoomActual?.();
+      else vp.zoomBy(e.key === '+' || e.key === '=' ? 1.25 : 1 / 1.25, zoomMs());
       return;
     }
     if (mod) return;
@@ -3698,8 +3814,16 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         e.preventDefault();
         menuFromKeys();
         break;
-      case '0': cmds.recenter(); break;
+      // Home is this board's word for the middle at 100%, so the key goes there too.
+      case '0': case 'Home': cmds.recenter(); e.preventDefault(); break;
       case '1': cmds.zoomActual?.(); break;
+      // Held, the zoom box: a drag frames the box, a click zooms in, Alt+click
+      // out. Armed as Space is, and let go on the keyup or a blur.
+      case 'z': case 'Z':
+        zDown = true;
+        setPanCursor();
+        e.preventDefault();
+        break;
       // Shift+F frames what is selected; F, and Shift+F with nothing selected,
       // the whole board.
       case 'f': case 'F':
@@ -3756,12 +3880,15 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     if (e.code === 'Space') cmds.cleanSpace?.(false);
     if (e.code === 'Space') { spaceDown = false; setPanCursor(); }
     if (e.key === 'Control') ctrlDown = false;
+    // By the code as well as the key: let go with Alt held, a Mac reports the
+    // key as an Ω.
+    if (e.code === 'KeyZ' || e.key.toLowerCase() === 'z') { zDown = false; setPanCursor(); }
   });
   // A blur (alt-tab) never delivers the keyup, which would leave pan mode stuck.
   // A pointercancel likewise reports no button, so the middle-button guard is
   // cleared here too rather than trusting the lift to carry it.
   addEventListener('blur', () => {
-    spaceDown = false; ctrlDown = false; midPaste.down = false; setPanCursor();
+    spaceDown = false; ctrlDown = false; zDown = false; midPaste.down = false; setPanCursor();
     // The cleaning mode keeps its own Space, fed from the keyup above.
     cmds.cleanSpace?.(false);
   });
@@ -3859,6 +3986,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   }
   let swallowNativeMenu = false;
   addEventListener('contextmenu', e => {
+    // The one Windows sends after a right drag's lift, at wherever it ended -
+    // over the sidebar too, where the board's listener would never see it.
+    if (rightDragAt && performance.now() - rightDragAt < 500) {
+      rightDragAt = 0;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
     if (!swallowNativeMenu) return;
     swallowNativeMenu = false;
     e.preventDefault();
@@ -3964,6 +4099,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // and the browser's menu can't express any of them.
   el.addEventListener('contextmenu', e => {
     e.preventDefault();
+    // A right press still down (macOS, Linux): whether it was a click is the
+    // lift's to say, so the menu is owed rather than opened - see rightPress.
+    if (rightPress) {
+      if (!rightPress.dragged) rightPress.owed = true;
+      return;
+    }
     // Read before cancelPress() takes it away. `hold.at` is set on a touch press
     // and on no other, so it is this listener's only way of telling the engines
     // that synthesize a contextmenu out of a long press from a right-click on a

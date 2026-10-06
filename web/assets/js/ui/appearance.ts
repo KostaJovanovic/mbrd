@@ -9,7 +9,8 @@ import { whimsyControlsSnap, AXIS_TOKENS } from '../layout-settings.ts';
 import { DEFAULT_PALETTE_SOURCES } from '../board-schema.ts';
 import { readToken, toHex } from '../util.ts';
 import { readPrefJSON, writePref } from '../prefs.ts';
-import { paletteFromAccent, PALETTE_TOKENS } from './pigments.ts';
+import { paletteFromAccent, darkSheet, PALETTE_TOKENS } from './pigments.ts';
+import { markScheme, isDarkShown, setDarkHandler } from './scheme.ts';
 // Dynamic, the palette from the board's pictures, lives there and borrows the
 // look through initPicturePalette(), as the panel borrows it below.
 import {
@@ -33,6 +34,8 @@ import type { ControlSpec, Look } from './appearance-controls.ts';
 export { WHIMSY };
 
 const STORE_KEY = 'mbrd.appearance';
+/** The dark twin of the stored pigments, for the pre-paint script, which cannot work it out. */
+const DARK_KEY = 'mbrd.appearance.dark';
 
 const HARSH = 2;
 
@@ -110,6 +113,7 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
   const fromBoard = board.settings.appearance;
   current = hasLook(fromBoard) ? cloneLook(fromBoard) : stored;
   fromPrefs = !hasLook(fromBoard);
+  setDarkHandler(setDark);
   apply(current);
 
   buildControls();
@@ -171,6 +175,18 @@ export function setWhimsy(level: number | string) {
   settleWhimsy();
 }
 
+/** Dark or light, the board's own and one Timeline step, as the palette is. */
+function setDark(on: boolean) {
+  if ((current.dark === true) === on) return;
+  const from = cloneLook(current);
+  if (on) current.dark = true;
+  else delete current.dark;
+  apply(current);
+  persist();
+  syncControls();
+  commitAppearance(cloneLook(current), from);
+}
+
 /** The look before the whimsy slider in hand moved, or null between drags. */
 let whimsyFrom: Look | null = null;
 
@@ -230,6 +246,7 @@ function reshade() {
     root.style.setProperty(key, value);
     applied.add(key);
   }
+  paintScheme();
   paintThemeColour();
   persist();
   followFade();
@@ -252,6 +269,7 @@ export function setPigments(vars: Record<string, string>) {
   }
   // Mark as machine-derived only if something was actually written.
   if (Object.keys(clean).length) current.derived = true;
+  paintScheme();
   paintThemeColour();
   persist();
   syncControls();
@@ -411,6 +429,7 @@ function dropPigments() {
     root.style.removeProperty(key);
   }
   delete current.derived;
+  darkShown = {};
   paintThemeColour();
   followFade();
   return true;
@@ -483,6 +502,9 @@ function apply(look: Look) {
     root.style.setProperty(key, value);
   }
   applied = new Set(Object.keys(vars));
+  // Before the pigments: paintScheme() asks the page which one it is.
+  markScheme(look.dark === true);
+  paintScheme();
   paintThemeColour();
   markDisplayFace();
   // Polyfill colour mixes for WebKit < 16.2.
@@ -514,16 +536,42 @@ let prefTimer = 0;
 
 // Write the look to localStorage. soon=true throttles (for mid-drag calls).
 function storeLook(soon: boolean) {
+  const write = () => {
+    writePref(STORE_KEY, JSON.stringify(current));
+    writePref(DARK_KEY, JSON.stringify(darkShown));
+  };
   if (!soon) {
     if (prefTimer) { clearTimeout(prefTimer); prefTimer = 0; }
-    writePref(STORE_KEY, JSON.stringify(current));
+    write();
     return;
   }
   if (prefTimer) return;
   prefTimer = setTimeout(() => {
     prefTimer = 0;
-    writePref(STORE_KEY, JSON.stringify(current));
+    write();
   }, PREF_MS);
+}
+
+/** What paintScheme() last put on screen in the dark, and nothing in the light. */
+let darkShown: Record<string, string> = {};
+
+/**
+ * The look's pigments as the screen wears them: as they are, or in the dark
+ * their twin from darkSheet(). The look itself stays light - it is what the
+ * board saves, with `dark` beside them - so this runs after every write of a
+ * pigment and on every flip. A pigment darkSheet() cannot read comes off, and
+ * the stylesheet's dark palette (tokens.css, 3c) shows under it.
+ */
+function paintScheme() {
+  const pigments: Record<string, string> = {};
+  for (const key of PALETTE_TOKENS) if (current.vars[key]) pigments[key] = current.vars[key];
+  const dark = isDarkShown();
+  darkShown = dark && Object.keys(pigments).length ? darkSheet(pigments, current.whimsy) : {};
+  for (const [key, value] of Object.entries(pigments)) {
+    const shown = dark ? darkShown[key] : value;
+    if (shown) root.style.setProperty(key, shown);
+    else root.style.removeProperty(key);
+  }
 }
 
 /** Write a pending preference now. The tab is going away. */
@@ -570,6 +618,7 @@ function setVar(name: string, value: string) {
     delete current.vars[name];
     root.style.removeProperty(name);
     applied.delete(name);
+    if (pigment) paintScheme();
     persist();
     if (pigment) syncPaletteMode();
     if (refitFace) refitEmbedMarks();
@@ -597,6 +646,7 @@ function setVar(name: string, value: string) {
   current.vars[name] = value;
   root.style.setProperty(name, value);
   applied.add(name);
+  if (pigment) paintScheme();
   // The paper moved, so the installed-PWA title bar did too. No syncControls()
   // to go with it, deliberately: a slider calls this on every input, and the
   // only control whose value changed is the one under the pointer. Nothing

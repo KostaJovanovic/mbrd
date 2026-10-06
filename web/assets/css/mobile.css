@@ -67,6 +67,8 @@
   background: color-mix(in srgb, var(--accent) 6%, #fff);
   box-shadow: var(--shadow-1);
 }
+/* The card stock rather than white in the dark, as the Canvas's phone sheet. */
+:root[data-scheme="dark"] .feed-sheet { background: color-mix(in srgb, var(--accent) 6%, var(--paper-card)); }
 
 /* On a phone the Feed's sheet is the width of the screen, with square corners,
    and the cards stand one card gap (GAP in ui/feed.ts) from its edges. Its top
@@ -152,8 +154,8 @@
    with flat tiles and made the Card shadows switch do nothing here. The third
    :not() is Light before ui/quality.ts has written the flags (tokens.css). */
 :root:not([data-q-shadows="off"], [data-whimsy="2"], [data-quality="light"]:not([data-q-shadows])) .feed-tile {
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent),
-              0 4px 12px -2px color-mix(in srgb, var(--ink) 24%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shade) 12%, transparent),
+              0 4px 12px -2px color-mix(in srgb, var(--shade) 24%, transparent);
 }
 /* A fence's name across the wall, over its cards (feedRuns() in ui/feed.ts).
    The caption rule of the fence on the canvas (fences.css), laid flat. */

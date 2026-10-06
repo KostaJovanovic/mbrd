@@ -275,7 +275,7 @@ function build(api: ChromeBridge): void {
 
 // One origin with the board, so a look change there raises a storage event here.
 addEventListener('storage', e => {
-  if (!e.key || e.key === 'mbrd.appearance' || e.key === 'mbrd.quality') applyLook();
+  if (!e.key || /^mbrd\.(appearance|appearance\.dark|quality)$/.test(e.key)) applyLook();
 });
 
 if (bridge) build(bridge);

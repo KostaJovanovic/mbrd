@@ -80,9 +80,12 @@
   /* Never grey - and never one fixed brown either. Mixed out of this palette's
      own ink, so a teal board casts a teal-grey shadow rather than a warm one
      borrowed from Papyrus. A grey drop shadow on warm paper is the single most
-     generic-web-app thing you can do; a brown one on a green board is worse. */
-  --item-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 11%, transparent),
-                 0 10px 22px -10px color-mix(in srgb, var(--ink) 34%, transparent);
+     generic-web-app thing you can do; a brown one on a green board is worse.
+     Through --shade, which is this ink in the light and black in the dark (3c),
+     where a shadow mixed from light print would be a glow. */
+  --shade: var(--ink);
+  --item-shadow: 0 1px 1px color-mix(in srgb, var(--shade) 11%, transparent),
+                 0 10px 22px -10px color-mix(in srgb, var(--shade) 34%, transparent);
   /* How much the interface reacts to being touched. Drag/tilt are zero at this
      middle - nothing leans on its own - but the hover carries a softer version
      of Softish's spring: 60% of its lift and grow, enough to say "this is the
@@ -174,9 +177,9 @@
   --note-radius: calc(var(--radius) * 0.42);
   /* Tight and close: a sticky is pressed flat to the board, not floating over
      it like the framed items are. */
-  --note-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 17%, transparent),
-                 0 5px 9px -5px color-mix(in srgb, var(--ink) 32%, transparent),
-                 0 13px 16px -13px color-mix(in srgb, var(--ink) 28%, transparent);
+  --note-shadow: 0 1px 1px color-mix(in srgb, var(--shade) 17%, transparent),
+                 0 5px 9px -5px color-mix(in srgb, var(--shade) 32%, transparent),
+                 0 13px 16px -13px color-mix(in srgb, var(--shade) 28%, transparent);
 
   /* ---- stickers ----
      Eight inks, every one mixed out of this palette's own pigment - the same
@@ -334,8 +337,8 @@
   --sidebar-w: 322px;
   --hairline:  1px;
 
-  --shadow-1: 0 1px 2px color-mix(in srgb, var(--ink) 14%, transparent);
-  --shadow-2: 0 18px 44px -18px color-mix(in srgb, var(--ink) 46%, transparent);
+  --shadow-1: 0 1px 2px color-mix(in srgb, var(--shade) 14%, transparent);
+  --shadow-2: 0 18px 44px -18px color-mix(in srgb, var(--shade) 46%, transparent);
 
   /* ---- type ----
      Two voices, and this level is the only one that has two.
@@ -963,13 +966,13 @@
      the lift does not move, so the wide offset showed as a card, not a shadow.
      Middle's tighter throw (10px, 34%) stays under the lifted card as a shadow -
      the hover lift keeps its spring without exposing a twin. */
-  --item-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 11%, transparent),
-                 0 10px 22px -10px color-mix(in srgb, var(--ink) 34%, transparent);
-  --note-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 17%, transparent),
-                 0 5px 9px -5px color-mix(in srgb, var(--ink) 32%, transparent),
-                 0 13px 16px -13px color-mix(in srgb, var(--ink) 28%, transparent);
-  --shadow-1: 0 2px 3px color-mix(in srgb, var(--ink) 16%, transparent);
-  --shadow-2: 0 24px 56px -20px color-mix(in srgb, var(--ink) 52%, transparent);
+  --item-shadow: 0 1px 1px color-mix(in srgb, var(--shade) 11%, transparent),
+                 0 10px 22px -10px color-mix(in srgb, var(--shade) 34%, transparent);
+  --note-shadow: 0 1px 1px color-mix(in srgb, var(--shade) 17%, transparent),
+                 0 5px 9px -5px color-mix(in srgb, var(--shade) 32%, transparent),
+                 0 13px 16px -13px color-mix(in srgb, var(--shade) 28%, transparent);
+  --shadow-1: 0 2px 3px color-mix(in srgb, var(--shade) 16%, transparent);
+  --shadow-2: 0 24px 56px -20px color-mix(in srgb, var(--shade) 52%, transparent);
 
   /* Everything rises to meet the pointer and swings when you pick it up. */
   --lift-hover: -6px;
@@ -1081,7 +1084,7 @@
   --ghost-weight: 1.5px;
   --note-shadow: none;
   --shadow-1: none;
-  --shadow-2: 0 8px 28px color-mix(in srgb, var(--ink) 18%, transparent);
+  --shadow-2: 0 8px 28px color-mix(in srgb, var(--shade) 18%, transparent);
 
   /* Nothing moves on its own. */
   --lift-hover: 0px;
@@ -1430,6 +1433,303 @@
   --leafy:       #f0b200;
   --accent-fg:   var(--ink);
   --accent-text: #00a296;
+}
+
+/* =========================================================
+   3c. The dark sheet.
+
+   A third attribute beside the two axes, and not a fourth palette: every
+   palette at every tier has a dark twin, and :root[data-scheme="dark"] is how
+   the page asks for it. It is this device's choice and never the board's -
+   ui/scheme.ts keeps it, the pre-paint script in index.html sets it, and a
+   board saved in the dark carries its light colours and opens light anywhere
+   the screen is light.
+
+   Every twin below comes out of one transform, darkSheet() in ui/pigments.ts,
+   which is also what a Dynamic or hand-picked palette is painted through in
+   the dark, so the four here and an extracted one are dark by the same rules.
+   The ramp is mirrored rather than inverted - each token keeps how far it sat
+   from paper towards ink, so a well is still a step off the sheet - except
+   the card, which rises above the sheet instead of sinking under it. At the
+   middle the four sheets are told apart the way the light ones are told apart
+   by their print: Orca's night is the deepest, Tea rose's the softest, and each
+   carries a little more of its own hue than its light sheet does. Pigments
+   keep their hue and their place against the gamut wall, and rise until the
+   accent reads as words, then on towards where the hue is most vivid - the
+   accent a step above the two other voices, so the three stay apart.
+
+   Printed by tools/gen-dark-palettes.mjs, pasted, and free to be tuned by eye
+   as 3b is; tests/dark.test.js holds the contrast floors, not the bytes.
+
+   Specificity does the layering, one step above each light block it mirrors:
+   (0,2,0) Papyrus at the middle, (0,3,0) a palette at the middle or Papyrus at
+   an end, (0,4,0) a palette at an end. Literals throughout, Harsh's sheet
+   included - the dark Harsh is a sheet of its own and not one mixed out of
+   the accent - so nothing here needs section 7, which never sees the dark:
+   ui/scheme.ts offers it only where color-mix() exists.
+   ========================================================= */
+
+:root[data-scheme="dark"] {
+  /* Native controls and scrollbars with it. */
+  color-scheme: dark;
+  /* What a shadow is mixed from. Ink in the light, because a shadow there is
+     the print's own colour thinned out; in the dark the print is light, and a
+     shadow mixed from it is a glow. */
+  --shade: #000;
+  /* A flat sheet: no blooms and no vignette. Pigment washed into a dark ground
+     reads as a stain, and shading the corners of something already dark only
+     makes it murky. The grain stays. Later than the tier blocks, at the same
+     specificity, so this wins at all three. */
+  --wash: 0;
+  --vignette: 0;
+  /* The light red sinks into the dark sheet. */
+  --danger: color-mix(in srgb, #f0605a 85%, var(--ink));
+  /* The note tints, thinner. A third of a pigment into white is a pale sheet;
+     into near-black it is a mid-tone at full colour, the loudest thing on the
+     board, and a fence wears the same tint across its whole region. */
+  --note-1: color-mix(in srgb, var(--accent-warm) 16%, var(--paper-card));
+  --note-2: color-mix(in srgb, var(--accent) 12%, var(--paper-card));
+  --note-3: color-mix(in srgb, var(--leafy) 16%, var(--paper-card));
+  --note-4: color-mix(in srgb, var(--accent-warm) 8%, var(--paper-2));
+}
+
+/* Softish's notes are coloured paper, and a pastel mixed into a dark card in
+   srgb comes out grey - the olive one a mud. Mixed in oklab they keep their
+   colour, a little heavier, and read as slips of paper again. */
+:root[data-scheme="dark"][data-whimsy="0"] {
+  --note-1: color-mix(in oklab, var(--accent-warm) 24%, var(--paper-card));
+  --note-2: color-mix(in oklab, var(--accent) 20%, var(--paper-card));
+  --note-3: color-mix(in oklab, var(--leafy) 22%, var(--paper-card));
+  --note-4: color-mix(in oklab, var(--accent-warm) 10%, var(--paper-2));
+}
+
+/* Harsh mixes its notes into white, which is the one sheet it does not have here.
+   And it draws every edge in full ink, which on white is a fine black line and
+   on black a glaring white one: in the dark its edges take --rule-2, a line
+   darkSheet() stops short of the print. */
+:root[data-scheme="dark"][data-whimsy="2"] {
+  --item-border: var(--rule-2);
+  --ghost-edge:  var(--rule-2);
+  --note-1: color-mix(in srgb, var(--accent-warm) 15%, var(--paper-card));
+  --note-2: color-mix(in srgb, var(--accent) 12%, var(--paper-card));
+  --note-3: color-mix(in srgb, var(--leafy) 14%, var(--paper-card));
+  --note-4: color-mix(in srgb, var(--ink) 7%, var(--paper-card));
+}
+
+:root[data-scheme="dark"] {
+  --paper:       #211914;
+  --paper-2:     #322b24;
+  --paper-3:     #423a33;
+  --paper-card:  #2c241e;
+  --ink:         #f4e5d7;
+  --ink-2:       #cfbcaa;
+  --ink-3:       #a38f7d;
+  --rule:        #372f29;
+  --rule-2:      #4e463f;
+  --accent:      #ff7023;
+  --accent-warm: #e89100;
+  --accent-deep: #ffa57f;
+  --leafy:       #789a34;
+  --accent-fg:   #130c07;
+  --accent-text: #ff7023;
+}
+
+:root[data-scheme="dark"][data-palette="absinthe"] {
+  --paper:       #181912;
+  --paper-2:     #2a2b22;
+  --paper-3:     #393b31;
+  --paper-card:  #23241c;
+  --ink:         #e2ecda;
+  --ink-2:       #b9c4ae;
+  --ink-3:       #8e9982;
+  --rule:        #2e3027;
+  --rule-2:      #44463c;
+  --accent:      #98b300;
+  --accent-warm: #b5ad00;
+  --accent-deep: #b7ce6a;
+  --leafy:       #b4812b;
+  --accent-fg:   #0b0c06;
+  --accent-text: #98b300;
+}
+
+:root[data-scheme="dark"][data-palette="tearose"] {
+  --paper:       #251c1b;
+  --paper-2:     #382e2c;
+  --paper-3:     #493e3c;
+  --paper-card:  #302725;
+  --ink:         #f9e2e1;
+  --ink-2:       #d3b7b7;
+  --ink-3:       #9c8e8e;
+  --rule:        #3b302e;
+  --rule-2:      #554948;
+  --accent:      #f83d57;
+  --accent-warm: #ff7873;
+  --accent-deep: #ff7e84;
+  --leafy:       #839727;
+  --accent-fg:   #170f0d;
+  --accent-text: #f83d57;
+}
+
+:root[data-scheme="dark"][data-palette="orca"] {
+  --paper:       #0c1615;
+  --paper-2:     #1d2827;
+  --paper-3:     #2c3735;
+  --paper-card:  #17201f;
+  --ink:         #d5eeec;
+  --ink-2:       #aac8c7;
+  --ink-3:       #7f9e9b;
+  --rule:        #232f2d;
+  --rule-2:      #384442;
+  --accent:      #00beb0;
+  --accent-warm: #d99a12;
+  --accent-deep: #73d6cc;
+  --leafy:       #ad8531;
+  --accent-fg:   #030908;
+  --accent-text: #00beb0;
+}
+
+:root[data-scheme="dark"][data-whimsy="0"] {
+  --paper:       #2a1d16;
+  --paper-2:     #3c3027;
+  --paper-3:     #4b3f34;
+  --paper-card:  #352820;
+  --ink:         #ffe2c6;
+  --ink-2:       #e2c09e;
+  --ink-3:       #b39272;
+  --rule:        #3f3329;
+  --rule-2:      #554a3e;
+  --accent:      #ff8146;
+  --accent-warm: #eba95e;
+  --accent-deep: #ffb292;
+  --leafy:       #9db677;
+  --accent-fg:   #1b1008;
+  --accent-text: #ff8146;
+}
+
+:root[data-scheme="dark"][data-whimsy="0"][data-palette="absinthe"] {
+  --paper:       #202214;
+  --paper-2:     #323425;
+  --paper-3:     #414335;
+  --paper-card:  #2b2d1f;
+  --ink:         #daf1c7;
+  --ink-2:       #bdd0a7;
+  --ink-3:       #90a47c;
+  --rule:        #36382a;
+  --rule-2:      #4a4d3e;
+  --accent:      #a2b36c;
+  --accent-warm: #c2bd5f;
+  --accent-deep: #c1cf99;
+  --leafy:       #c8a673;
+  --accent-fg:   #121407;
+  --accent-text: #a2b36c;
+}
+
+:root[data-scheme="dark"][data-whimsy="0"][data-palette="tearose"] {
+  --paper:       #2b1c1a;
+  --paper-2:     #3f2f2c;
+  --paper-3:     #51403d;
+  --paper-card:  #362724;
+  --ink:         #ffdfde;
+  --ink-2:       #ebb7b7;
+  --ink-3:       #b98889;
+  --rule:        #433330;
+  --rule-2:      #5c4a49;
+  --accent:      #f18689;
+  --accent-warm: #fe9791;
+  --accent-deep: #ffafaf;
+  --leafy:       #a5b472;
+  --accent-fg:   #1c0f0c;
+  --accent-text: #f18689;
+}
+
+:root[data-scheme="dark"][data-whimsy="0"][data-palette="orca"] {
+  --paper:       #132422;
+  --paper-2:     #243735;
+  --paper-3:     #334642;
+  --paper-card:  #1e2f2c;
+  --ink:         #c7f2f0;
+  --ink-2:       #9cd7d5;
+  --ink-3:       #73aca9;
+  --rule:        #273a37;
+  --rule-2:      #3c4f4b;
+  --accent:      #73b9b0;
+  --accent-warm: #dfaf61;
+  --accent-deep: #a0d4cd;
+  --leafy:       #c3a875;
+  --accent-fg:   #051614;
+  --accent-text: #73b9b0;
+}
+
+:root[data-scheme="dark"][data-whimsy="2"] {
+  --paper:       #150f0c;
+  --paper-2:     #25201b;
+  --paper-3:     #342d29;
+  --paper-card:  #1f1915;
+  --ink:         #f5e4d8;
+  --ink-2:       #c0afa4;
+  --ink-3:       #8e8681;
+  --rule:        #2e2724;
+  --rule-2:      #827b75;
+  --accent:      #ff690a;
+  --accent-warm: #ffa838;
+  --accent-deep: #ffa077;
+  --leafy:       #9dd300;
+  --accent-fg:   #080403;
+  --accent-text: #ff690a;
+}
+
+:root[data-scheme="dark"][data-whimsy="2"][data-palette="absinthe"] {
+  --paper:       #10110b;
+  --paper-2:     #21221c;
+  --paper-3:     #2f3029;
+  --paper-card:  #1a1b15;
+  --ink:         #e6ead8;
+  --ink-2:       #b2b5a4;
+  --ink-3:       #888981;
+  --rule:        #262821;
+  --rule-2:      #7b7d75;
+  --accent:      #d5fa00;
+  --accent-warm: #ccc300;
+  --accent-deep: #b8d927;
+  --leafy:       #faad00;
+  --accent-fg:   #050502;
+  --accent-text: #d5fa00;
+}
+
+:root[data-scheme="dark"][data-whimsy="2"][data-palette="tearose"] {
+  --paper:       #150e11;
+  --paper-2:     #261f23;
+  --paper-3:     #342c30;
+  --paper-card:  #1f181b;
+  --ink:         #f8e1e5;
+  --ink-2:       #c1acb1;
+  --ink-3:       #8e8587;
+  --rule:        #2e2629;
+  --rule-2:      #83797b;
+  --accent:      #fb0047;
+  --accent-warm: #ffa099;
+  --accent-deep: #ff6f78;
+  --leafy:       #b1cd00;
+  --accent-fg:   #080406;
+  --accent-text: #fb0047;
+}
+
+:root[data-scheme="dark"][data-whimsy="2"][data-palette="orca"] {
+  --paper:       #0a1212;
+  --paper-2:     #1b2323;
+  --paper-3:     #283131;
+  --paper-card:  #141c1c;
+  --ink:         #d6eeeb;
+  --ink-2:       #a2b9b7;
+  --ink-3:       #818b8a;
+  --rule:        #202928;
+  --rule-2:      #757f7d;
+  --accent:      #0fffed;
+  --accent-warm: #f7ae00;
+  --accent-deep: #2bdbce;
+  --leafy:       #f0b200;
+  --accent-fg:   #020606;
+  --accent-text: #0fffed;
 }
 
 /* ---------------------------------------------------------------------------

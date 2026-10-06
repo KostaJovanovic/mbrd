@@ -28,7 +28,7 @@ export const TOKENS = new Set([
   '--paper', '--paper-2', '--paper-3', '--paper-card', '--radius',
   '--radius-pill', '--radius-sm', '--radius-xs', '--rule', '--rule-2', '--sel-corner',
   '--sel-gap', '--sel-line', '--sel-reach', '--select', '--select-fill',
-  '--shadow-1', '--shadow-2', '--sheet-fill', '--sheet-grip', '--sheet-line',
+  '--shade', '--shadow-1', '--shadow-2', '--sheet-fill', '--sheet-grip', '--sheet-line',
   '--sidebar-w',
   '--sticker-1', '--sticker-2', '--sticker-3', '--sticker-4', '--sticker-5',
   '--sticker-6', '--sticker-7', '--sticker-8', '--sticker-body',
@@ -89,10 +89,12 @@ export const clampWhimsy = (v: unknown) =>
 /** Carry the two provenance flags through cloneLook().
  * `derived`: who wrote the pigments (extraction vs hand). `auto`: whether
  * dynamic palette is on (absent = on, false = off — inverted because on is
- * the default and old boards have no field). */
+ * the default and old boards have no field). And `dark`, present only as true,
+ * since light is the default and old boards have no field either. */
 function withProvenance(from: Partial<Look> | null | undefined, look: Look): Look {
   if (from?.derived === true && Object.keys(look.vars).length) look.derived = true;
   if (from?.auto === false) look.auto = false;
+  if (from?.dark === true) look.dark = true;
   return look;
 }
 
@@ -114,7 +116,7 @@ export const autoOn = (look: Partial<Look> | null | undefined) => look?.auto !==
  * whimsy 0 (Softish) is a deliberate choice, not "no look". */
 export const hasLook = (look: Partial<Look> | null | undefined) =>
   !!look && ((look.whimsy != null && +look.whimsy !== DEFAULT_WHIMSY) ||
-             !!look.palette || Object.keys(look.vars || {}).length > 0);
+             !!look.palette || look.dark === true || Object.keys(look.vars || {}).length > 0);
 
 /** Field-by-field equality after normalising both sides. Not JSON.stringify —
  * that was key-order sensitive and a false negative cleared `derived`. */
@@ -129,6 +131,7 @@ export const sameLook = (
     // false vs undefined is meaningful (auto is stored inverted) — strict ===.
     && x.auto === y.auto
     && x.derived === y.derived
+    && x.dark === y.dark
     && sameVars(x.vars, y.vars);
 };
 

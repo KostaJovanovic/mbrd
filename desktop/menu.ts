@@ -99,11 +99,13 @@ const MENU: { id: string, label: string, rows: Row[] }[] = [
       { id: 'view.rearrange', label: 'Rearrange', cmd: 'rearrange' },
       { id: 'view.optimize', label: 'Optimise…', cmd: 'optimize' },
       { separator: true },
-      // Page zoom (accessibility), not board zoom (canvas/input.ts). The
-      // accelerators are the ones the roles carried.
-      { id: 'view.zoomReset', label: 'Actual Size', view: 'zoomReset', accelerator: 'CmdOrCtrl+0' },
-      { id: 'view.zoomIn', label: 'Zoom In', view: 'zoomIn', accelerator: 'CmdOrCtrl+Plus' },
-      { id: 'view.zoomOut', label: 'Zoom Out', view: 'zoomOut', accelerator: 'CmdOrCtrl+-' },
+      // Page zoom (accessibility), not board zoom. No accelerators: Ctrl with
+      // + - 0 zooms the board, as in every canvas editor, and the page's own
+      // keydown answers them (canvas/input.ts). A menu accelerator would take
+      // the keys first, or as well, depending on the OS.
+      { id: 'view.zoomReset', label: 'Actual Size', view: 'zoomReset' },
+      { id: 'view.zoomIn', label: 'Zoom In', view: 'zoomIn' },
+      { id: 'view.zoomOut', label: 'Zoom Out', view: 'zoomOut' },
       { separator: true },
       { id: 'view.fullScreen', label: 'Full Screen', view: 'fullScreen', accelerator: isMac ? 'Ctrl+Cmd+F' : 'F11' },
       { separator: true },

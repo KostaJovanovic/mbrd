@@ -21,7 +21,7 @@
 #ask::backdrop, #credits::backdrop, #inventory::backdrop, #link-props::backdrop,
 #export-opts::backdrop {
   /* Ink-tinted so the scrim dims into the palette instead of going grey. */
-  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  background: color-mix(in srgb, var(--shade) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
@@ -314,7 +314,7 @@ textarea.lp-url {
    and a closed dialog stays on screen. */
 #compose[open] { display: flex; }
 #compose::backdrop {
-  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  background: color-mix(in srgb, var(--shade) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
   transition: opacity calc(var(--dur-travel) / 2) ease-out;
@@ -653,7 +653,7 @@ textarea.lp-url {
 /* Tint only, no blur, unlike its siblings: the blur was redone on every frame
    of a crop drag, about 7ms of a 26ms frame on a Galaxy S22+. */
 #darkroom::backdrop {
-  background: color-mix(in srgb, var(--ink) 42%, transparent);
+  background: color-mix(in srgb, var(--shade) 42%, transparent);
 }
 
 #darkroom-head { display: flex; align-items: baseline; gap: 12px; }
@@ -739,7 +739,7 @@ textarea.lp-url {
    clips it to the picture. */
 #darkroom-frame {
   position: absolute;
-  box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 55%, transparent);
+  box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--shade) 55%, transparent);
   outline: var(--hairline) solid var(--paper);
   cursor: move;
   touch-action: none;

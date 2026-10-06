@@ -62,6 +62,22 @@
      (chips below resolution fade to their mean). */
   opacity: calc(var(--grain-fade, 1) * 0.5);
 }
+/* In the dark the grain turns over as base.css turns #grain, and the cork is a
+   cork board in a dim room: the same chips, the tile and its mean both lowered. */
+:root[data-scheme="dark"] .fence-card::after {
+  filter: invert(1);
+  mix-blend-mode: screen;
+  opacity: calc(0.75 * var(--grain) * var(--grain-fade, 1));
+}
+:root[data-scheme="dark"][data-whimsy="0"] .item[data-type="fence"] {
+  /* --cork at 45%, the same lowering the filter below gives the tile. */
+  background: var(--fence-tint, #504432);
+}
+:root[data-scheme="dark"][data-whimsy="0"] .fence-card::after {
+  filter: brightness(0.45);
+  mix-blend-mode: normal;
+  opacity: calc(var(--grain-fade, 1) * 0.5);
+}
 .item[data-type="fence"].is-selected .fence-card { border-color: var(--select); }
 
 /* Rolled up (meta.rolled): only the name bar is left, a tab that holds the

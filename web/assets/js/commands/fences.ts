@@ -1,4 +1,5 @@
-// Fence commands: rubber-band and group-menu paths to drawing a region.
+// Fence commands: rubber-band and group-menu paths to drawing a region, and
+// the ungroup that takes one away.
 // Membership is measured (fences.ts), not stored, so undo needs no help.
 // Desktop-only: fences have no Mobile geometry to measure against.
 
@@ -6,7 +7,7 @@ import { toast } from '../notify.ts';
 import {
   addItems, anchorQuietly, baseStep, board, byId, fenceAt, fenceBox, fenceFollowers, fenceOf,
   isFence, isFurniture, isRider, nextFenceName, select, selection, startFresh,
-  isRolled, setFenceRolled, setFenceTint, commit, lastCommand, takeBack,
+  isRolled, setFenceRolled, setFenceTint, commit, lastCommand, takeBack, removeItems,
 } from '../state.ts';
 import { itemBounds, MAX_SIZE, MIN_SIZE } from '../geometry.ts';
 import { editItemName } from '../canvas/items.ts';
@@ -141,6 +142,29 @@ export function fenceCommands() {
       drawFence(null);
     },
     gatherAndFence: () => gatherAndFence(),
+
+    // Ctrl+Shift+G, ungroup: the fence round each picked card taken away, or
+    // the picked fence itself, and what stood in it left where it was and
+    // picked. Membership is measured, so removing the fence is the whole of it.
+    unfenceSelection: () => {
+      if (!fenceable()) return;
+      const gone = new Set<string>();
+      for (const id of selection) {
+        const it = byId(id);
+        const fence = isFence(it) ? it : fenceOf(it);
+        if (fence) gone.add(fence.id);
+      }
+      if (!gone.size) {
+        toast('Nothing picked is in a fence');
+        return;
+      }
+      const inside = fenceFollowers(gone).filter(id => {
+        const it = byId(id);
+        return !!it && !gone.has(id) && !isRider(it);
+      });
+      removeItems(gone, gone.size === 1 ? 'Remove a fence' : `Remove ${gone.size} fences`);
+      select(inside);
+    },
 
     // Marquee path: offer a fence beside the pointer after a rubber band.
     // Suppressed for tiny empty bands and for subsets of an existing fence.

@@ -110,6 +110,8 @@
   align-self: flex-start;
   margin-top: 4px;
   padding: 6px 12px;
+  /* The browser's own button edge, which a dark color-scheme draws white. */
+  border: 0;
   border-radius: var(--leaf);
   background: var(--accent);
   color: var(--accent-fg);
@@ -251,8 +253,8 @@
    box-shadow). Traces the perforated silhouette and tape together. */
 :root[data-whimsy="0"] .item[data-type="ghost"]:not(:has([data-hint="whimsy"])) .item-body {
   filter:
-    drop-shadow(0 1px 1px color-mix(in srgb, var(--ink) 12%, transparent))
-    drop-shadow(0 7px 10px color-mix(in srgb, var(--ink) 20%, transparent));
+    drop-shadow(0 1px 1px color-mix(in srgb, var(--shade) 12%, transparent))
+    drop-shadow(0 7px 10px color-mix(in srgb, var(--shade) 20%, transparent));
 }
 /* Off with every other shadow when the quality dial asks. */
 :root[data-quality="light"]:not([data-q-shadows]) .item[data-type="ghost"] .item-body,
@@ -281,7 +283,7 @@
     3% 0, 97% 4%, 100% 22%, 96% 41%, 100% 62%, 97% 82%, 99% 100%,
     2% 96%, 0 78%, 4% 58%, 0 38%, 3% 19%
   );
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 18%, transparent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shade) 18%, transparent);
 }
 
 /* color-mix() fallback for WebKit < 16.2 — see tokens.css section 7. */

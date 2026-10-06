@@ -283,7 +283,7 @@
   border-radius: var(--radius);
   background: var(--paper-card);
   box-shadow:
-    0 3px 10px color-mix(in srgb, var(--ink) 16%, transparent),
+    0 3px 10px color-mix(in srgb, var(--shade) 16%, transparent),
     inset 0 0 0 var(--hairline) var(--item-border);
   white-space: nowrap;
   z-index: 6;
@@ -597,8 +597,8 @@
      Light, because a paper body with a thin outline has not the mass to carry a
      heavy one; a solid silhouette could, and this was heavier when the shapes
      were solid. */
-  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--ink) 16%, transparent))
-          drop-shadow(0 3px 5px color-mix(in srgb, var(--ink) 15%, transparent));
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--shade) 16%, transparent))
+          drop-shadow(0 3px 5px color-mix(in srgb, var(--shade) 15%, transparent));
   /* The shape must not eat presses that the item's own box would have taken.
      Hit-testing on a sticker is rectangular like everything else - see the
      item, which keeps its pointer-events - so this is only here to stop the
@@ -683,8 +683,8 @@
   /* Visible, so the drop-shadow is not cut off at the box. The name is clamped
      below instead, and .item-body still clips at the item. */
   overflow: visible;
-  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--ink) 14%, transparent))
-          drop-shadow(0 4px 8px color-mix(in srgb, var(--ink) 12%, transparent));
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--shade) 14%, transparent))
+          drop-shadow(0 4px 8px color-mix(in srgb, var(--shade) 12%, transparent));
 }
 /* No bookplate rule: it is what made this a card. */
 .pack-card::after { content: none; }
@@ -731,7 +731,7 @@
 .pack-front {
   top: calc(var(--pack-tab) + var(--pack-lip));
   background: var(--pack-front);
-  box-shadow: 0 -1px 2px color-mix(in srgb, var(--ink) 10%, transparent);
+  box-shadow: 0 -1px 2px color-mix(in srgb, var(--shade) 10%, transparent);
 }
 .pack-card .card-name {
   display: -webkit-box;
@@ -760,8 +760,8 @@
 :root[data-whimsy="0"] .pack-card {
   --pack-r: 16px;
   --pack-lip: 11px;
-  filter: drop-shadow(0 2px 2px color-mix(in srgb, var(--ink) 12%, transparent))
-          drop-shadow(0 8px 14px color-mix(in srgb, var(--ink) 10%, transparent));
+  filter: drop-shadow(0 2px 2px color-mix(in srgb, var(--shade) 12%, transparent))
+          drop-shadow(0 8px 14px color-mix(in srgb, var(--shade) 10%, transparent));
 }
 :root[data-whimsy="0"] .pack-card {
   /* The tab's rounded shoulder and the fillet under it share its 20px. */
@@ -802,7 +802,7 @@
   rotate: 3deg;
 }
 :root[data-whimsy="0"] .pack-front {
-  box-shadow: 0 -2px 5px color-mix(in srgb, var(--ink) 12%, transparent);
+  box-shadow: 0 -2px 5px color-mix(in srgb, var(--shade) 12%, transparent);
 }
 
 :root[data-whimsy="2"] .pack-card {
@@ -824,26 +824,28 @@
    because two fills that only abut leave a seam of their own. */
 :root[data-whimsy="2"] .pack-card {
   --h: var(--board-hairline);
+  /* Harsh's edge: the ink in the light, a dimmer line in the dark (tokens.css 3c). */
+  --line: var(--item-border);
 }
 :root[data-whimsy="2"] .pack-front {
-  box-shadow: inset 0 0 0 var(--h) var(--ink);
+  box-shadow: inset 0 0 0 var(--h) var(--line);
 }
 :root[data-whimsy="2"] .pack-back {
   background:
-    linear-gradient(var(--ink), var(--ink)) right top / calc(60% + var(--h)) var(--h) no-repeat,
+    linear-gradient(var(--line), var(--line)) right top / calc(60% + var(--h)) var(--h) no-repeat,
     var(--pack-back);
-  box-shadow: inset var(--h) 0 0 var(--ink),
-              inset calc(-1 * var(--h)) 0 0 var(--ink),
-              inset 0 calc(-1 * var(--h)) 0 var(--ink);
+  box-shadow: inset var(--h) 0 0 var(--line),
+              inset calc(-1 * var(--h)) 0 0 var(--line),
+              inset 0 calc(-1 * var(--h)) 0 var(--line);
 }
 /* A plain box of a tab, open at its foot. The left edge runs the tab's
    whole depth, over the back's own left edge; the right one stops a hairline
    short, level with the back's top edge, so it does not poke through it. */
 :root[data-whimsy="2"] .pack-back::before {
   --edges:
-    linear-gradient(var(--ink), var(--ink)) left top / 100% var(--h) no-repeat,
-    linear-gradient(var(--ink), var(--ink)) left top / var(--h) 100% no-repeat,
-    linear-gradient(var(--ink), var(--ink)) right top / var(--h) calc(100% - var(--h)) no-repeat;
+    linear-gradient(var(--line), var(--line)) left top / 100% var(--h) no-repeat,
+    linear-gradient(var(--line), var(--line)) left top / var(--h) 100% no-repeat,
+    linear-gradient(var(--line), var(--line)) right top / var(--h) calc(100% - var(--h)) no-repeat;
   width: 40%;
   height: calc(var(--pack-tab) + var(--h) * 2);
   clip-path: none;
@@ -853,7 +855,7 @@
   background: var(--edges), var(--zip), var(--pack-back);
 }
 :root[data-whimsy="2"] .pack-card .card-unpack {
-  border-color: var(--ink);
+  border-color: var(--line);
   border-radius: 0;
 }
 
