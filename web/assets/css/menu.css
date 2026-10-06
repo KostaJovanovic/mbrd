@@ -318,6 +318,44 @@
 .ctx-item:hover .ctx-tick,
 .ctx-item:focus-visible .ctx-tick { color: var(--accent-text); }
 
+/* The search menu (ui/palette.ts, the S box): the same panel with a field over
+   its rows. A fixed width, so the panel does not jump as rows come and go. */
+#ctx-menu.is-search {
+  width: min(380px, calc(100vw - 16px));
+  padding-top: 0;
+}
+/* Pinned while the rows under it scroll, and pulled out over the panel's 5px
+   side padding so its rule runs edge to edge. */
+.ctx-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 -5px 4px;
+  padding: 6px 6px 4px;
+  border-bottom: var(--hairline) solid var(--rule);
+  background: var(--paper-card);
+}
+.ctx-search input {
+  width: 100%;
+  padding: 8px 6px;
+  border: 0;
+  background: none;
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  color: var(--ink);
+  -webkit-user-select: text;
+  user-select: text;
+}
+.ctx-search input::placeholder { color: var(--ink-3); font-style: var(--display-italic); }
+.ctx-search input:focus { outline: none; }
+.ctx-search input::-webkit-search-cancel-button { display: none; }
+/* Where a row lives, under its name. */
+.ctx-hint {
+  display: block;
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+}
+
 .ctx-sep {
   height: 1px;
   margin: 5px 8px;

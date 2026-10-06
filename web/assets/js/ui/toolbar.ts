@@ -22,6 +22,18 @@ export interface ToolbarCommands {
   [name: string]: ((...args: never[]) => void) | undefined;
 }
 
+/**
+ * The creation tools that do not fit the phone's bar, as the More menu lists
+ * them (cmds.moreTools) and the S box (ui/palette.ts) finds them. `cmd` names
+ * the cmds entry each runs.
+ */
+export const MORE_TOOLS: readonly { label: string, icon: string, cmd: string }[] = [
+  { label: 'Add a colour', icon: 'i-swatch', cmd: 'addSwatch' },
+  { label: 'Add a link', icon: 'i-link', cmd: 'addLink' },
+  { label: 'New LaTeX document', icon: 'i-pen', cmd: 'newLatex' },
+  { label: 'Stickers', icon: 'i-sticker', cmd: 'stickers' },
+];
+
 let bar: HTMLElement | null = null;
 let toggle: HTMLElement | null = null;
 /** The row of tools inside the bar - what a fit measures and a morph moves. */

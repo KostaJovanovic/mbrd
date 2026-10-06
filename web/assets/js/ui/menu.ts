@@ -43,6 +43,8 @@ export type MenuEntry = {
   swatchEnd?: string | string[];
   /** A font-family for the label - a face menu sets each row in its own face. */
   font?: string;
+  /** A quieter second line under the name, saying where the row lives - the search menu's. */
+  hint?: string;
   /** Greyed readout row — shown but inert, skipped by arrow keys. */
   disabled?: boolean;
   /** a child menu, opened in place */
@@ -72,7 +74,12 @@ type MenuOpts = {
   anchor?: MenuAnchor;
   /** no entrance or exit - see .is-instant in menu.css */
   instant?: boolean;
+  /** a field over the rows that narrows them - see openSearchMenu() */
+  search?: SearchSpec;
 };
+
+/** What the search menu asks of its owner: the rows for what is typed. */
+type SearchSpec = { run: (query: string) => MenuEntry[], placeholder: string };
 
 /** Commands this menu needs. Declared here (not imported from commands.ts)
  * because flyout.ts imports this module — the arrow can only go one way. */
@@ -356,6 +363,7 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
     // Navigation keys only when the menu owns the keyboard — otherwise typing
     // in a field behind a hover flyout would be swallowed by typeAhead().
     if (!ownsKeyboard()) return;
+    if (field) { searchKey(e); return; }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       moveFocus(e.key === 'ArrowDown' ? 1 : -1);
@@ -499,6 +507,7 @@ function typeAhead(key: string): boolean {
 
 export function close() {
   if (!node) return;
+  field = null;
   closeChild();
   // Read before removal — we need to know if focus should return to the opener.
   const held = node.contains(document.activeElement);
@@ -572,6 +581,109 @@ export function openContextMenu(clientX: number, clientY: number, itemId: string
 /** The Feed's menu prints no key hints: a phone has no keyboard and no double-click. */
 const withoutKeys = (entries: MenuEntry[]): MenuEntry[] =>
   entries.map(e => (e.accel ? { ...e, accel: '' } : e));
+
+/**
+ * The rows a right-click at this point would offer, for the S box
+ * (ui/palette.ts): the selection's own menu, and the board's - with a line's,
+ * the one under the point or else the one marked - where the pointer is.
+ * Built by the menus' own builders, so a row they would hide is hidden here.
+ */
+export function contextEntries(clientX: number, clientY: number, itemId: string | null, count: number,
+  { mobile = false, line = null }: { mobile?: boolean, line?: { a: string, b: string } | null } = {},
+): { selection: MenuEntry[], here: MenuEntry[] } {
+  // Not opened by a finger, whatever the last menu was.
+  byTouch = false;
+  if (mobile) {
+    return { selection: itemId ? itemEntries(itemId, count, null, true) : [], here: sheetEntries() };
+  }
+  if (cmds!.inTour()) return { selection: [], here: tourEntries() };
+  const at: Point = vp!.toWorld(clientX, clientY);
+  const conn = cmds!.connectionUnder(at) ?? line;
+  const selection = !itemId ? []
+    : count <= 1 && cmds!.isTitleCard(itemId) ? titleEntries(itemId, at)
+    : itemEntries(itemId, count, at);
+  return { selection, here: [...(conn ? connectionEntries(conn) : []), ...canvasEntries(at)] };
+}
+
+/**
+ * A menu with a field over it: typing narrows the rows, Enter runs the lit
+ * one, and the arrows walk from the field into the rows and back. The S box's
+ * (ui/palette.ts), which asks `search` for the rows on every keystroke. Drawn by
+ * fillPanel() like every other menu, so a tick, a chip, a slider or a key reads
+ * the same here as anywhere. Rows with a `sub` are not for this menu: it has
+ * no page to drill into, so the caller lays folds out flat.
+ */
+export function openSearchMenu(clientX: number, clientY: number, search: (query: string) => MenuEntry[],
+  { label = 'Search', placeholder = 'Search' }: { label?: string, placeholder?: string } = {}) {
+  close();
+  opener = focusedNow();
+  byTouch = false;
+  render([], clientX, clientY, { label, search: { run: search, placeholder } });
+}
+
+/** The search menu's field, while one is up. */
+let field: HTMLInputElement | null = null;
+
+/** Light the first row: what Enter in the field runs. */
+function lightFirst() {
+  clearHot();
+  node?.querySelector('.ctx-item:not(:disabled)')?.classList.add('is-hot');
+}
+
+function clearHot() {
+  for (const hot of node?.querySelectorAll('.ctx-item.is-hot') ?? []) hot.classList.remove('is-hot');
+}
+
+/** The field and its rows, refilled from `spec` on every keystroke. */
+function buildSearch(panel: HTMLElement, spec: SearchSpec) {
+  panel.classList.add('is-search');
+  const head = document.createElement('div');
+  head.className = 'ctx-search';
+  const input = document.createElement('input');
+  input.type = 'search';
+  input.placeholder = spec.placeholder;
+  input.setAttribute('aria-label', spec.placeholder);
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  head.append(input);
+  panel.append(head);
+  field = input;
+  const refill = () => {
+    while (head.nextSibling) head.nextSibling.remove();
+    const rows = spec.run(input.value);
+    fillPanel(panel, rows.length ? rows
+      : [{ label: input.value.trim() ? 'Nothing by that name' : 'Type to search', icon: 'i-find', disabled: true }]);
+    lightFirst();
+    panel.scrollTop = 0;
+  };
+  input.addEventListener('input', refill);
+  refill();
+}
+
+/** The search menu's keys. The field is above the first row and below the last. */
+function searchKey(e: KeyboardEvent) {
+  const inField = document.activeElement === field;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const rows = focusRows();
+    const down = e.key === 'ArrowDown';
+    const at = rows.findIndex(row => row === document.activeElement);
+    const next = inField ? (down ? 0 : rows.length - 1) : at + (down ? 1 : -1);
+    clearHot();
+    if (next < 0 || next >= rows.length) { field!.focus(); lightFirst(); }
+    else rows[next].focus();
+    return;
+  }
+  if (inField) {
+    // A press, not the action: a row's click is what closes the menu and cues.
+    if (e.key === 'Enter') { e.preventDefault(); node?.querySelector<HTMLElement>('.ctx-item.is-hot')?.click(); }
+    return;
+  }
+  // On a row, a letter or a Backspace goes back to the field - focus moved in
+  // the keydown takes the keystroke with it. Space stays the row's press.
+  const typing = e.key.length === 1 && e.key !== ' ' && !e.ctrlKey && !e.metaKey && !e.altKey;
+  if (typing || e.key === 'Backspace') { field!.focus(); lightFirst(); }
+}
 
 /** Title card menu — edit style, reset position, anchor, delete. No copy/stack.
  * Anchor is only reachable here (the card starts anchored, so drags pan). */
@@ -1139,7 +1251,7 @@ function swap(entries: MenuEntry[]) {
   closeChild(false);
   // Removed outright (no exit animation) — a page turn must not flinch.
   if (node) { node.remove(); node = null; }
-  render(entries, lastX, lastY, { ...lastOpts, focus: lastOpts.focus || held, instant: true });
+  render(entries, lastX, lastY, { ...lastOpts, focus: lastOpts.focus || held, instant: true, search: undefined });
 }
 
 /** A child menu, fronted by the row that walks back to its parent. */
@@ -1160,6 +1272,9 @@ function panelHost(): HTMLElement {
   return document.body;
 }
 
+/** The height a search menu keeps below its top, so a long answer has somewhere to go. */
+const SEARCH_ROOM = 420;
+
 function render(entries: MenuEntry[], clientX: number, clientY: number, opts: MenuOpts = {}) {
   // Single entry point — flush any animating-out panels to keep one #ctx-menu.
   flushLeaving();
@@ -1174,7 +1289,16 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
   // Focusable but not tabbable — screen reader announces it, Escape has a target.
   node.tabIndex = -1;
 
-  fillPanel(node, entries);
+  if (opts.search) {
+    buildSearch(node, opts.search);
+    // Rows come and go as the field is typed in, so the panel is placed once
+    // with room for the most it may hold and grows down into it rather than
+    // flipping between keystrokes.
+    clientY = Math.max(8, Math.min(clientY, innerHeight - 8 - SEARCH_ROOM));
+    node.style.maxHeight = `${Math.round(innerHeight - 8 - clientY)}px`;
+  } else {
+    fillPanel(node, entries);
+  }
 
   // Measure hidden, then place. max-height in menu.css caps tall menus to scroll.
   node.style.visibility = 'hidden';
@@ -1226,6 +1350,12 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
     // Asserted — separator and slider (handled above) are the only label-less rows.
     label.textContent = entry.label!;
     if (entry.font) label.style.fontFamily = entry.font;
+    if (entry.hint) {
+      const hint = document.createElement('span');
+      hint.className = 'ctx-hint';
+      hint.textContent = entry.hint;
+      label.append(hint);
+    }
     btn.append(label);
 
     if (entry.accel) {
@@ -1455,8 +1585,9 @@ function placeRoot(node: HTMLElement, clientX: number, clientY: number, opts: Me
   const srcY = opts.anchor ? (y < opts.anchor.top ? opts.anchor.top : opts.anchor.bottom) : clientY;
   node.style.transformOrigin = originPercent(srcX - x, width) + ' ' + originPercent(srcY - y, height);
   node.style.visibility = '';
-  // Hover menus must not take focus — see openAnchored.
-  if (opts.focus !== false) node.focus({ preventScroll: true });
+  // Hover menus must not take focus — see openAnchored. A search menu gives it
+  // to its field.
+  if (opts.focus !== false) (field && node.contains(field) ? field : node).focus({ preventScroll: true });
 }
 
 /** Slider row. <label> not menuitem — keeps arrow keys on the slider, not the menu walk. */

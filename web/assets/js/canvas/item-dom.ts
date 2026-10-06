@@ -308,6 +308,17 @@ export function restingTilt(item: ItemLike): string {
 }
 
 /**
+ * A sticker's angle at a size, given the one it was pressed down at: flat while
+ * it is wider or taller than a card may lean at, its own angle again inside
+ * both. The card rule (tooLarge) applied to the lean a sticker keeps in
+ * item.rot - see restingTilt() for why its lean is geometry. Every other item's
+ * rot is its own business and passes through.
+ */
+export function leanAtSize(item: ItemLike, rot: number): number {
+  return item.type === 'sticker' && tooLarge(item) ? 0 : rot;
+}
+
+/**
  * A built card's lean after its size changed: straight while it is wider or
  * taller than the limits above tooLarge(), and leaning again once it is back
  * inside both.

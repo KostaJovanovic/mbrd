@@ -234,10 +234,8 @@ function draw(q: string) {
   list!.replaceChildren();
   field!.setAttribute('aria-expanded', String(hits.length > 0));
 
-  if (!q) {
-    list!.append(note('Type to find anything on the board — a name, a note, an address, a kind of file.'));
-    return;
-  }
+  // Empty until something is typed: the field's placeholder is the whole prompt.
+  if (!q) return;
   if (!hits.length) {
     list!.append(note('Nothing on this board matches that.'));
     return;

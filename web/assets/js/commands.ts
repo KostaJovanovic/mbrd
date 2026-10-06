@@ -5,7 +5,7 @@
 // back in. What stays here: board additions, selection-wide actions, title card,
 // arrangements.
 
-import { toast } from './notify.ts';
+import { toast, runCommand } from './notify.ts';
 import {
   board, selection, selectAll, removeItems, setSetting, undo, redo, byId,
   raiseSelection, lowerSelection, selectionHasStackOverlap,
@@ -41,7 +41,8 @@ import { pickColor } from './ui/color-picker.ts';
 import { getAsset, assetURL } from './storage/assets.ts';
 import { close as closeSidebar, open as openSidebar, isOpen as isSidebarOpen } from './ui/sidebar.ts';
 import { revealFold } from './ui/panel.ts';
-import { closeToolbar, isOpen as isToolbarOpen, isArmed as isConnectorArmed } from './ui/toolbar.ts';
+import { closeToolbar, isOpen as isToolbarOpen, isArmed as isConnectorArmed, MORE_TOOLS } from './ui/toolbar.ts';
+import { openPalette } from './ui/palette.ts';
 import { openContextMenu, openAnchored, justDismissed, close as closeMenu } from './ui/menu.ts';
 import { tourEditing } from './ui/tour-edit.ts';
 import { tourActive } from './ui/tour.ts';
@@ -674,17 +675,20 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       if (!btn) return;
       // Second tap closes — menu already dismissed by its own outside-press listener.
       if (justDismissed(btn)) return;
-      openAnchored(btn.getBoundingClientRect(), [
-        { label: 'Add a colour', icon: 'i-swatch', action: () => cmds.addSwatch() },
-        { label: 'Add a link', icon: 'i-link', action: () => cmds.addLink() },
-        { label: 'New LaTeX document', icon: 'i-pen', action: () => void cmds.newLatex() },
-        { label: 'Stickers', icon: 'i-sticker', action: () => cmds.stickers() },
+      const table: Record<string, ((...args: never[]) => void) | undefined> = cmds;
+      openAnchored(btn.getBoundingClientRect(), MORE_TOOLS.map(t => ({
+        label: t.label, icon: t.icon, action: () => runCommand(table[t.cmd]?.(), t.label),
       // focus: true — opened by a press, not a hover.
-      ], { label: 'More tools', owner: btn, focus: true });
+      })), { label: 'More tools', owner: btn, focus: true });
     },
     // --- one card at a time: the can*/setter pairs the menu reads ---
     ...itemMetaCommands(),
 
+    // S: every command, searched by name at the pointer (ui/palette.ts).
+    palette: (x?: number, y?: number) => {
+      closeSearch();
+      openPalette(x ?? vp.left + vp.cx, y ?? vp.top + vp.cy);
+    },
     // Second tap on Find closes it (see open() in ui/search.ts).
     find: () => openSearch(document.querySelector('#toolbar [data-cmd="find"]')),
     getSetting: (key: string) => settingsBag()[key],

@@ -28,6 +28,7 @@ import {
   setDragging, barHeight, refreshRings, setPressing, seenPlaces, slideFrom,
 } from './items.ts';
 import { noteFloor } from './notes.ts';
+import { leanAtSize } from './item-dom.ts';
 import { linkURL } from './renderers.ts';
 import { isPicture, cardRatio } from './picture-shape.ts';
 import { embedFor, embedFloor } from './embed.ts';
@@ -1126,7 +1127,8 @@ type ResizeGesture = {
   followers: ResizeFollower[],
   driven: string[],
   start: Point,
-  box: { x: number, y: number, w: number, h: number },
+  /** `rot` the angle at the press, which a sticker comes back to - see leanAtSize(). */
+  box: { x: number, y: number, w: number, h: number, rot?: number },
   // A fence's carry, and null for everything else - see carryPlace(). One per
   // card standing in the fence itself; `carried` maps every follower to the
   // index of the card it goes with (itself, its host, or the nested fence it is
@@ -1218,6 +1220,8 @@ type InputCommands = {
   fencePrompt(x: number, y: number, rect: Bounds): void,
   contextMenu(x: number, y: number, id: string | null, count: number,
     opts?: { touch?: boolean }): void,
+  /** The S box (ui/palette.ts), at a point in the window or the board's middle. */
+  palette?(x?: number, y?: number): void,
   // Read straight from state.ts on the pointer path - the flag is state, not a
   // command - so what is wanted here is only the way *out*, for Escape.
   toggleMultiSelect?(): void,
@@ -2039,7 +2043,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // item is driven; its riders keep their stick (see above).
       driven: [id],
       start: vp.toWorld(origin?.x ?? e.clientX, origin?.y ?? e.clientY),
-      box: { x: it.x, y: it.y, w: it.w, h: it.h },
+      box: { x: it.x, y: it.y, w: it.w, h: it.h, rot: it.rot || 0 },
       holds, carried, plate,
       // Nothing but a picture is aspect-locked by default. Shift is the lock for
       // everything else, at both ends: on a corner it holds the proportion, on
@@ -2928,7 +2932,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         id: grip.id,
         x: grip.box.x + signX * (w - grip.box.w) / 2,
         y: grip.box.y + signY * (h - grip.box.h) / 2,
-        w, h, rot: it.rot, z: it.z,
+        // A sticker grown past the size a card may lean at lies flat, as the
+        // card does, and takes its own angle back if it comes inside again.
+        w, h, rot: leanAtSize({ ...it, w, h }, grip.box.rot ?? it.rot), z: it.z,
       });
     }
   }
@@ -3601,6 +3607,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         e.preventDefault();
       } break;
       case 'j': case 'J': if (!onlyLooking()) { cmds.connect?.(); e.preventDefault(); } break;
+      // Every command by name, at the pointer - the S box. With cards selected
+      // too: what it offers first is what they can do. Prevented, or the S
+      // would be typed into the field the keydown has just focused.
+      case 's': case 'S': if (!onlyLooking() && !e.repeat) {
+        cmds.palette?.(hover?.x, hover?.y);
+        e.preventDefault();
+      } break;
       case 'l': case 'L': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.toggleAnchor?.(); e.preventDefault(); } break;
       case ']': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.raise?.(); e.preventDefault(); } break;
       case '[': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.lower?.(); e.preventDefault(); } break;

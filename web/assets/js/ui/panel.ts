@@ -159,6 +159,20 @@ export function revealFold(tabId: string, foldId: string) {
   fold.scrollIntoView({ block: 'start' });
 }
 
+/**
+ * Show one control, on its tab with its fold open, and give it the keyboard:
+ * the S box's row for a setting it cannot change in place (ui/palette.ts).
+ * The sidebar's opening is the caller's, as for revealFold().
+ */
+export function revealControl(el: HTMLElement) {
+  const tab = el.closest('.side-panel')?.id.replace(/^panel-/, '');
+  if (tab) showTab(tab);
+  const fold = el.closest('details');
+  if (fold) fold.open = true;
+  el.scrollIntoView({ block: 'center' });
+  el.focus({ preventScroll: true });
+}
+
 // ---------------------------------------------------------------------------
 // Sections and controls
 // ---------------------------------------------------------------------------

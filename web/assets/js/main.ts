@@ -79,6 +79,7 @@ import { initDrawer } from './ui/drawer.ts';
 import { initNowPlaying } from './ui/nowplaying.ts';
 import { initToolbar } from './ui/toolbar.ts';
 import { initFlyouts } from './ui/flyout.ts';
+import { initPalette } from './ui/palette.ts';
 import { initStickerWindow } from './ui/sticker-window.ts';
 import { initAppearance, resetLook, setWhimsy } from './ui/appearance.ts';
 import { initFonts } from './ui/fonts.ts';
@@ -396,6 +397,8 @@ initHud(vp, cmds);
 initToolbar(cmds);
 // Flyouts behind toolbar buttons. After toolbar + initMenu().
 initFlyouts(cmds);
+// The S box reads every menu above, the toolbar and the panel's schema.
+initPalette(cmds);
 // Sticker pad. After toolbar (which opens it). Needs vp for world-space drop.
 initStickerWindow(vp, cmds);
 // Connection action chip. Needs vp for screen position of the line.

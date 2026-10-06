@@ -281,6 +281,7 @@ const KEYS: readonly KeyRow[] = [
   [['shift', '+', 'F'], 'zoom to the selection'],
   [['1'], '100% where you are'],
   [['←↑→↓'], 'nudge (+shift a step)'],
+  [['S'], 'search every command'],
   [['N'], 'a note at the pointer'],
   [['J'], 'join two cards'],
   [['L'], 'anchor, unanchor'],
