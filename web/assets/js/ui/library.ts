@@ -9,6 +9,7 @@ import {
   refreshBoardThumb, boardFileThumb, duplicateLibraryBoard, saveLibraryCopy,
 } from '../storage/storage.ts';
 import type { BoardEntry } from '../storage/storage.ts';
+import { exampleBoard } from '../storage/example.ts';
 import { platform, fileNameOf } from '../platform/platform.ts';
 import { toast } from '../notify.ts';
 import { markClosed } from '../util.ts';
@@ -145,6 +146,15 @@ async function render() {
   // icons.svg, so it was the only one whose weight and proportion came from
   // whatever face the reader happens to have - and the only one a palette or a
   // whimsy tier could not reach. See research/old/design-audit-2026-08-25.md, B1.
+  const example = document.createElement('button');
+  example.type = 'button';
+  example.className = 'library-new';
+  example.textContent = 'Example board';
+  example.title = 'A board that explains the app, with a tour. It goes beside this one.';
+  example.addEventListener('click', () => guard(async () => {
+    await newBoard(exampleBoard());
+    closeLibrary();
+  }));
   const shut = document.createElement('button');
   shut.type = 'button';
   shut.className = 'library-close';
@@ -152,7 +162,7 @@ async function render() {
   shut.title = 'Close the board list';
   shut.append(icon('i-close'));
   shut.addEventListener('click', closeLibrary);
-  head.append(title, spacer, fresh, shut);
+  head.append(title, spacer, example, fresh, shut);
 
   const grid = document.createElement('div');
   grid.className = 'library-grid';

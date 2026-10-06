@@ -261,10 +261,10 @@
    A small disc so the glyph reads on any picture and the press has a target. */
 .item-badge {
   position: absolute;
-  top:   calc(var(--sel-edge) * -1 - 7px * var(--iz));
-  right: calc(var(--sel-edge) * -1 - 7px * var(--iz));
-  width:  calc(22px * var(--iz));
-  height: calc(22px * var(--iz));
+  top:   calc(var(--sel-edge) * -1 - 10px * var(--iz));
+  right: calc(var(--sel-edge) * -1 - 10px * var(--iz));
+  width:  calc(30px * var(--iz));
+  height: calc(30px * var(--iz));
   box-sizing: border-box;
   display: none;
   place-items: center;

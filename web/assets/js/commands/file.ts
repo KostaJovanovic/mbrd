@@ -28,6 +28,8 @@ import { askExportOptions } from '../ui/export-options.ts';
 import type { ExportKind } from '../ui/export-options.ts';
 import { saveWithCooldown } from '../ui/board-actions.ts';
 import { isDesktop, platform } from '../platform/platform.ts';
+import { exampleBoard } from '../storage/example.ts';
+import { startTour } from '../ui/tour.ts';
 
 /** A filesystem-safe download name from the board title. */
 function boardArtefactName(ext: string): string {
@@ -194,6 +196,13 @@ async function confirmEmptyExport(): Promise<boolean> {
 export function fileCommands() {
   return {
     new: () => newBoard(),
+    // The current board goes on the shelf first, as New does.
+    exampleBoard: () => newBoard(exampleBoard()),
+    // Help > Take the Tour: the app's tour, which is the example board's. The
+    // board's own tour is the Tour button's.
+    appTour: async () => {
+      if (await newBoard(exampleBoard())) requestAnimationFrame(() => { startTour(); });
+    },
     open: () => openBoard(),
     // The sidebar's Update row (Android). The board goes to its file first,
     // quietly, since installing closes the app.

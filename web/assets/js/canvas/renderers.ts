@@ -28,7 +28,7 @@ import { embedFor, embedFloor, embedOffer } from './embed.ts';
 import { brandFor, siteName } from './brands.ts';
 import type { Brand } from './brands.ts';
 import { buildModelCard } from './model.ts';
-import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.ts';
+import { hintFor, hintKey, tapeStyle, bindDial, runHint, STOPS, DIAL } from './ghosts.ts';
 import { ensureDisplay, displayURLReady, bakedServes } from './display.ts';
 import { landCopy } from './hires.ts';
 import { meshKind } from '../mesh.ts';
@@ -1353,7 +1353,7 @@ const RENDERERS = {
     // counts things that are not cards and hands two hints the same outline.
     const key = hintKey(metaStr(item.meta?.hint));
     card.dataset.hint = key;
-    const { title, line, rows, href, go: goes } = hintFor(metaStr(item.meta?.hint));
+    const { title, line, rows, href, go: goes, run } = hintFor(metaStr(item.meta?.hint));
     // Every hint but the dial prints its title here, at the head of the card and
     // ranged left. The dial prints its own, inside the row and centred over the
     // track - see below.
@@ -1472,6 +1472,15 @@ const RENDERERS = {
         list.append(row);
       }
       card.append(list);
+      // A command from the hint itself, as the href below is, never from the item.
+      if (run) {
+        const go = document.createElement('button');
+        go.type = 'button';
+        go.className = 'ghost-go';
+        go.textContent = goes || title;
+        go.addEventListener('click', () => runHint(run));
+        card.append(go);
+      }
     } else {
       const body = document.createElement('div');
       body.className = 'ghost-line';

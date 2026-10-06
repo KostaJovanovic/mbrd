@@ -15,6 +15,8 @@ export type Hint = {
   rows?: readonly HintRow[];
   href?: string;
   go?: string;
+  /** A command the card's button runs - see GhostCommands. */
+  run?: 'appTour';
 };
 
 export type HintKey = 'drop' | 'move' | 'formats' | 'whimsy' | 'gone' | 'back';
@@ -27,6 +29,8 @@ export const HINTS: Readonly<Record<HintKey, Hint>> = Object.freeze({
       { icon: 'i-zoom-in', label: 'Wheel or pinch to zoom' },
       { icon: 'i-select-all', label: 'Shift-drag to select', desktop: true },
     ],
+    go: 'Show me around',
+    run: 'appTour',
   },
   move: {
     title: 'Whatever you\'re gathering',
@@ -157,9 +161,12 @@ export function hintFor(key: string | undefined): Hint {
  * down here, the same move it makes for storage's confirmation prompt
  * (setPrompt). So the dial drives the one command surface everything else does.
  */
-type GhostCommands = { setWhimsy?: (level: number) => void };
+type GhostCommands = { setWhimsy?: (level: number) => void, appTour?: () => void };
 
 let cmds: GhostCommands | null = null;
+
+/** A hint card's button: the example board and its tour, for the first card. */
+export const runHint = (name: NonNullable<Hint['run']>) => cmds?.[name]?.();
 
 /** Move the whole interface along the whimsy axis, from the card's dial. */
 const setWhimsyLevel = (level: number) => cmds?.setWhimsy?.(level);

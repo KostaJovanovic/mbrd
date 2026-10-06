@@ -117,7 +117,8 @@ const MENU: { id: string, label: string, rows: Row[] }[] = [
     rows: [
       { id: 'help.about', label: 'About mbrd', cmd: 'credits' },
       { id: 'help.changes', label: 'What Changed', cmd: 'patchNotes' },
-      { id: 'help.tour', label: 'Take the Tour', cmd: 'tourStart' },
+      { id: 'help.tour', label: 'Take the Tour', cmd: 'appTour' },
+      { id: 'help.example', label: 'Open the Example Board', cmd: 'exampleBoard' },
       // No accelerator: '?' is a character, and a native accelerator would take
       // it out of every note and field. The page's own keydown answers it.
       { id: 'help.shortcuts', label: 'Keyboard Shortcuts', cmd: 'shortcuts' },

@@ -235,6 +235,8 @@ const APP: readonly {
   { place: 'File', label: 'Optimise the board…', cmd: 'optimize' },
   { place: 'Help', label: 'Keyboard shortcuts', cmd: 'shortcuts', accel: '?' },
   { place: 'Help', label: 'Credits', cmd: 'credits', icon: 'i-info' },
+  { place: 'Help', label: 'Take the tour of mbrd', cmd: 'appTour' },
+  { place: 'Help', label: 'Open the example board', cmd: 'exampleBoard' },
 ];
 
 function appRows(): Row[] {

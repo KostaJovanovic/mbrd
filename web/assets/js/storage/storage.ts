@@ -835,7 +835,8 @@ function refuseOnBench() {
   return false;
 }
 
-export async function newBoard() {
+/** `seed` is a board.json to start from instead of an empty one: the example board. */
+export async function newBoard(seed?: Record<string, unknown>) {
   // A not-found board is not the visitor's board. It was never loaded from the
   // session slot, so clearing that slot below would delete a board they cannot
   // see and have not been asked about - and worse now than when this only
@@ -882,7 +883,7 @@ export async function newBoard() {
   // into. That matters more since a board can derive its palette from its own
   // photographs - without this, every board after the first would open in the
   // colours of the previous board's pictures.
-  loadBoard({ title: defaultBoardTitle() });
+  loadBoard(seed ?? { title: defaultBoardTitle() });
   // A failure here is self-healing: the session is one slot and the new board's
   // first autosave overwrites whatever stale bytes remain, so warn but do not
   // block starting fresh. clearAllData() is the path that must not paper over a
