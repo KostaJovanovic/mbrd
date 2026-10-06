@@ -25,7 +25,7 @@ import {
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent, markBenchBoard,
   defaultBoardTitle,
-  goTo, timelineSteps, timelineStale, lastCommand,
+  goTo, timelineSteps, timelineStale, lastCommand, timelinePlaying,
 } from './state.ts';
 import { freezePrefs } from './prefs.ts';
 import { homePath, isPatchPage, isNotFoundPage, isBenchPage, openingFace, openingShare } from './page.ts';
@@ -102,7 +102,8 @@ import { initBenchView } from './ui/bench-view.ts';
 import { initBoardView, openingView, syncBoardMode, syncMobileBoardBounds } from './ui/board-view.ts';
 import { initHud, paintZoom, paintSnap, paintTilt, paintCount } from './ui/hud.ts';
 import { initBoardTitle } from './ui/board-title.ts';
-import { initBoardActions, resetSave } from './ui/board-actions.ts';
+import { initBoardActions, resetSave, restartApp } from './ui/board-actions.ts';
+import { initWebUpdate } from './ui/web-update.ts';
 
 // First: wire the toast overlay so every module below can report errors.
 // Until this call, notify.ts forwards to nobody and messages are lost.
@@ -902,32 +903,11 @@ platform.lifecycle.onBack(() => {
   return wasClosed(esc);
 });
 
-if (!isDesktop() && 'serviceWorker' in navigator) {
-  // New worker mid-session = fresh deploy. Toast "reload to update" rather than
-  // reloading under the user. Silent on the first-ever install.
-  const announce = (fresh: ServiceWorker | null) => {
-    if (!fresh) return;
-    const say = () => {
-      if (fresh.state === 'installed' && navigator.serviceWorker.controller) {
-        // The button, because an installed copy has no address bar to reload
-        // from. restart() stores the board before it reloads.
-        toast('New version ready — reload to update', '',
-          { label: 'Reload', run: () => { void cmds.restart(); } });
-      }
-    };
-    // Both: a worker already in `waiting` won't fire another statechange.
-    say();
-    fresh.addEventListener('statechange', say);
-  };
-  const registerWorker = () => {
-    navigator.serviceWorker.register('sw.js').then(reg => {
-      reg.addEventListener('updatefound', () => announce(reg.installing));
-      // Catch an already-in-progress update that 'updatefound' missed.
-      announce(reg.installing ?? reg.waiting);
-    }).catch(err => console.warn('[mbrd] sw:', err));
-  };
-  // Defer to 'load' so registration does not compete with first paint.
-  // Falls back to immediate if the event already fired.
-  if (document.readyState === 'complete') registerWorker();
-  else addEventListener('load', registerWorker);
+// A new deploy loads itself at the next quiet moment, the board stored first.
+// The apps update through their own updaters instead.
+if (!isDesktop()) {
+  initWebUpdate({
+    restart: opts => restartApp(opts),
+    busy: () => !!(cmds.inTour() || cmds.tourEditing() || cmds.cleanActive() || timelinePlaying()),
+  });
 }

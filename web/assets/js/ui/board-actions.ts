@@ -392,9 +392,11 @@ export function reloadBoard() {
  * worked. The autosave debounce is armed by every edit and a reload does not
  * run it; pressing this a second after typing would otherwise lose that second.
  * A save that fails asks before going anywhere - the answer to "your last edits
- * are not stored" is not to reload on top of them.
+ * are not stored" is not to reload on top of them. `quiet` is the update's own
+ * reload (ui/web-update.ts), which nobody asked for: there a failed save asks
+ * nothing and goes nowhere.
  */
-export async function restartApp(): Promise<boolean> {
+export async function restartApp({ quiet = false }: { quiet?: boolean } = {}): Promise<boolean> {
   flushNoteEdit();
   await flushEditor();
   // A rejection is a failed autosave, and a failed autosave is exactly the case
@@ -406,6 +408,7 @@ export async function restartApp(): Promise<boolean> {
     console.warn('[mbrd] autosave failed before restart', err);
     return false;
   });
+  if (!stored && quiet) return false;
   if (!stored) {
     const answer = await ask({
       title: 'Restart anyway?',
