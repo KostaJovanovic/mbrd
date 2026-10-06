@@ -1273,7 +1273,7 @@ function panelHost(): HTMLElement {
 }
 
 /** The height a search menu keeps below its top, so a long answer has somewhere to go. */
-const SEARCH_ROOM = 420;
+const SEARCH_ROOM = 280;
 
 function render(entries: MenuEntry[], clientX: number, clientY: number, opts: MenuOpts = {}) {
   // Single entry point — flush any animating-out panels to keep one #ctx-menu.
@@ -1295,7 +1295,7 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
     // with room for the most it may hold and grows down into it rather than
     // flipping between keystrokes.
     clientY = Math.max(8, Math.min(clientY, innerHeight - 8 - SEARCH_ROOM));
-    node.style.maxHeight = `${Math.round(innerHeight - 8 - clientY)}px`;
+    node.style.maxHeight = `${SEARCH_ROOM}px`;
   } else {
     fillPanel(node, entries);
   }

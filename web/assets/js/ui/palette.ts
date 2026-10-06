@@ -8,7 +8,6 @@
 // document reach at import.
 
 import { board, selection } from '../state.ts';
-import { readPrefJSON, writePref } from '../prefs.ts';
 import { runCommand } from '../notify.ts';
 import { isDesktop } from '../platform/platform.ts';
 import { contextEntries, openSearchMenu } from './menu.ts';
@@ -20,13 +19,16 @@ import { SECTIONS, TABS, sectionVisible, controlVisible } from './settings-schem
 import type { ButtonSpec, Control, Ctx, PickerControl, RangeControl } from './settings-schema.ts';
 import { open as openSidebar } from './sidebar.ts';
 import { revealControl } from './panel.ts';
-import { dedupe, flatten, rank, rowKey } from './palette-match.ts';
+import { dedupe, flatten, parsePoint, rank, rowKey } from './palette-match.ts';
 import type { Row } from './palette-match.ts';
 
 /** Void as ToolbarCommands has it: a command may hand back a promise, which runCommand() reads. */
 type Fn = (...args: never[]) => void;
 /** The command table: the two menus' interfaces, and every other entry by name. */
-export type PaletteCommands = MenuCommands & FlyoutCommands & { [name: string]: Fn | undefined };
+export type PaletteCommands = MenuCommands & FlyoutCommands & {
+  [name: string]: Fn | undefined,
+  moveTo?: (x?: number, y?: number) => void,
+};
 
 let cmds: PaletteCommands | null = null;
 
@@ -40,14 +42,27 @@ export function initPalette(commands: PaletteCommands) { cmds = commands; }
  */
 const W = { selection: 3, here: 2, screen: 1.5, tools: 1.5, app: 1.2, settings: 1 };
 
+/** Rows drawn at once. The box is for finding one thing, so it shows the best few. */
+const SHOWN = 10;
+
 /** Open the box at a point in the window: the pointer, or the middle of the board. */
 export function openPalette(clientX: number, clientY: number) {
   if (!cmds) return;
   const rows = dedupe(gather(clientX, clientY));
-  const used = recent();
-  openSearchMenu(clientX, clientY, query => rank(rows, query, used).map(shown), {
-    label: 'Every command', placeholder: 'Search every command',
-  });
+  const before = recent();
+  openSearchMenu(clientX, clientY, query => {
+    const found = rank(rows, query, before, SHOWN).map(shown);
+    const at = board.layoutMode === 'mobile' ? null : parsePoint(query);
+    return at ? [moveRow(at), ...found.slice(0, SHOWN - 1)] : found;
+  }, { label: 'Every command', placeholder: 'Search every command' });
+}
+
+/** Two numbers typed are a point, and the first row goes there. */
+function moveRow(at: { x: number, y: number }): MenuEntry {
+  return {
+    label: `Move to ${at.x}, ${at.y}`, icon: 'i-move', hint: 'View',
+    action: () => runCommand(cmds!.moveTo?.(at.x, at.y), 'Move'),
+  };
 }
 
 /** A row as the menu draws it: where it lives under its name, and remembered when used. */
@@ -64,17 +79,17 @@ function shown(row: Row): MenuEntry {
 // What was used last
 // ---------------------------------------------------------------------------
 
-/** Per device, as every preference is, and swept by Clear everything with them. */
-const RECENT_PREF = 'mbrd.paletteRecent';
+/**
+ * This session's, held in memory and never stored: a reload starts the list
+ * empty. What was used an hour ago in another sitting is not what is in hand.
+ */
 const RECENT_MAX = 8;
+let used: string[] = [];
 
-function recent(): string[] {
-  const list = readPrefJSON<unknown>(RECENT_PREF, []);
-  return Array.isArray(list) ? list.filter((k): k is string => typeof k === 'string') : [];
-}
+const recent = () => used;
 
 function remember(key: string) {
-  writePref(RECENT_PREF, JSON.stringify([key, ...recent().filter(k => k !== key)].slice(0, RECENT_MAX)));
+  used = [key, ...used.filter(k => k !== key)].slice(0, RECENT_MAX);
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +228,8 @@ const APP: readonly {
   { place: 'Edit', label: 'Find on the board', cmd: 'find', icon: 'i-find', accel: 'Ctrl K',
     when: () => board.layoutMode === 'mobile' },
   { place: 'View', label: 'Zoom to 100% here', cmd: 'zoomActual', icon: 'i-zoom-in', accel: '1',
+    when: () => board.layoutMode !== 'mobile' },
+  { place: 'View', label: 'Move to a point…', cmd: 'moveTo', icon: 'i-move',
     when: () => board.layoutMode !== 'mobile' },
   { place: 'File', label: 'Export a copy…', cmd: 'exportAs', icon: 'i-download', when: isDesktop },
   { place: 'File', label: 'Optimise the board…', cmd: 'optimize' },

@@ -71,6 +71,7 @@ const ALSO: Record<string, string[]> = {
   sticky: ['note'], postit: ['note'], memo: ['note'], text: ['note', 'text'],
   image: ['picture'], photo: ['picture'], img: ['picture'], pic: ['picture'],
   zoom: ['zoom', 'fit'], home: ['0 0', 'recentre'], reset: ['reset'],
+  go: ['move'], goto: ['move'], jump: ['move'], position: ['move'], coordinates: ['move'], camera: ['move', 'zoom'],
   download: ['save', 'export'], export: ['export', 'save'], print: ['pdf'],
   share: ['share', 'send'], send: ['send', 'share'], clone: ['duplicate'], copy: ['copy', 'duplicate'],
   search: ['find'], label: ['label', 'tag'], tags: ['tag'],
@@ -86,6 +87,15 @@ const ALSO: Record<string, string[]> = {
   settings: ['settings'], preferences: ['settings'], options: ['settings'], help: ['shortcuts'], keys: ['shortcuts'],
   select: ['select'], pick: ['select'], everything: ['all'],
 };
+
+/**
+ * A point typed as the readout says one, x then y, with or without a comma and
+ * a "move" or "go to" in front: the S box's Move to row, and cmds.moveTo's field.
+ */
+export function parsePoint(text: string): { x: number, y: number } | null {
+  const m = /^\s*(?:(?:move|go)(?:\s*to)?|goto)?\s*(-?\d+(?:\.\d+)?)\s*(?:,\s*|\s+)(-?\d+(?:\.\d+)?)\s*$/i.exec(text);
+  return m ? { x: Number(m[1]), y: Number(m[2]) } : null;
+}
 
 /** A word typed against one word on a row: 3 when it starts it, 1.5 inside it, else 0. */
 function against(t: string, w: string): number {

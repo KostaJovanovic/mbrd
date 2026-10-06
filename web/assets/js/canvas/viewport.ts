@@ -996,6 +996,11 @@ export class Viewport {
     this._frame({ x: 0, y: 0 }, BASE_ZOOM, ms);
   }
 
+  /** A board point to the middle of the room the panels leave, at the zoom already set. */
+  centreOn(point: Point, ms = 0) {
+    this._frame(point, this.zoom, ms);
+  }
+
   // -------------------------------------------------------------------------
   // Animated moves
   //

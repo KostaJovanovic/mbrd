@@ -38,6 +38,8 @@ import { openCredits } from '../ui/credits.ts';
 import { openInventory } from '../ui/inventory.ts';
 import { toggleTimeline } from '../ui/timeline-view.ts';
 import { paintZoom, zoomText } from '../ui/hud.ts';
+import { ask } from '../ui/dialog.ts';
+import { parsePoint } from '../ui/palette-match.ts';
 import { reloadBoard, restartApp, scaleFromItem } from '../ui/board-actions.ts';
 
 /** Alias so commands.ts can extend with its own surface without re-importing viewport. */
@@ -166,6 +168,26 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
         board.layoutMode !== 'mobile' || i.type !== 'title'),
       80, travelMs()),
     recenter: () => vp.recenter(travelMs()),
+    // The camera to a board point, as the readout names it: given, or asked
+    // for with where the view is now filled in. Canvas only - the Feed has one axis.
+    moveTo: async (x?: number, y?: number) => {
+      if (vp.isMobile) { canvasOnly('Moving to a point is a canvas thing'); return; }
+      let at = typeof x === 'number' && typeof y === 'number' && Number.isFinite(x) && Number.isFinite(y)
+        ? { x, y } : null;
+      if (!at) {
+        const here = vp.toWorld(vp.left + vp.cx, vp.top + vp.cy);
+        const typed = await ask({
+          title: 'Move to',
+          body: 'A point on the board as the readout says it: x, then y.',
+          go: 'Move',
+          field: { value: `${Math.round(here.x)}, ${Math.round(here.y)}` },
+        });
+        if (typed === null) return;
+        at = parsePoint(typed);
+        if (!at) { toast('That is not a point. Two numbers: x, then y'); return; }
+      }
+      vp.centreOn(at, travelMs());
+    },
     // 100% without moving the view: the 1 key, and the same call a click on the
     // zoom readout makes (ui/hud.ts). Nothing under a lock, as the readout is
     // dead there, and nothing on Mobile, whose zoom is the column width.

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 
 import { ROOT, WEB, read } from './helpers.js';
-import { fold, flatten, score, rank, dedupe, rowKey } from '../web/assets/js/ui/palette-match.ts';
+import { fold, flatten, score, rank, dedupe, rowKey, parsePoint } from '../web/assets/js/ui/palette-match.ts';
 
 const run = () => {};
 const row = (label, path = ['Board'], weight = 2, extra = {}) =>
@@ -86,6 +86,14 @@ test('one row per command, the nearest kept; a choice keeps its parent', () => {
   ]);
   assert.deepEqual(kept.map(r => `${r.entry.label} ${r.path.join('/')}`),
     ['Snap to grid Board', 'Warm Selection/Colour', 'Warm Tools/Note']);
+});
+
+test('a point typed is read as x then y', () => {
+  assert.deepEqual(parsePoint('100 -250'), { x: 100, y: -250 });
+  assert.deepEqual(parsePoint('move to 12.5, 40'), { x: 12.5, y: 40 });
+  assert.deepEqual(parsePoint('go 0,0'), { x: 0, y: 0 });
+  assert.equal(parsePoint('snap to grid'), null);
+  assert.equal(parsePoint('100'), null);
 });
 
 test('a recent row is known by its key, whatever count its label carries today', () => {
