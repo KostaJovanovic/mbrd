@@ -20,15 +20,16 @@ import type { Viewport } from '../canvas/viewport.ts';
 import type { ViewPerf } from '../perf/view-perf.ts';
 
 /**
- * Where every app is downloaded from: the latest release in the public
- * KostaJovanovic/mbrd-release. Not a file in it, since each file's name carries
- * its version and a fixed link dies on the next release, and not the private
- * KostaJovanovic/mbrd, which answers anybody signed out with a 404. The
- * desktop's updater opens the same page (desktop/updates.ts).
+ * Where every app is downloaded from: the latest release of KostaJovanovic/mbrd.
+ * Not a file in it, since each file's name carries its version and a fixed link
+ * dies on the next release. The desktop's updater opens the same page
+ * (desktop/updates.ts).
  */
-export const RELEASES = 'https://github.com/KostaJovanovic/mbrd-release/releases/latest';
+export const RELEASES = 'https://github.com/KostaJovanovic/mbrd/releases/latest';
 /** Where Report a problem sends somebody, with the details on their clipboard. */
-export const ISSUES = 'https://github.com/KostaJovanovic/mbrd-release/issues/new';
+export const ISSUES = 'https://github.com/KostaJovanovic/mbrd/issues/new';
+/** The source, for the About sheet. */
+export const SOURCE = 'https://github.com/KostaJovanovic/mbrd';
 import { togglePlayback } from '../canvas/audio.ts';
 import { currentLens, setLens } from '../ui/board-view.ts';
 import {

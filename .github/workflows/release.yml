@@ -41,10 +41,12 @@
 # the same release again, with --clobber, whether it is still a draft or
 # already published.
 #
-# The releases live in KostaJovanovic/mbrd-release, not here. This repo is
-# private, and GitHub answers a private repo's releases with a 404 to anybody
-# signed out, so Get the app and the updaters would find nothing. See
-# research/old/apps-2026-09-13.md §4.4.
+# The releases live here, in KostaJovanovic/mbrd, which is public. They used to
+# go to a separate public KostaJovanovic/mbrd-release while this repo was
+# private. Copies installed before the move still ask that one, so while the
+# RELEASES_TOKEN secret is set, publish also mirrors the release there: one
+# mirrored release updates them to a build that asks here, and after that the
+# mirror, its secret and mbrd-release itself can go.
 #
 # There is no update file in the release. The apps ask GitHub's API for the
 # latest release (desktop/updates.ts), and the answer gives every file's
@@ -53,11 +55,9 @@
 # "mbrd-Windows", "mbrd-linux-x64" - exactly as it is.
 #
 # Secrets, set by the maintainer:
-#   RELEASES_TOKEN  a fine-grained token for KostaJovanovic/mbrd-release only,
-#                   Contents read and write. The job's own GITHUB_TOKEN cannot
-#                   write to another repo. Every job that touches the release
-#                   reads it now - the builds upload with it - where before
-#                   only publish did. It can write nothing in this repo.
+#   RELEASES_TOKEN  optional, for the mirror only: a fine-grained token for
+#                   KostaJovanovic/mbrd-release, Contents read and write. The
+#                   release here is written with the job's own GITHUB_TOKEN.
 #   ANDROID_KEYSTORE_BASE64    the release keystore, base64
 #   ANDROID_KEYSTORE_PASSWORD  its password, also used for the key...
 #   ANDROID_KEY_PASSWORD       ...unless this optional one is set
@@ -100,18 +100,13 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-# Write, for the one thing this repo gets: the v<version> tag on the source
-# commit. The release itself is written with RELEASES_TOKEN.
+# Write: every job that builds uploads into the release, with GITHUB_TOKEN.
 permissions:
   contents: write
 
 jobs:
   version:
     runs-on: ubuntu-24.04
-    # contents: read is all the checkout needs. The release is written in the
-    # other repo, with RELEASES_TOKEN, which this grant has no say over.
-    permissions:
-      contents: read
     outputs:
       version: ${{ steps.v.outputs.version }}
       label: ${{ steps.v.outputs.label }}
@@ -163,16 +158,12 @@ jobs:
       # again at the end.
       - name: Open the draft release
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.v.outputs.version }}
           LABEL: ${{ steps.v.outputs.label }}
         run: |
           set -euo pipefail
-          if [ -z "${GH_TOKEN:-}" ]; then
-            echo "::error title=No RELEASES_TOKEN::Set the RELEASES_TOKEN secret: a fine-grained token for KostaJovanovic/mbrd-release only, Contents read and write. gh secret set RELEASES_TOKEN -R KostaJovanovic/mbrd"
-            exit 1
-          fi
-          repo=KostaJovanovic/mbrd-release
+          repo=${{ github.repository }}
           tag="v$VERSION"
           if gh release view "$tag" -R "$repo" >/dev/null 2>&1; then
             if [ "$(gh release view "$tag" -R "$repo" --json isDraft --jq '.isDraft')" = "true" ]; then
@@ -184,10 +175,9 @@ jobs:
               echo "::warning title=Already published::$tag is out. Its files will be replaced while it is visible, and an updater reading it mid-run can see a version it cannot download."
             fi
           else
-            # --target main, not the source commit: a tag here must name a
-            # commit in this repo, and the source commit is not in it. A draft
-            # creates no tag until it is published.
-            gh release create "$tag" -R "$repo" --draft --title "mbrd $LABEL" --notes "Building." --target main
+            # The source commit: publishing makes the tag there, which is what
+            # ties the release to its source. A draft creates no tag until then.
+            gh release create "$tag" -R "$repo" --draft --title "mbrd $LABEL" --notes "Building." --target "$GITHUB_SHA"
             echo "opened $tag as a draft"
           fi
 
@@ -303,7 +293,7 @@ jobs:
       # if-no-files-found: error used to be.
       - name: Upload into the draft release
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
@@ -314,7 +304,7 @@ jobs:
             exit 1
           fi
           ls -l "${files[@]}"
-          gh release upload "v$VERSION" "${files[@]}" -R KostaJovanovic/mbrd-release --clobber
+          gh release upload "v$VERSION" "${files[@]}" -R ${{ github.repository }} --clobber
 
   android:
     needs: version
@@ -403,13 +393,12 @@ jobs:
           MBRD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           MBRD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         # -PmbrdUpdateFeed turns the updater on (MbrdUpdate.java): the GitHub
-        # API answer for the latest release in the public repo. Written out,
-        # because github.repository is this private one. Only this build
-        # passes it, so a mobile.bat build never checks for updates.
+        # API answer for the latest release here. Only this build passes it,
+        # so a mobile.bat build never checks for updates.
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon testReleaseUnitTest assembleRelease \
-            -PmbrdUpdateFeed=https://api.github.com/repos/KostaJovanovic/mbrd-release/releases/latest
+            -PmbrdUpdateFeed=https://api.github.com/repos/${{ github.repository }}/releases/latest
 
       # The updater finds the APK by the part of the name before the version
       # (APK_NAME in MbrdUpdate.java). tests/desktop-package.test.js holds the two.
@@ -421,20 +410,17 @@ jobs:
           cp mobile/android/app/build/outputs/apk/release/app-release.apk "out/mbrd-android-$VERSION.apk"
       - name: Upload into the draft release
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          gh release upload "v$VERSION" "out/mbrd-android-$VERSION.apk" -R KostaJovanovic/mbrd-release --clobber
+          gh release upload "v$VERSION" "out/mbrd-android-$VERSION.apk" -R ${{ github.repository }} --clobber
 
   publish:
     needs: [version, desktop, android]
     # Off for a test build: the draft keeps the files and stays invisible.
     if: ${{ inputs.publish }}
     runs-on: ubuntu-24.04
-    # contents for the source tag below, the one thing written in this repo.
-    permissions:
-      contents: write
     steps:
       # The five names are a contract - the updaters find their file by the
       # part before the version (desktop/updates.ts, MbrdUpdate.java), and
@@ -443,12 +429,12 @@ jobs:
       # invisible. A missing one published is an app that cannot update; a
       # missing one caught here is a re-run.
       #
-      # No source zip: the maintainer owns mbrd's own code, and the GPL FFmpeg
-      # and LGPL OCCT sources are offered by the upstream pages that
-      # .github/THIRD-PARTY.md names.
+      # mbrd's own source is this repository, and the release's source archives
+      # are GitHub's, made from the tag. The GPL FFmpeg and LGPL OCCT sources
+      # are offered by the upstream pages that .github/THIRD-PARTY.md names.
       - name: Every app is in the draft
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
           SYSTEMS: ${{ inputs.systems }}
         run: |
@@ -460,7 +446,7 @@ jobs:
                    "mbrd-linux-x64-$VERSION.AppImage" \
                    "mbrd-linux-x64-$VERSION.deb")
           fi
-          have=$(gh release view "$tag" -R KostaJovanovic/mbrd-release --json assets --jq '.assets[].name')
+          have=$(gh release view "$tag" -R ${{ github.repository }} --json assets --jq '.assets[].name')
           echo "$have"
           missing=0
           for name in "${want[@]}"; do
@@ -473,13 +459,13 @@ jobs:
 
       - name: Publish the release
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
           LABEL: ${{ needs.version.outputs.label }}
           SYSTEMS: ${{ inputs.systems }}
         run: |
           set -euo pipefail
-          repo=KostaJovanovic/mbrd-release
+          repo=${{ github.repository }}
           tag="v$VERSION"
           dl="https://github.com/$repo/releases/download/$tag"
           # Only the files that are actually in the release get a row. A table
@@ -530,9 +516,12 @@ jobs:
           cat >> notes.md <<EOF
           - **Android:** when Android asks, allow your browser or file manager to install apps.
 
+          mbrd is free software under the GPL, version 3 or later. The source of this release is the tag $tag in this repository, and the archives below are it.
+
           Built from commit $GITHUB_SHA.
           EOF
           cat notes.md
+          cp notes.md "$RUNNER_TEMP/notes.md"
           # The whole publication, in one call: the five files are already in
           # the draft and the step above has counted them. --draft=false is
           # what makes them visible, and it is the first moment any installed
@@ -541,16 +530,32 @@ jobs:
           gh release edit "$tag" -R "$repo" \
             --title "mbrd $LABEL" --notes-file notes.md --draft=false --latest
 
-      # The tag that ties the release to its source, in this repo, with the
-      # job's own token.
-      - name: Tag the source commit
+      # For copies installed while the releases lived in KostaJovanovic/mbrd-release:
+      # they ask that repo, so the same files go there too, once the release
+      # here is out. Skipped without the secret, which is how it is retired.
+      # A failure here leaves the release here standing, and a re-run of this
+      # job alone tries again.
+      - name: Mirror to the old release repository
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          FROM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
+          LABEL: ${{ needs.version.outputs.label }}
         run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "No RELEASES_TOKEN, so nothing is mirrored."
+            exit 0
+          fi
           tag="v$VERSION"
-          if gh api "repos/${{ github.repository }}/git/ref/tags/$tag" >/dev/null 2>&1; then
-            echo "$tag already exists here, left as it is"
+          old=KostaJovanovic/mbrd-release
+          mkdir -p mirror
+          GH_TOKEN="$FROM_TOKEN" gh release download "$tag" -R ${{ github.repository }} -D mirror --pattern 'mbrd-*'
+          ls -l mirror
+          if gh release view "$tag" -R "$old" >/dev/null 2>&1; then
+            gh release upload "$tag" mirror/* -R "$old" --clobber
+            gh release edit "$tag" -R "$old" --draft=false --latest
           else
-            gh api "repos/${{ github.repository }}/git/refs" -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA"
+            gh release create "$tag" mirror/* -R "$old" --title "mbrd $LABEL" \
+              --notes-file "$RUNNER_TEMP/notes.md" --target main --latest
           fi

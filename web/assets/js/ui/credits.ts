@@ -3,6 +3,7 @@
 // committed images, not fetched from GitHub.
 
 import { el } from '../util.ts';
+import { VERSION } from '../version.js';
 
 // Wired on first open — most sessions never open this sheet.
 let wired = false;
@@ -19,6 +20,10 @@ export function openCredits(): void {
     // Click on the ::backdrop (target === dlg) closes the sheet.
     dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
     el('credits-close')?.addEventListener('click', () => dlg.close());
+    // Which mbrd this is, beside its licence. The markup carries no number of
+    // its own, so it can never name a version the app is not.
+    const version = dlg.querySelector('.credits-version');
+    if (version) version.textContent = VERSION;
     wired = true;
   }
 

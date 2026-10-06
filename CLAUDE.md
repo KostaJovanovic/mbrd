@@ -95,11 +95,12 @@ in place. It needs `desktop/node_modules`.
 
 **A release is `save.bat release` (option 3 in its menu), and nothing else.**
 After the push it runs `gh workflow run release.yml`, and
-`.github/workflows/release.yml` builds and publishes into the **public**
-`KostaJovanovic/mbrd-release`. This
-repository is private, and GitHub answers a private repository's releases with a
-404 to anybody signed out, so `Get the app` and the updaters read the other
-one. A plain push starts nothing. There is no update file in a release: the apps
+`.github/workflows/release.yml` builds and publishes into this repository's own
+releases, which `Get the app` and the updaters read — so **this repository has
+to be public**, or GitHub answers its releases with a 404 to anybody signed out.
+Copies installed before the move read `KostaJovanovic/mbrd-release`, which the
+workflow mirrors each release to while the `RELEASES_TOKEN` secret is set. A
+plain push starts nothing. There is no update file in a release: the apps
 read GitHub's API and find their file by the part of its name before the version
 (`desktop/updates.ts`, `MbrdUpdate.java`), so **a release file's name is a
 contract**, which `tests/desktop-package.test.js` holds. The secrets the workflow

@@ -34,7 +34,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
- * Updates for the APK, from the public KostaJovanovic/mbrd-release
+ * Updates for the APK, from the releases of KostaJovanovic/mbrd
  * (.github/workflows/release.yml). A port of FileAnalyser's AnrUpdate.java.
  *
  * Only a build with an update feed checks: BuildConfig.UPDATE_FEED, which the

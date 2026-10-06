@@ -1776,29 +1776,38 @@ the app's name, and `tests/desktop-icon.test.js` keeps it short and plain.
 
 ---
 
-## Three things that reach outside
+## What reaches outside
 
-Everything else in mbrd renders the same with the network off, and opening a
-board tells nobody. Three modules are the exceptions and each is built so the
-exception is a choice:
+Everything else in mbrd renders the same with the network off. These are the
+exceptions, the whole list, and `web/privacy.html` says each of them to the
+person using the app — a new one is a sentence there in the same commit:
 
-- `canvas/embed.ts` is the only code that talks to a third party — a link card
-  becomes a YouTube or Spotify player **per click, never by default**, because
-  loading an embed tells someone else's server what is on this board.
-- `ui/fonts.ts` takes a dropped `.woff2` into the type menus and inside the
-  `.mbrd` as an asset rather than fetching a face, so a board keeps its look when
-  it is sent to someone else. The family name there is *rebuilt* from the
-  filename, never taken — it lands inside a CSS declaration.
-- `optimize/media.ts` is the third and the only one that fetches: the ffmpeg core
-  lives at jsdelivr and is pulled on first use, since thirty megabytes is not
-  something to ship in the shell. Nothing about a board is sent — only the
-  request for the core — and it is the one thing in `optimize/` deliberately
-  absent from `SHELL` in `web/sw.js`, so video posters are the single feature
-  that degrades offline until the core has been fetched once. Everything there
-  fails to "no poster", never to a broken card, and the dialog says which case it
-  is in.
+- `canvas/embed.ts` turns a link card into a YouTube or Spotify player **per
+  click, never by default**, because loading an embed tells someone else's
+  server what is on this board.
+- `canvas/embed-meta.ts` is the one that does not wait for a click: a player
+  card with no stored title asks the service's oEmbed endpoint for one, and
+  Spotify's CDN for the cover, when it is shown. So a board with such a link
+  tells that service the link was looked at.
+- `optimize/media.ts` fetches the ffmpeg core from jsdelivr on first use, since
+  thirty megabytes is not something to ship in the shell. Nothing about a board
+  is sent, only the request for the core, and it is the one thing in
+  `optimize/` deliberately absent from `SHELL` in `web/sw.js`, so video posters
+  are the single feature that degrades offline until the core has been fetched
+  once. Everything there fails to "no poster", never to a broken card.
+- `storage/cloud/` talks to Google Drive, only once the person connects it:
+  Share link uploads a board, and Save to cloud keeps one there and uploads it
+  after each autosave. Sign-in is a navigation to Google's page.
+- The update checks: `ui/web-update.ts` asks the site's own host for a new
+  service worker every fifteen minutes and on a return to the tab;
+  `desktop/updates.ts` and `MbrdUpdate.java` ask GitHub's API for the latest
+  release about once a day, and download from GitHub on Update.
 
-Adding a fourth needs an argument in the pull request.
+`ui/fonts.ts` is the counter-example: a dropped `.woff2` goes into the `.mbrd`
+as an asset rather than a face being fetched, so a board keeps its look when it
+is sent to someone else.
+
+Adding another needs an argument in the pull request.
 
 ---
 

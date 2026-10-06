@@ -70,7 +70,7 @@ APK. Nobody has tried this on a phone yet.
 | `android/.../MbrdNames.java` | The store's file names, byte for byte the desktop's |
 | `android/.../MbrdRoot.java` | Where the boards and the store live for this run |
 | `android/.../MbrdFiles.java` | Save, Open, Import, and the files other apps hand in |
-| `android/.../MbrdUpdate.java` | Release builds only: the update from `KostaJovanovic/mbrd-release` |
+| `android/.../MbrdUpdate.java` | Release builds only: the update from the releases of `KostaJovanovic/mbrd` |
 
 ## The bridge
 
@@ -207,8 +207,8 @@ bridge:
 ## Releases and updates
 
 `.github/workflows/release.yml` builds the APK on GitHub, beside the desktop
-builds, and publishes it in the same release in the public
-`KostaJovanovic/mbrd-release` as `mbrd-android-<version>.apk`. The Android job
+builds, and publishes it in the same release in `KostaJovanovic/mbrd` as
+`mbrd-android-<version>.apk`. The Android job
 builds the web bundle, runs `npm run sync`, then
 `gradlew testReleaseUnitTest assembleRelease` with the release key and the
 update feed. Four FFmpeg steps wait for group N and skip until
@@ -216,7 +216,9 @@ update feed. Four FFmpeg steps wait for group N and skip until
 
 `MbrdUpdate.java` is the updater. It runs only when `BuildConfig.UPDATE_FEED`
 holds a URL, and only the workflow sets one (`-PmbrdUpdateFeed`): the GitHub API
-address of the latest release in `mbrd-release`. The release holds no update
+address of the latest release here. Copies built before the move read
+`KostaJovanovic/mbrd-release`, which the workflow mirrors to while
+`RELEASES_TOKEN` is set. The release holds no update
 file. At start-up, at most once every six hours, the updater reads that answer,
 and the panel's "Check for updates" reads it at once. A newer tag than the
 installed `versionName` asks first. **Update** downloads the asset named

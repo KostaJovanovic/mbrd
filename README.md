@@ -4,7 +4,8 @@ A moodboard that runs in your browser. Drop in images, video, audio, 3D models,
 notes and links, arrange them on a canvas that goes on forever, and save the
 whole board as a single file.
 
-Nothing is uploaded and there is no account. Everything stays on your computer.
+There is no account and no server of ours. Your boards stay on your computer
+unless you connect your own Google Drive.
 
 ## Run it
 
@@ -91,9 +92,11 @@ existing sync app handles it.
 
 ## Privacy
 
-The app works with the internet switched off, and opening a board tells nobody.
-Two things reach outside, and only if you ask: pressing play on a YouTube or
-Spotify card, and generating a preview image for video your browser cannot read.
+The app works with the internet switched off. What does reach outside is listed
+host by host on [the privacy page](web/privacy.html): YouTube and Spotify for a
+card's title and its player, jsDelivr for a video converter you ask for, your
+own Google Drive once you connect it, and the update checks - the site's own
+host on the web, GitHub in the apps.
 
 ## Browsers
 

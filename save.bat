@@ -447,8 +447,8 @@ goto end
 
 rem Options 3 and 7 (`release`, `release all`): start the "Release apps"
 rem workflow once the push is in. It builds the systems RELEASE_SYSTEMS names
-rem on GitHub and publishes one release in the public
-rem KostaJovanovic/mbrd-release (.github/workflows/release.yml), with the
+rem on GitHub and publishes one release in KostaJovanovic/mbrd itself
+rem (.github/workflows/release.yml), with the
 rem branch just pushed. It needs the GitHub CLI, logged in. Non-fatal: the
 rem commit and the push already happened, and the Actions tab can still start
 rem the workflow by hand.

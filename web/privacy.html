@@ -7,13 +7,13 @@
   short because there is almost nothing to disclose, and padding it out with the
   usual clauses about lawful bases and data processors would imply there were.
 
-  The "almost" arrived with the share link, and it is the reason the network
-  section has four items rather than three. One button in this app sends a
-  board somewhere - to the user's own Google Drive, never to us - and a page
-  that went on saying "no upload" while that button existed would be the one
-  kind of privacy policy worth less than none. The tally at the top changed with
-  it: "no upload" became "no server of ours", which is the claim that is still
-  true and is the one that was always doing the work.
+  The "almost" is the network section, and it lists every host the code
+  reaches - the connect-src and frame-src of web/_headers, the desktop's and the
+  phone's update checks, and Google's sign-in - including the ones nobody
+  presses a button for. A page that undersold what leaves the machine would be
+  the one kind of privacy policy worth less than none. A new host in the code
+  is a new sentence here, in the same commit. The tally at the top says "no
+  server of ours", which is the claim that is true and does the work.
 
   A plain document, not the app. It loads tokens.css so it belongs to the site,
   and assets/css/privacy.css for the rest - no bundle, no service worker
@@ -91,7 +91,7 @@
       <span>no account</span>
       <span>no server of ours</span>
       <span>no tracking</span>
-      <span>last changed 1 September 2026</span>
+      <span>last changed 6 October 2026</span>
     </p>
   </header>
 
@@ -103,16 +103,22 @@
     </div>
     <article class="pv-plate">
      <p>
-      mbrd runs entirely in your browser. There is no account and no server that
-      holds your work: images, video, audio, notes and everything else you add
-      stay on your own computer, in your browser's storage, and exporting a board
-      writes a <code>.mbrd</code> file wherever you choose to put it. We collect
-      nothing at all - no analytics, no tracking pixels, no cookies, no
-      fingerprinting, no error reporting - and the app works with the internet
-      switched off, so opening a board tells nobody. The other half of that
-      promise is that clearing your browser's data for this site deletes your
-      boards and we have no backup to restore them from, so export anything you
-      would be sorry to lose.
+      There is no account and no server that holds your work. On the web, mbrd
+      runs in your browser and keeps your boards in your browser's storage on
+      your own computer; saving a board writes a <code>.mbrd</code> file
+      wherever you choose to put it. In the desktop and Android apps every board
+      is a file in a folder of your own, <code>Documents/mbrd</code> unless you
+      chose another, and the app keeps a few earlier copies of each on the same
+      device in case a save goes wrong. We collect nothing at all - no analytics,
+      no tracking pixels, no cookies, no fingerprinting, no error reporting.
+      <em>Report a problem</em> only copies some details to your clipboard and
+      opens the issues page; what you paste there is up to you.
+     </p>
+     <p>
+      The other half of that promise is that we have no backup of anything. On
+      the web, clearing your browser's data for this site deletes your boards,
+      and Safari deletes a site's storage by itself when you have not visited it
+      for seven days, so save anything you would be sorry to lose to a file.
      </p>
     </article>
    </li>
@@ -124,30 +130,47 @@
     </div>
     <article class="pv-plate">
      <p>
-      Four things reach the network, and all four you have to ask for. Pressing
-      play on a YouTube or Spotify card loads that card from YouTube or Spotify,
-      who then see the request the way they would if you opened it in a tab; the
-      YouTube embed uses their no-cookie host. Generating a preview image for a
-      video your browser cannot read downloads a converter from a public code
-      mirror, jsDelivr - the converter comes to the video, never the other way
-      round. And loading this page at all fetches it from our host, Cloudflare,
-      which serves the site as static files and sees the traffic that reaches it
-      the way every web server does; we have added no logging of our own on top.
+      This is every place mbrd reaches, and what each one sees.
      </p>
      <p>
-      The fourth is the only one that sends your board anywhere, and it is worth
-      spelling out. <em>Share link</em> signs you in to your own Google Drive and
-      uploads the board there, as a file in your account, and then gives you a
-      link that points at it. It never passes through anything of ours - we run
-      no server and have nowhere to put it - so what leaves your computer goes
-      from you to Google and nowhere else, under whatever terms you already have
-      with them. Two things follow from that. The link works for anyone who has
-      it and needs no account, which is the point of it, so it is as private as
-      the people you send it to. And the file stays in your Drive until you
-      delete it there; nothing in mbrd can reach into your account to take it
-      back, because the permission we ask for reaches only files this app itself
-      created. If you never press that button, nothing about your boards ever
-      leaves your machine.
+      <strong>Our host.</strong> The website is served by Cloudflare as static
+      files, and it sees the traffic that reaches it the way every web server
+      does; we have added no logging of our own on top. An open tab also asks it
+      for a newer version of the app every quarter of an hour and when you come
+      back to the tab. The desktop and Android apps instead ask GitHub, about
+      once a day, whether a newer release is out, and download it from GitHub
+      when you press Update. Those requests carry nothing about your boards.
+     </p>
+     <p>
+      <strong>YouTube and Spotify.</strong> A card for a YouTube video or a
+      Spotify track asks that service for its title and cover when it is shown
+      and has none yet - so a board with such a link on it tells YouTube or
+      Spotify that this link was looked at, without anybody pressing anything.
+      Pressing play loads their player, the YouTube one from its no-cookie
+      host, and they then see the request the way they would if you opened it
+      in a tab.
+     </p>
+     <p>
+      <strong>jsDelivr.</strong> Making a preview for a video your browser
+      cannot read downloads a converter from this public code mirror, once you
+      ask for it. The converter comes to the video, never the other way round.
+     </p>
+     <p>
+      <strong>Google Drive</strong>, only once you connect it. <em>Share
+      link</em> uploads the board to your own Drive, as a file in your account,
+      and gives you a link to it. <em>Save to cloud</em> keeps a board there and
+      uploads it again after each change, so it can open on another computer. Signing in happens on
+      Google's own page. None of it passes through anything of ours - we run no
+      server and have nowhere to put it - so what leaves your computer goes from
+      you to Google and nowhere else, under whatever terms you already have with
+      them. A share link works for anyone who has it and needs no account, so it
+      is as private as the people you send it to. The files stay in your Drive
+      until you delete them there, and the permission mbrd asks for reaches only
+      the files mbrd itself made.
+     </p>
+     <p>
+      If you never add a YouTube or Spotify link and never connect Drive,
+      nothing about your boards leaves your machine.
      </p>
     </article>
    </li>
@@ -162,9 +185,10 @@
       There is no account to create and nothing is gathered, so a child's data is
       treated no differently from anybody else's - neither is collected. If any
       of this ever stops being true, this page changes first and the date at the
-      top changes with it, and mbrd is open source, so you do not have to take
-      our word for any of it. Questions go to
-      <a href="https://github.com/KostaJovanovic/mbrd-release/issues">the project's issues page</a>.
+      top changes with it. mbrd is free software, and
+      <a href="https://github.com/KostaJovanovic/mbrd">its source</a> is public,
+      so you do not have to take our word for any of it. Questions go to
+      <a href="https://github.com/KostaJovanovic/mbrd/issues">the project's issues page</a>.
      </p>
     </article>
    </li>

@@ -1,4 +1,4 @@
-// Updates from the public release repo. A port of FileAnalyser's
+// Updates from the repo's own releases. A port of FileAnalyser's
 // desktop/updater.mjs: one request to GitHub's API gives the latest tag, each
 // file's URL and the SHA-256 GitHub computed for it. A download that does not
 // match its digest never takes over, and a release with no digest never
@@ -15,10 +15,11 @@ import { dirname, join } from 'node:path';
 import { log } from './log.ts';
 import type { UpdateOffer } from './chrome/bridge.ts';
 
-// The source repo is private, and GitHub answers its releases with a 404 to
-// anybody signed out. research/old/apps-2026-09-13.md §1 #31.
+// The source repo, which is public and carries the releases. Copies built
+// before that asked KostaJovanovic/mbrd-release, which release.yml mirrors to
+// while they move over.
 const OWNER = 'KostaJovanovic';
-const REPO = 'mbrd-release';
+const REPO = 'mbrd';
 /** The latest release's page, which every build is downloaded from. */
 export const RELEASE_PAGE = `https://github.com/${OWNER}/${REPO}/releases/latest`;
 const API = `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`;
