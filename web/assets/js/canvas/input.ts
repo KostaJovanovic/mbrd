@@ -16,6 +16,7 @@ import {
   duplicateInPlace, takeBack, commit,
 } from '../state.ts';
 import type { Command } from '../state.ts';
+import type { Item } from '../board-model.ts';
 import { baseMs, reducedMotion, zoomMs } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 import {
@@ -814,6 +815,31 @@ export function walkOrder<T extends { id: string, x: number, y: number, w: numbe
     else rows.push([item]);
   }
   return rows.flatMap(r => r.sort((a, b) => left(a) - left(b) || (a.id < b.id ? -1 : 1)));
+}
+
+/**
+ * The card Alt+arrow moves to from `from`: the nearest whose centre lies that
+ * way, `dx`/`dy` a unit step in world space (y up, so Up is dy = 1). A card
+ * inside the quarter that opens that way is preferred over one merely on that
+ * side, and sideways distance costs double, so the step goes to the card that
+ * reads as next in that direction rather than the closest one off at an angle.
+ * Null at the edge of the board. Pure, for tests/input.test.js.
+ */
+export function nearestCard<T extends { id: string, x: number, y: number }>(
+  from: { x: number, y: number }, cards: readonly T[], dx: number, dy: number,
+): T | null {
+  let best: T | null = null;
+  let bestScore = Infinity;
+  for (const card of cards) {
+    const vx = card.x - from.x, vy = card.y - from.y;
+    const along = vx * dx + vy * dy;
+    if (along <= 0) continue;
+    const across = Math.abs(vx * dy - vy * dx);
+    // Outside the quarter: still reachable, but only after everything inside it.
+    const score = along + 2 * across + (across > along ? 1e9 : 0);
+    if (score < bestScore) { best = card; bestScore = score; }
+  }
+  return best;
 }
 
 /**
@@ -3642,7 +3668,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   el.tabIndex = 0;
   el.setAttribute('role', 'application');
   el.setAttribute('aria-roledescription', 'board');
-  el.setAttribute('aria-label', 'Board. Tab and Shift+Tab step through the cards, Enter opens one, Escape then Tab leaves the board.');
+  el.setAttribute('aria-label', 'Board. Tab and Shift+Tab step through the cards, Alt and an arrow go to the next card that way, Enter opens one, Escape then Tab leaves the board.');
   const spoken = document.createElement('div');
   spoken.className = 'vh';
   spoken.setAttribute('aria-live', 'polite');
@@ -3661,14 +3687,42 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     const next = at < 0 ? (e.shiftKey ? cards.length - 1 : 0) : at + (e.shiftKey ? -1 : 1);
     if (next < 0 || next >= cards.length) return false;
     const card = cards[next];
+    focusCard(card);
+    spoken.textContent = `${itemAccessibleName(card)}, ${next + 1} of ${cards.length}`;
+    return true;
+  }
+
+  /** Select a card and bring it into view when any of it is off the screen, at the zoom already set. */
+  function focusCard(card: Item) {
     select([card.id]);
-    // Into view when any of it is off the screen, at the zoom already set.
     const a = vp.toScreen(card.x - card.w / 2, card.y + card.h / 2);
     const b = vp.toScreen(card.x + card.w / 2, card.y - card.h / 2);
     if (a.x < vp.left || a.y < vp.top || b.x > vp.left + vp.width || b.y > vp.top + vp.height) {
       vp.centreOn({ x: card.x, y: card.y }, baseMs());
     }
-    spoken.textContent = `${itemAccessibleName(card)}, ${next + 1} of ${cards.length}`;
+  }
+
+  /**
+   * Alt+arrow: to the nearest card that way (nearestCard()), from the one
+   * selected, or from the middle of the screen when none is. The plain arrows
+   * stay the nudge. Only with the focus on the board or on nothing, since on
+   * the web Alt+Left anywhere else is the browser's Back.
+   */
+  function stepCards(e: KeyboardEvent): boolean {
+    if ((e.target !== el && e.target !== document.body) || vp.isMobile || onlyLooking()) return false;
+    const rolled = rolledFences();
+    const cards = board.items.filter(i => i.type !== 'ghost' && !rolledAway(i, rolled));
+    const here = selection.size === 1 ? cards.find(c => selection.has(c.id)) : undefined;
+    const from = here ?? vp.toWorld(vp.left + vp.width / 2, vp.top + vp.height / 2);
+    const dx = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    const dy = e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0;
+    const card = nearestCard(from, cards.filter(c => c !== here), dx, dy);
+    if (!card) {
+      spoken.textContent = 'No card that way';
+      return true;
+    }
+    focusCard(card);
+    spoken.textContent = itemAccessibleName(card);
     return true;
   }
 
@@ -3901,6 +3955,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         break;
       }
       case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown':
+        // Alt moves the focus to the next card that way; the plain arrows nudge.
+        if (e.altKey && !mod) {
+          if (stepCards(e)) e.preventDefault();
+          break;
+        }
         // The tour owns the arrows while it is up - stepping a reading is what
         // they mean there - and it says so by answering true, including at the
         // last stop. Falls through to the nudge otherwise. Left/Up go back and

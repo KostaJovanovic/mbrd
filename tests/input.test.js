@@ -7,7 +7,7 @@ import {
   liftWithButtonsHeld, readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
   carryFloor, carryHold, carryPlace, drewRectangle, marqueeHit,
   GESTURE_MOVES, gestureTransition, pressIntent,
-  resizeAxisOn, nudgeDelta, walkOrder,
+  resizeAxisOn, nudgeDelta, walkOrder, nearestCard,
 } from '../web/assets/js/canvas/input.ts';
 import { cellInset, MIN_SIZE, MAX_SIZE } from '../web/assets/js/geometry.ts';
 
@@ -16,6 +16,18 @@ test('Tab walks the cards in reading order, a row a few pixels out of line still
   // World y points up: a top edge of 200 is above one of 0.
   const order = walkOrder([card('c', 300, 0), card('b', 300, 200), card('a', 0, 190), card('d', 0, 0)]);
   assert.deepEqual(order.map(c => c.id), ['a', 'b', 'd', 'c']);
+});
+
+test('Alt+arrow goes to the card that reads as next that way, not the closest at an angle', () => {
+  const at = (id, x, y) => ({ id, x, y });
+  const here = { x: 0, y: 0 };
+  const cards = [at('right', 300, 0), at('near-diagonal', 150, 140), at('up', 0, 250), at('left', -400, 30)];
+  assert.equal(nearestCard(here, cards, 1, 0).id, 'right');
+  assert.equal(nearestCard(here, cards, 0, 1).id, 'up', 'world y runs up, so Up is +y');
+  assert.equal(nearestCard(here, cards, -1, 0).id, 'left');
+  assert.equal(nearestCard(here, cards, 0, -1), null, 'nothing that way is the edge of the board');
+  // Only a card off at an angle that way: still reachable.
+  assert.equal(nearestCard(here, [at('steep', 50, 400)], 1, 0).id, 'steep');
 });
 
 test('double taps match within the touch timing and distance windows', () => {
