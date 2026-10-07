@@ -1,129 +1,61 @@
 # mbrd
 
-A moodboard that runs in your browser. Drop in images, video, audio, 3D models,
-notes and links, arrange them on a canvas that goes on forever, and save the
-whole board as a single file.
+A moodboard for collecting things you like and laying them out on one canvas
+that goes on forever. Drop in pictures, video, music, 3D models, notes and
+links, move them around, group them, and keep the whole board as a single file
+you can save, send or open on another computer.
 
-There is no account and no server of ours. Your boards stay on your computer
-unless you connect your own Google Drive.
+No account, nothing to sign up for. Your boards stay on your own device.
 
-## Run it
+## Use it in your browser
 
-```
-python tools/serve.py
-```
+It already works at [mbrd.valjdakosta.com](https://mbrd.valjdakosta.com),
+with nothing to install. It works in Chrome, Edge, Firefox and Safari, on a
+computer or a phone.
 
-Then open `http://localhost:6273`. It also prints a QR code, so a phone on the
-same Wi-Fi can open the same board. Needs Python 3 and nothing else — no install,
-no build step. On Windows, double-click `server.bat` instead.
+## Download the app
 
-## Controls
+From the [latest release](https://github.com/KostaJovanovic/mbrd/releases/latest):
 
-| | |
-|---|---|
-| drag empty space | pan around |
-| `space` + drag, or middle-drag | pan from anywhere, even over an item |
-| wheel | zoom to the cursor |
-| `Shift` + wheel | pan sideways |
-| two fingers on a touchpad | scroll to pan, pinch to zoom |
-| two fingers on a screen | pan and pinch-zoom |
-| `0` / `F` | back to centre / fit everything on screen |
-| `Shift` or `Ctrl` + drag empty space | select several items |
-| `Ctrl`+`A` / `Del` | select all / delete |
-| drag an item | move it, and anything selected or stuck to it |
-| corner grip | resize; hold `Shift` to keep the proportions |
-| edge grip | resize one direction only |
-| arrows | nudge; `Shift` moves a whole grid step |
-| double-click | zoom to an item, play a video, edit a note |
-| `F2` | rename |
-| `Ctrl`+`C` `X` `V` / `Ctrl`+`D` | copy, cut, paste / duplicate |
-| `Ctrl`+`Z` / `Y` | undo / redo |
-| `Ctrl`+`K` | search the board and jump to a result |
-| `Ctrl`+`S` / `Ctrl`+`O` | save in this browser / open a `.mbrd` |
-| `Ctrl`+`Shift`+`S` | export a `.mbrd` file |
-| right-click, or long-press | menu |
+| System | File | Updates |
+|---|---|---|
+| Windows | `mbrd-Windows-<version>.exe` | by themselves (the portable copy tells you) |
+| macOS | `mbrd-mac-universal-<version>.dmg` | you download the new one |
+| Linux | `mbrd-linux-x64-<version>.AppImage` | by themselves |
+| Android 7 and later | `mbrd-android-<version>.apk` | asks, then installs |
 
-Add files by dragging them in (folders work too), pasting from the clipboard, or
-using **Add files** in the sidebar. Pasted text becomes a sticky note.
+The Windows installer can also set up a portable copy: one folder you can keep
+on a USB stick, with your boards inside it.
 
-## What it does
+### The first time you open it
 
-- **Shows almost anything.** Images, video, audio, sticky notes, links and 3D
-  models (`.stl`, `.obj`, `.glb`) all display properly. Around 1,350 other file
-  types show up as a labelled card that says what they are, so a `.sldprt` reads
-  "SolidWorks · 3D / CAD" instead of appearing broken.
-- **Arranges for you.** Seven layouts — spiral, grid, masonry, by type, by date,
-  scattered, or free-form. Use one for the whole board or just part of it.
-- **Groups things with fences.** Draw a box round some cards to make a named
-  region. Move the fence and everything inside comes with it.
-- **Has a bin.** Deleted items go to the corner and can be dragged back out.
-- **Fits phones too.** Each board has a desktop layout and a mobile one. Same
-  items, arranged differently — a canvas on a laptop, a scrolling column on a
-  phone.
-- **Measures real size.** Turn on a paper outline (A4, Letter…) and drag it until
-  the sheet looks right next to your photos. From then on the board knows how big
-  everything is in millimetres or inches — useful for prints and layouts.
-- **Picks up your colours.** Once the board holds three pictures, the whole
-  interface recolours itself from them. Four ready-made palettes are there if you
-  would rather choose. You can also drop in a font file and use it.
-- **Runs on tired hardware.** A quality setting with three steps trades effects
-  for speed. Full is the default.
-- **Makes boards smaller.** **Optimize** re-compresses images and audio — a 13 MB
-  music file typically comes out around 1.8 MB, still sounding fine. It tells you
-  what it will do first, and it can be undone.
+The apps are not signed with a paid certificate yet, so each system asks once:
 
-## Your files
+- **Windows:** SmartScreen stops the first run. Click **More info**, then
+  **Run anyway**.
+- **macOS:** open it once, then go to **System Settings > Privacy & Security**
+  and click **Open Anyway**.
+- **Linux:** make the file runnable (right-click > Properties > Allow
+  executing), then open it.
+- **Android:** when Android asks, allow your browser or file manager to install
+  apps.
 
-A board saves as one `.mbrd` file that holds the layout *and* copies of
-everything on it, so you can email it or move it to another machine and it opens
-the same.
+## How to use it
 
-A `.mbrd` is just a ZIP with a different name. Rename it to `.zip` and you can
-open it: your images are in there as ordinary images and your notes as ordinary
-text files. If mbrd vanished tomorrow, your work would still be readable.
+- **Add things** by dragging files onto the board, pasting from the clipboard,
+  or using **Add files** in the sidebar. Pasted text becomes a note.
+- **Move around** by dragging empty space. Scroll or pinch to zoom.
+- **Arrange** a board in one click: grid, masonry, spiral, by type, by date and
+  more.
+- **Group** cards by drawing a fence round them. Move the fence and everything
+  inside comes with it.
+- **Right-click** (or long-press on a phone) anything for its menu.
+- **Press S** to search for any action by name.
 
-**Save** (`Ctrl`+`S`) keeps the board inside this browser — quick, no dialog.
-**Export** (`Ctrl`+`Shift`+`S`) writes the actual `.mbrd` file — that is the copy
-to back up or send. Do both. The board is also saved automatically as you work,
-so closing the tab by accident loses nothing.
-
-Want it synced? Export into a Dropbox, Drive, iCloud or OneDrive folder and your
-existing sync app handles it.
-
-## Privacy
-
-The app works with the internet switched off. What does reach outside is listed
-host by host on [the privacy page](web/privacy.html): YouTube and Spotify for a
-card's title and its player, jsDelivr for a video converter you ask for, your
-own Google Drive once you connect it, and the update checks - the site's own
-host on the web, GitHub in the apps.
-
-## Browsers
-
-Chrome, Firefox, Edge and Safari 18.4 or newer. Safari 16.3 and older will not
-work at all. Details in [`research/docs/browser-support.md`](research/docs/browser-support.md).
-
-## Developing
-
-TypeScript, no framework, no runtime dependency. There is a build step — a
-browser cannot fetch a `.ts` module, so what the page loads is `assets/app.js`,
-one bundle esbuild writes — which makes an edit `npm run dev` and a refresh
-rather than a refresh alone. The built bundle is committed, so *running* it still
-needs nothing fetched.
-
-```bash
-python tools/serve.py   # dev server on port 6273
-npm test                # run the tests, no install needed
-npm run dev             # rebuild the bundle on save (needs npm install)
-```
-
-[`CONTRIBUTING.md`](.github/CONTRIBUTING.md) is where to start,
-[`research/docs/architecture.md`](research/docs/architecture.md) explains how it is put together,
-and [`research/docs/mbrd-format.md`](research/docs/mbrd-format.md) specifies the file format.
-Contributions welcome.
+Boards save by themselves as you work. In the apps each board is a `.mbrd` file
+in `Documents/mbrd`. In the browser, use **Export** to get the file, which is
+the copy to back up or send to someone.
 
 ## Licence
 
-[GNU GPL v3 or later](LICENSE) — free to use, change and share, as long as
-changes stay free too. The `.mbrd` format itself is free for anyone to implement
-under any licence.
+Free software under the [GNU GPL v3 or later](LICENSE).
