@@ -4,7 +4,7 @@
 
 // Namespaced: activate only deletes its own PREFIX caches.
 // VERSION is literal because save.bat bumps it by regex.
-const VERSION = 'mbrd-v649';
+const VERSION = 'mbrd-v650';
 const PREFIX = 'mbrd-';
 
 // Local dev: pass-through so a refresh always shows the latest edit. 169.254 is
@@ -64,6 +64,8 @@ const SHELL = [
   './assets/fonts/geist-OFL.txt',
   './assets/fonts/fraunces-OFL.txt',
   './assets/fonts/playfair-OFL.txt',
+  './assets/fonts/lora-OFL.txt',
+  './assets/fonts/piazzolla-OFL.txt',
   './assets/img/icon.svg',
   './assets/img/icon-maskable.svg',
   // Bitmap icons for platforms that cannot read SVG.
@@ -94,6 +96,14 @@ const SHELL = [
   './assets/fonts/geist-latin.woff2',
   './assets/fonts/geist-latin-ext.woff2',
   './assets/fonts/geist-mono-latin.woff2',
+  // Cyrillic, about 130KB together: precached, or a board in Serbian offline
+  // falls back to a system face.
+  './assets/fonts/lora-cyrillic.woff2',
+  './assets/fonts/lora-cyrillic-italic.woff2',
+  './assets/fonts/piazzolla-cyrillic.woff2',
+  './assets/fonts/piazzolla-cyrillic-italic.woff2',
+  './assets/fonts/geist-cyrillic.woff2',
+  './assets/fonts/geist-mono-cyrillic.woff2',
 ];
 
 // cache.add(), minus the redirect flag. The host answers index.html, patch.html

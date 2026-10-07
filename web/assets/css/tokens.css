@@ -383,9 +383,11 @@
      name a level restates. --font-display and --font-body are wiring on top of
      it, so a level that wants a different serif sets one line and everything
      derived follows. */
-  --font-serif-display: "Playfair", "Iowan Old Style", "Palatino Linotype", Palatino,
+  /* Piazzolla is Cyrillic only (fonts.css) and sets what Fraunces cannot. The
+     soft end swaps it for Lora in its own --font-serif. */
+  --font-serif-display: "Playfair", "Piazzolla", "Iowan Old Style", "Palatino Linotype", Palatino,
                         "Book Antiqua", "URW Palladio L", Georgia, "Times New Roman", serif;
-  --font-serif-text:    "Fraunces", "Iowan Old Style", "Palatino Linotype", Palatino,
+  --font-serif-text:    "Fraunces", "Piazzolla", "Iowan Old Style", "Palatino Linotype", Palatino,
                         "Book Antiqua", "URW Palladio L", Georgia, "Times New Roman", serif;
   --font-sans:  "Geist", -apple-system, "Helvetica Neue", Helvetica,
                 "Liberation Sans", system-ui, sans-serif;
@@ -936,10 +938,13 @@
      it. Turning ornament up at this end is --wash's job and the shapes', not
      the board's. Saying nothing is what inherits the middle's grid. */
 
-  /* One serif, top to bottom. No --font-serif here: the middle names Fraunces
-     too now, so this end inherits the face and differs by weight alone.
-
-     400 rather than the middle's 300, and the reason is what the face is being
+  /* One serif, top to bottom. The middle names Fraunces too now, so this end
+     inherits the face and differs by weight alone - in Latin. Cyrillic is the
+     one place the two tiers part: Fraunces has none, and the soft end sets it
+     in Lora, the softer of the two stand-ins, where the middle has Piazzolla. */
+  --font-serif: "Fraunces", "Lora", "Iowan Old Style", "Palatino Linotype", Palatino,
+                "Book Antiqua", "URW Palladio L", Georgia, "Times New Roman", serif;
+  /* 400 rather than the middle's 300, and the reason is what the face is being
      asked to do. Here the serif is the body copy as well - --font-body reads
      through --font-display below - and running text set finer than 400 loses
      its colour, the even grey a paragraph has to hold to be read without

@@ -13,8 +13,22 @@ import {
   normalizeNoteRich, flattenNoteRich, parseNoteText,
   NOTE_WASHES, NOTE_TAGS, NOTE_ALIGNS, NOTE_MARKER,
   richLines, linesRich, linesLength, linesMarkdown, styleAt, sliceLines, deleteRange,
-  insertLines, restyle, withPending, tidyRuns, cutRuns,
+  insertLines, restyle, withPending, tidyRuns, cutRuns, cyrillicLang,
 } from '../web/assets/js/canvas/note-model.ts';
+
+test('a note in Serbian or Macedonian Cyrillic is marked so its italic draws their forms', () => {
+  assert.equal(cyrillicLang('Ћао, ђаче'), 'sr', 'a letter only Serbian has');
+  assert.equal(cyrillicLang('Ѓорѓи'), 'mk', 'and only Macedonian');
+  // Common letters alone say nothing - unless the browser is Serbian.
+  assert.equal(cyrillicLang('Добар дан'), '');
+  assert.equal(cyrillicLang('Добар дан', 'sr-RS'), 'sr');
+  assert.equal(cyrillicLang('Добар дан', 'sr'), 'sr');
+  // Russian on a Serbian machine stays Russian: Serbian has no й or ы.
+  assert.equal(cyrillicLang('Добрый день', 'sr-RS'), '');
+  // Latin is never marked, whatever the locale: the Latin faces have no locl to switch.
+  assert.equal(cyrillicLang('Dobar dan', 'sr-Latn-RS'), '');
+  assert.equal(cyrillicLang('Добар дан', 'srb'), '', 'a locale that only starts with sr');
+});
 
 const block = (props = {}) => ({ tag: 'p', align: 'left', text: 'x', ...props });
 const rich = (blocks, props = {}) => ({ blocks, ...props });

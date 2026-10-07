@@ -22,6 +22,8 @@ const COVER = {
   playfair: 'playfair-OFL.txt',
   fraunces: 'fraunces-OFL.txt',
   geist: 'geist-OFL.txt',
+  lora: 'lora-OFL.txt',
+  piazzolla: 'piazzolla-OFL.txt',
 };
 
 const familyOf = file => basename(file).split('-')[0];

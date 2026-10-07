@@ -21,7 +21,7 @@ export const AXIS_TOKENS = [
   '--body-italic', '--btn-grow', '--btn-lift', '--btn-press', '--card-rule-gap', '--cork',
   '--display-italic', '--display-weight', '--dur-base', '--dur-fast',
   '--dur-travel', '--dur-zoom', '--ease', '--ease-back',
-  '--font-mono', '--ghost-edge', '--ghost-ink',
+  '--font-mono', '--font-serif', '--ghost-edge', '--ghost-ink',
   '--ghost-ink-2', '--ghost-weight', '--grain', '--grid-alpha', '--grid-dot',
   '--grow-hover', '--highlight', '--highlight-ink', '--item-border',
   '--item-shadow', '--lift-drag', '--lift-hover', '--note-1', '--note-2',

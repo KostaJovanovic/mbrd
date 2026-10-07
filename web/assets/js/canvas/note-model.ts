@@ -407,8 +407,29 @@ export function noteWords(meta: unknown): string {
   return text ? parseNoteText(text).map(b => b.text).join('\n') : '';
 }
 
+/**
+ * The language a note's Cyrillic is in, when the letters say so, or ''.
+ *
+ * It matters for the italic: Serbian and Macedonian draw б г д п т differently
+ * from Russian, and the bundled Cyrillic faces carry both, switched by `lang`.
+ * A letter only one alphabet has decides it; failing that, a Cyrillic note
+ * with none of the letters Serbian lacks, written by somebody whose browser is
+ * set to Serbian, is taken as Serbian. Anything else is left unmarked, which
+ * draws the common forms.
+ */
+export function cyrillicLang(text: string, locale = ''): string {
+  if (/[ЃЌЅѓќѕ]/.test(text)) return 'mk';
+  if (/[ЂЋђћ]/.test(text)) return 'sr';
+  if (/[Ѐ-ӿ]/.test(text) && !/[ЙЩЪЫЬЭЮЯЁЄІЇҐЎйщъыьэюяёєіїґў]/.test(text)
+    && /^sr\b/i.test(locale)) return 'sr';
+  return '';
+}
+
 /** Write a note's board-wide look onto its rich wrapper (font, size, vAlign). */
 export function applyNoteStyle(wrap: HTMLElement, rich: NoteRich): void {
+  const lang = cyrillicLang(rich.blocks.map(b => b.text).join('\n'), globalThis.navigator?.language);
+  if (lang) wrap.lang = lang;
+  else wrap.removeAttribute('lang');
   wrap.style.fontFamily = NOTE_FONTS[rich.font];
   // setProperty takes a string; the number was being converted by the binding
   // layer on the way in, and String() is that same conversion said out loud.

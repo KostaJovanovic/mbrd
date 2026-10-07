@@ -29,8 +29,10 @@ tidied away as boilerplate.
 | --- | --- | --- | --- | --- |
 | Playfair | `playfair-latin.woff2`, `playfair-latin-ext.woff2`, `playfair-latin-italic.woff2`, `playfair-latin-ext-italic.woff2` | https://github.com/googlefonts/Playfair | SIL Open Font License 1.1 | `web/assets/fonts/playfair-OFL.txt` |
 | Fraunces | `fraunces-latin.woff2`, `fraunces-latin-ext.woff2`, `fraunces-latin-italic.woff2`, `fraunces-latin-ext-italic.woff2` | https://github.com/undercasetype/Fraunces | SIL Open Font License 1.1 | `web/assets/fonts/fraunces-OFL.txt` |
-| Geist | `geist-latin.woff2`, `geist-latin-ext.woff2` | https://github.com/vercel/geist-font | SIL Open Font License 1.1 | `web/assets/fonts/geist-OFL.txt` |
-| Geist Mono | `geist-mono-latin.woff2` | https://github.com/vercel/geist-font | SIL Open Font License 1.1 | `web/assets/fonts/geist-OFL.txt` |
+| Geist | `geist-latin.woff2`, `geist-latin-ext.woff2`, `geist-cyrillic.woff2` | https://github.com/vercel/geist-font | SIL Open Font License 1.1 | `web/assets/fonts/geist-OFL.txt` |
+| Geist Mono | `geist-mono-latin.woff2`, `geist-mono-cyrillic.woff2` | https://github.com/vercel/geist-font | SIL Open Font License 1.1 | `web/assets/fonts/geist-OFL.txt` |
+| Lora | `lora-cyrillic.woff2`, `lora-cyrillic-italic.woff2` | https://github.com/cyrealtype/Lora-Cyrillic | SIL Open Font License 1.1 | `web/assets/fonts/lora-OFL.txt` |
+| Piazzolla | `piazzolla-cyrillic.woff2`, `piazzolla-cyrillic-italic.woff2` | https://github.com/huertatipografica/piazzolla | SIL Open Font License 1.1 | `web/assets/fonts/piazzolla-OFL.txt` |
 
 Geist and Geist Mono are one licence file because Vercel releases them from one
 repository under one copyright statement, with both names reserved together.
@@ -254,8 +256,10 @@ guard and a detune; the context suspending after a spell of quiet; the ambient
 audio session; and the level being read from `prefs.ts` rather than set by the
 host. No recipe number was altered.
 
-Every face here is subset to Latin and Latin Extended rather than shipped whole,
+Every face here is subset to Latin and Latin Extended, or to Cyrillic (Lora and
+Piazzolla ship nothing else, and Geist ships both), rather than shipped whole,
 and that is the only change made to any of them: all variation axes are intact,
+the Serbian and Macedonian localised forms of the Cyrillic faces with them,
 including Playfair's `wdth`, which was briefly instanced out to save 312KB and
 has been restored. Subsetting for a delivery format is what the OFL FAQ covers
 under subsetting, and is how Google Fonts itself serves these families under
