@@ -28,6 +28,7 @@ rem   save.bat release [all]           add + commit + push, then start a release
 rem   save.bat push / pull / portable  what the menu options of the same name do
 rem   save.bat quick "message"         add + commit + push, and never ask anything
 rem   save.bat quick-commit "message"  add + commit, and never ask anything
+rem   save.bat crown "message"         the same, and the commit is the next X.0
 rem
 rem The two quick actions are the save above with nobody at the keyboard: an
 rem editor, an agent, a Git Bash one-liner (cmd //c "save.bat quick \"msg\"").
@@ -46,6 +47,7 @@ set FORCE_MODE=0
 set COMMIT_ONLY=0
 set RELEASE_MODE=0
 set "QUICK=0"
+set "CROWN=0"
 rem Which systems a release builds, passed to the workflow as `systems`. Two by
 rem default, because those are the two this machine runs and a macOS minute
 rem bills at ten times a Linux one. `save.bat release all` and menu option 7
@@ -78,6 +80,8 @@ if /i "%ACTION%"=="--commit"  (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="--no-push" (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="quick"        (set "QUICK=1" & set "ACTION=save")
 if /i "%ACTION%"=="quick-commit" (set "QUICK=1" & set "COMMIT_ONLY=1" & set "ACTION=save")
+rem A crown is a quick-commit that also makes this commit the next X.0.
+if /i "%ACTION%"=="crown"        (set "CROWN=1" & set "QUICK=1" & set "COMMIT_ONLY=1" & set "ACTION=save")
 rem `save.bat release` builds the two; `save.bat release all` builds all four.
 rem The second argument is read as !ARG2! (see the top of the file), because
 rem this line is parsed on every run, and in `quick` mode that argument is a
@@ -202,14 +206,6 @@ for /f %%i in ('git rev-list --count HEAD 2^>nul') do set GIT_COUNT=%%i
 set /a GIT_NEXT=%GIT_COUNT%+1
 if %GIT_NEXT% GTR %NEXT_COUNT% set NEXT_COUNT=%GIT_NEXT%
 
-rem Version label mirrors versionLabel() in web/assets/js/version.js. RELEASES is
-rem the list of commits crowned as major releases - keep it in sync with
-rem RELEASE_COMMITS there (sorted ascending). Each release reads X.0 and resets
-rem the minor counter. Empty until the first release is declared.
-set RELEASES=
-for /f %%v in ('powershell -NoProfile -Command "$n=%NEXT_COUNT%; $major=0; $base=0; foreach($r in @(%RELEASES%)){ if($n -ge $r){ $major++; $base=$r } else { break } }; if($major -eq 0){ '0.{0:D2}' -f $n } elseif(($n-$base) -eq 0){ '{0}.0' -f $major } else { '{0}.{1:D2}' -f $major,($n-$base) }"') do set VERLABEL=%%v
-echo bump: v%VERLABEL% (commit %NEXT_COUNT%)
-
 rem Keep the two files as they are before the stamps, so that every error exit
 rem between here and the commit puts them back (:unstamp). A stamp left behind
 rem is read as the committed count on the next run, so each failed save used to
@@ -221,6 +217,36 @@ copy /y "web\assets\js\version.js" "%STAMP_VERSION%" >nul
 if errorlevel 1 goto stampkeepfail
 copy /y "web\sw.js" "%STAMP_SW%" >nul
 if errorlevel 1 goto stampkeepfail
+
+rem `crown`: this commit becomes the next major release, X.0. Its count is
+rem appended to RELEASE_COMMITS in version.js, which is the only list of
+rem crowned commits there is - the label below is read from it. After the
+rem copies above, so a save that fails from here puts the list back too.
+if "%CROWN%"=="1" (
+  powershell -NoProfile -Command "$p='web/assets/js/version.js'; $s=[IO.File]::ReadAllText($p); $m=[regex]::Match($s,'export const RELEASE_COMMITS = \[([\d, ]*)\];'); if(-not $m.Success){ exit 1 }; $l=@($m.Groups[1].Value -split ',\s*' | Where-Object { $_ }); if($l.Count -and [int]$l[-1] -ge %NEXT_COUNT%){ exit 1 }; $l+='%NEXT_COUNT%'; [IO.File]::WriteAllText($p, $s.Replace($m.Value, 'export const RELEASE_COMMITS = [' + ($l -join ', ') + '];'))"
+  if errorlevel 1 (
+    echo.
+    echo [err]  no RELEASE_COMMITS line in web/assets/js/version.js, or this commit is not past
+    echo        the last one crowned - nothing crowned, nothing committed
+    call :unstamp
+    set SAVE_ERROR=1
+    goto end
+  )
+)
+
+rem The label is versionLabel() in version.js itself, asked through node, so
+rem there is one rule for it and not a PowerShell copy that has to agree.
+set VERLABEL=
+for /f "delims=" %%v in ('node --input-type=module -e "import { versionLabel } from './web/assets/js/version.js'; console.log(versionLabel(%NEXT_COUNT%))"') do set VERLABEL=%%v
+if not defined VERLABEL (
+  echo.
+  echo [err]  could not read the version label from web/assets/js/version.js - is node installed?
+  call :unstamp
+  set SAVE_ERROR=1
+  goto end
+)
+echo bump: v%VERLABEL% (commit %NEXT_COUNT%)
+if "%CROWN%"=="1" echo [ver]  crowned: commit %NEXT_COUNT% is v%VERLABEL%
 
 rem -Encoding UTF8 on BOTH ends is required: without it Get-Content reads these
 rem UTF-8 files as the ANSI code page and mangles every non-ASCII character a

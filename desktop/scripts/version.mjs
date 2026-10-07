@@ -1,6 +1,6 @@
 // The release version, from the one stamp. save.bat writes VERSION into
 // web/assets/js/version.js, and electron-builder wants semver, so 0.301 becomes
-// 0.301.0 and 1.05 becomes 1.5.0. Shared by scripts/portable.mjs and the
+// 0.301.0 and 1.5 becomes 1.5.0. Shared by scripts/portable.mjs and the
 // release workflow, so both compute it the same way. Run directly, it prints
 // `version=` and `label=` lines for $GITHUB_OUTPUT.
 

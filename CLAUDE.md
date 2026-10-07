@@ -81,6 +81,7 @@ npm run dev:grime   # watch build for web/lab-grime.html, the grime bench
 save.bat            # version stamps → build → commit → optionally push
 save.bat quick-commit "message"  # the same, commit only, no menu and no prompts
 save.bat quick "message"         # the same, commit and push, no menu and no prompts
+save.bat crown "message"         # quick-commit, and this commit becomes the next X.0
 save.bat release    # the same, pushed, then GitHub builds Windows + Android and publishes
 save.bat release all # the same, with macOS and Linux too — four systems, ten times the minutes
 save.bat portable   # build the web bundle, then desktop/portable/ — no commit
