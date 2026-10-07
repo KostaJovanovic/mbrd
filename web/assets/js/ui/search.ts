@@ -1,6 +1,8 @@
 // Board search palette (Ctrl+K). Picks a result → selects the item and flies to it.
 // Built per query, no index. Items are renamed/edited constantly; rebuilding
 // a few hundred string reads per keystroke is cheaper than invalidation bugs.
+// The one thing kept is each picture's colours (colour words, ui/colour-words.ts),
+// by asset hash: the bytes behind a hash never change, so neither do they.
 
 import { board, byId, isContent, itemTags, select, rolledAway, unrollFor } from '../state.ts';
 import { cue } from '../cuelume/engine.ts';
@@ -12,7 +14,11 @@ import { describeExt, formatName } from '../import/formats.ts';
 import { kindName, kindTag } from '../canvas/item-dom.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { Item } from '../board-model.ts';
-import { shownName } from '../board-model.ts';
+import { shownHash, shownName } from '../board-model.ts';
+import { swatchHex } from '../canvas/renderers.ts';
+import { assetURL, getAsset } from '../storage/assets.ts';
+import { dominantColors, samplePixels } from './pigments.ts';
+import { colourQuery } from './colour-words.ts';
 
 const MAX_HITS = 12;
 const SNIPPET = 90;
@@ -24,7 +30,53 @@ type Fields = {
   kind: string,
   kindLabel: string,
   tags: string[],
+  /** The card's colours, strongest first: a swatch's own, a picture's read. */
+  colours: string[],
 };
+
+/** Each picture's dominant colours, by asset hash, once read. */
+const colourCache = new Map<string, string[]>();
+/** Hashes that could not be read this session, so they are not asked again. */
+const unreadable = new Set<string>();
+/** A read of the pictures' colours is running. */
+let reading = false;
+
+/** The pictures a card shows: its own (or its preview), a video's poster, a player's cover. */
+function pictureHashes(item: Item): string[] {
+  const own = item.type === 'image' ? shownHash(item) : null;
+  return [own, item.meta?.cover, item.meta?.art]
+    .filter((h): h is string => typeof h === 'string' && !!getAsset(h));
+}
+
+function coloursOf(item: Item): string[] {
+  if (item.type === 'swatch') return [swatchHex(item.meta?.hex)];
+  return pictureHashes(item).flatMap(h => colourCache.get(h) ?? []);
+}
+
+/**
+ * Read the colours of every picture not read yet, one at a time, then search
+ * again with whatever is in the field. Started by a colour query, so a board
+ * where nobody searches by colour never decodes a picture for it.
+ */
+async function readColours() {
+  if (reading) return;
+  const want = [...new Set(board.items.flatMap(pictureHashes))]
+    .filter(h => !colourCache.has(h) && !unreadable.has(h));
+  if (!want.length) return;
+  reading = true;
+  try {
+    for (const hash of want) {
+      if (!node) break;
+      const url = assetURL(hash);
+      const [chunk] = url ? await samplePixels([url], 1) : [];
+      if (chunk) colourCache.set(hash, dominantColors(chunk, 5));
+      else unreadable.add(hash);
+    }
+  } finally {
+    reading = false;
+  }
+  if (field) run(field.value);
+}
 
 type Hit = { item: Item, f: Fields, s: number };
 
@@ -129,7 +181,7 @@ export function open(from: Element | null = null) {
   field = document.createElement('input');
   field.type = 'search';
   field.id = 'search-field';
-  field.placeholder = 'Find a picture, a note, a link…';
+  field.placeholder = 'Find a picture, a note, a link, a colour…';
   field.autocomplete = 'off';
   field.spellcheck = false;
   field.setAttribute('role', 'combobox');
@@ -182,6 +234,7 @@ function fields(item: Item): Fields {
     kindLabel: [...new Set([formatName(extOf(name)), kind?.label, kind?.categoryLabel]
       .filter(Boolean))].join(' · '),
     tags: itemTags(item),
+    colours: coloursOf(item),
   };
 }
 
@@ -190,8 +243,10 @@ const afterFirstLine = (s: string) => {
   return i < 0 ? '' : s.slice(i + 1);
 };
 
-// name-starts > exact tag > name-contains > partial tag > url > note body > kind.
-function score(f: Fields, q: string) {
+// name-starts > exact tag > name-contains > partial tag > url > note body >
+// colour > kind. A colour is below the words: a card *called* red is the
+// likelier thing to have meant. Among colours, the stronger in the card first.
+function score(f: Fields, q: string, colour: ((hex: string) => boolean) | null) {
   const name = f.name.toLowerCase();
   if (name.startsWith(q)) return 1000 - name.length;   // shortest exact-ish first
   if (f.tags.includes(q)) return 800;
@@ -199,6 +254,8 @@ function score(f: Fields, q: string) {
   if (f.tags.some(t => t.includes(q))) return 500;
   if (f.url.toLowerCase().includes(q)) return 400;
   if (f.text.toLowerCase().includes(q)) return 300;
+  const rank = colour ? f.colours.findIndex(colour) : -1;
+  if (rank >= 0) return 250 - rank * 10;
   if (f.kind.toLowerCase().includes(q)) return 100;
   return 0;
 }
@@ -214,10 +271,12 @@ function run(query: string) {
     return;
   }
 
+  const colour = colourQuery(q);
+  if (colour) void readColours();
   matched = board.items
     .map(item => {
       const f = fields(item);
-      return { item, f, s: score(f, q) };
+      return { item, f, s: score(f, q, colour) };
     })
     .filter(h => h.s > 0)
     .sort((a, b) => b.s - a.s);
@@ -236,8 +295,11 @@ function draw(q: string) {
 
   // Empty until something is typed: the field's placeholder is the whole prompt.
   if (!q) return;
+  // Said while the pictures are still being read, so a short list is not taken
+  // for the whole answer. The search runs again when the read is done.
+  if (reading && colourQuery(q)) list!.append(note('Looking at the colours in the pictures…'));
   if (!hits.length) {
-    list!.append(note('Nothing on this board matches that.'));
+    if (!reading) list!.append(note('Nothing on this board matches that.'));
     return;
   }
 
@@ -292,6 +354,10 @@ function context(f: Fields, q: string) {
     const cut = f.text.slice(from, from + SNIPPET).replace(/\s+/g, ' ').trim();
     return (from > 0 ? '…' : '') + cut + (from + SNIPPET < f.text.length ? '…' : '');
   }
+  // The colour that matched, as a value somebody can read off and type back.
+  const colour = colourQuery(q);
+  const match = colour ? f.colours.find(colour) : undefined;
+  if (match) return match.toUpperCase();
   return f.kindLabel;
 }
 
