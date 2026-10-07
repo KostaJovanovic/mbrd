@@ -572,8 +572,38 @@ test('a swipe summing to the same distance in varying steps still pans', () => {
   assert.ok(out.every(w => w.undo === undefined));
 });
 
+test('a notch turned by hand is a detent, not only a fast spin', () => {
+  // The bug: at 24ms only a spin met the window, so a slow notch panned and a
+  // quick one zoomed. Fourteen milliseconds a fragment is a deliberate turn.
+  const out = burst(times(8, 6.625), 14);
+  assert.equal(out.findIndex(w => w.kind === 'zoom'), 6);
+});
+
+test('a detent the browser coalesced is still one', () => {
+  // A busy main thread hands two fragments over as one event.
+  const out = burst([6.625, 13.25, 6.625, 6.625, 13.25]);
+  assert.equal(out.findIndex(w => w.kind === 'zoom'), 4);
+  // And a burst that opens on the pair finds the single fragment after it.
+  const late = burst([13.25, 6.625, 6.625, 13.25, 6.625]);
+  assert.equal(late.findIndex(w => w.kind === 'zoom'), 4);
+});
+
+test('a recognised wheel zooms from the first fragment of its next burst', () => {
+  burst(times(8, 6.625));
+  // burst() resets, so carry on by hand past the stream gap.
+  assert.equal(wheel({ deltaY: 6.625, timeStamp: 5_000 }).kind, 'zoom', 'one fragment');
+  assert.equal(wheel({ deltaY: -13.25, timeStamp: 9_000 }).kind, 'zoom', 'two coalesced, upwards');
+  assert.equal(wheel({ deltaY: 5.3, timeStamp: 13_000 }).kind, 'pan', 'some other fraction is still a pad');
+  assert.equal(wheel({ deltaX: 1, deltaY: 6.625, timeStamp: 17_000 }).kind, 'pan', 'and so is a lean');
+});
+
+test('a pad crawling at one quantised step never becomes a wheel', () => {
+  // 0.8px at sixty a second takes most of a second to cover a notch.
+  assert.ok(burst(times(60, 0.8), 16).every(w => w.kind === 'pan'));
+});
+
 test('a detent is not read into a slow burst, a sideways one, or a single event', () => {
-  assert.ok(burst(times(8, 6.625), 8).every(w => w.kind === 'pan'), 'too slow to be one detent');
+  assert.ok(burst(times(8, 6.625), 60).every(w => w.kind === 'pan'), 'too slow to be one detent');
   resetWheelKind();
   wheel({ deltaX: 1, deltaY: 6.625, timeStamp: 1_000 });
   for (let i = 1; i < 8; i++) {

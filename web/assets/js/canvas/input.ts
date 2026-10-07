@@ -434,10 +434,16 @@ const WHEEL_MAX_STEP = 120;
  * Chromium on Linux (Wayland, or X11 with libinput 1.19 or later) breaks one
  * detent into several fractional deltas of the same size, 53 * v/120 px each,
  * which classifyWheel() cannot tell from a pad. The run of identical deltas is
- * the tell, and it has to arrive quickly. **Reasoned, not measured** - see
- * research/old/linux-wheel-2026-09-20.md.
+ * the tell. This was 24ms, which only a fast spin met: a hand turning one notch
+ * takes tens of milliseconds, so a slow turn panned and a quick one zoomed, and
+ * the wheel read as random. Long enough for a deliberate notch, short enough
+ * that a pad crawling at one quantised step never reaches a notch inside it.
+ * **Reasoned, not measured.**
  */
-const HIRES_BURST_MS = 24;
+const HIRES_DETENT_MS = 250;
+
+/** The most fragments one event may carry when the browser coalesces a detent. */
+const HIRES_MAX_COALESCED = 4;
 
 /**
  * How much of the lean is handed back when the platform rails a swipe.
@@ -511,9 +517,10 @@ let wheelAt = -Infinity;
 /**
  * What the burst looks like to the hi-res detent rule - see detent().
  *
- * `step` is the one |dy| every event so far has carried, or NaN once two have
- * differed or anything else ruled the burst out. `panX` / `panY` are what the
- * plain events of the burst actually panned, which is what `undo` hands back.
+ * `step` is the fragment every event so far has carried a whole number of, or
+ * NaN once one did not or anything else ruled the burst out. `panX` / `panY`
+ * are what the plain events of the burst actually panned, which is what `undo`
+ * hands back.
  */
 let burstAt = -Infinity;
 let burstDy = 0;
@@ -521,6 +528,13 @@ let burstCount = 0;
 let burstStep = NaN;
 let panX = 0;
 let panY = 0;
+
+/**
+ * The fragment of the last detent recognised, so the next burst that opens
+ * with it is a wheel from its first event rather than after a notch of pan.
+ * NaN until a detent has been seen. A module value, so it lasts the session.
+ */
+let hiresStep = NaN;
 
 /** How much each axis has been moving, over this burst alone. */
 let axisX = 0;
@@ -554,7 +568,7 @@ export function resetWheelKind(): void {
   seenX = seenY = 1;
   burstAt = -Infinity;
   burstDy = burstCount = panX = panY = 0;
-  burstStep = NaN;
+  burstStep = hiresStep = NaN;
 }
 
 /**
@@ -605,9 +619,33 @@ function unrail(dx: number, dy: number): Delta {
   return minorIsX ? { dx: lift(dx), dy } : { dx, dy: lift(dy) };
 }
 
+/**
+ * Whether `v` is a whole number of `step`s, one to HIRES_MAX_COALESCED of them.
+ * The tolerance is for 53/120, which no float holds exactly; a NaN step is
+ * never matched.
+ */
+function fragments(v: number, step: number): boolean {
+  const k = v / step;
+  const whole = Math.round(k);
+  return whole >= 1 && whole <= HIRES_MAX_COALESCED && Math.abs(k - whole) < 1e-6;
+}
+
+/**
+ * Fractional, straight down or up, and nothing held: the only shape a hi-res
+ * detent's fragment comes in. Fractional too: 53 * v/120 is whole only at a
+ * full detent, which classifyWheel() already reads as a notch, and a pad at a
+ * steady speed can repeat a whole number of pixels.
+ */
+function fragmentLike(e: WheelSample, dx: number, dy: number): boolean {
+  return e.deltaMode === 0 && !e.shiftKey && !e.ctrlKey && dx === 0 && !Number.isInteger(dy);
+}
+
 /** Which device a single event looks like it came from, read cold. */
 function classifyWheel(e: WheelSample, dx: number, dy: number): WheelKind {
   if (e.deltaMode !== 0) return 'zoom';
+  // A wheel already recognised this session, opening a new burst the way its
+  // detents do.
+  if (fragmentLike(e, dx, dy) && fragments(Math.abs(dy), hiresStep)) return 'zoom';
   // Sideways at all, or in fractions: a wheel can do neither - except a hi-res
   // one on Linux, which detent() catches on the way past.
   if (dx !== 0 || !Number.isInteger(dy)) return 'pan';
@@ -617,31 +655,31 @@ function classifyWheel(e: WheelSample, dx: number, dy: number): WheelKind {
 /**
  * Whether this event completes a hi-res wheel detent in a burst read as a pad.
  *
- * All four at once: the burst is fresh (HIRES_BURST_MS), it has never moved
- * sideways or carried a modifier, it is two or more events of exactly the same
- * fractional size, and together they are past a notch. A finger does not repeat a
- * fractional delta to the bit and a swipe starts slow, so a touchpad never
- * satisfies all four - which is what makes this safe to ship unmeasured. If
- * Chromium delivers a detent some other way the rule simply never fires, and
- * the 'zoom-all' preference is what carries the fix.
+ * All four at once: the burst is fresh (HIRES_DETENT_MS), it has never moved
+ * sideways or carried a modifier, it is two or more events that are each a
+ * whole number of one fractional step (the browser coalesces fragments when it
+ * is busy, so 6.625 can arrive as 13.25), and together they are past a notch.
+ * A finger does not hold to multiples of one fraction to the bit, so a touchpad
+ * never satisfies all four. If Chromium delivers a detent some other way the
+ * rule simply never fires, and the 'zoom-all' preference is what carries the fix.
  */
 function detent(e: WheelSample, dx: number, dy: number, at: number): boolean {
-  // Fractional too: 53 * v/120 is whole only at a full detent, which
-  // classifyWheel() already reads as a notch, and a pad at a steady speed can
-  // repeat a whole number of pixels.
-  const plain = e.deltaMode === 0 && !e.shiftKey && !e.ctrlKey && dx === 0
-    && !Number.isInteger(dy);
   const first = burstCount === 0;
   burstCount += 1;
-  // NaN compares unequal to everything, and the count has moved past the first
-  // event, so a burst ruled out stays ruled out.
-  if (!plain || (!first && Math.abs(dy) !== burstStep)) {
-    burstStep = NaN;
-    return false;
-  }
-  if (first) burstStep = Math.abs(dy);
+  const size = Math.abs(dy);
+  // The step is the smaller of the two whenever one is a multiple of the other,
+  // so a burst that opens on a coalesced pair still finds its fragment. NaN
+  // fails both, so a burst ruled out stays ruled out.
+  burstStep = !fragmentLike(e, dx, dy) ? NaN
+    : first ? size
+    : fragments(size, burstStep) ? burstStep
+    : fragments(burstStep, size) ? size
+    : NaN;
+  if (Number.isNaN(burstStep)) return false;
   burstDy += dy;
-  return burstCount >= 2 && at - burstAt <= HIRES_BURST_MS && Math.abs(burstDy) >= WHEEL_NOTCH;
+  const found = burstCount >= 2 && at - burstAt <= HIRES_DETENT_MS && Math.abs(burstDy) >= WHEEL_NOTCH;
+  if (found) hiresStep = burstStep;
+  return found;
 }
 
 /**
