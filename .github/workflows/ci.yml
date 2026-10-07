@@ -8,19 +8,19 @@
 # (CLAUDE.md's Commands section, CONTRIBUTING.md's), so the three agree - and
 # an edit to the legs below is an edit to those two as well.
 #
-# The production deploy is the second job, `deploy`, and it runs only after
-# `test` is green on a push to main: a push that breaks the app stops here
-# instead of reaching everybody. It needs two repository secrets,
-# CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, and says so and skips while
-# either is missing. Cloudflare's own git deploy, which ran `npx wrangler
-# deploy` on every push whether this was red or not, has to be switched off in
-# the Cloudflare dashboard once these are set, or both deploy.
+# What this does NOT do, said plainly rather than left to be discovered: the
+# production host runs `npx wrangler deploy` from the repo root on every push
+# to main (Cloudflare's own git connection, see wrangler.jsonc). That deploy is
+# triggered by the push, not by this workflow, so a push that breaks the app
+# still deploys the broken app - the two run alongside each other and neither
+# waits. A deploy job gated on this one was tried and dropped on 2026-10-07 by
+# the maintainer's choice: this is a smoke alarm and not a lock.
 #
-# The test job is one lane on purpose. There is no matrix, no cache, no
-# artefact and nothing handed from one job to the next: the deploy checks out
-# the same commit, whose bundle is committed. The app has no runtime
-# dependency and the browser loads the bundle under web/ directly, so there is
-# nothing a fan-out would make faster here - only more machinery to keep true.
+# The whole job is one lane on purpose. There is no matrix, no cache, no
+# artefact, no second runner and nothing handed from one job to the next. The
+# app has no runtime dependency and the browser loads the bundle under web/
+# directly, so there is nothing a fan-out would make faster here - only more
+# machinery to keep true.
 
 name: CI
 
@@ -176,35 +176,3 @@ jobs:
 
       - name: Smoke test
         run: node tools/smoke.mjs
-
-  deploy:
-    # After the test job, and only for what landed on main: a pull request is
-    # tested and never deployed.
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    # One deploy at a time, and never cancelled halfway: two pushes in a row
-    # deploy in order, the second after the first.
-    concurrency:
-      group: deploy
-      cancel-in-progress: false
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      # wrangler is not a devDependency (see wrangler.jsonc), so npx fetches it.
-      # wrangler.jsonc names the site and its folder; nothing is built here,
-      # because the bundle the test job built and checked is the committed one.
-      - name: Deploy to Cloudflare
-        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
-        run: npx --yes wrangler@4 deploy
-
-      - name: Say why nothing deployed
-        if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
-        run: echo "::notice::No deploy - CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are not both set as repository secrets."

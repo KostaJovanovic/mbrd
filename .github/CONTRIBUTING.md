@@ -247,9 +247,11 @@ was developed on a case-insensitive filesystem, so an import path with the wrong
 case works locally and 404s on the host, which serves off a case-sensitive one. A
 Linux runner is what turns that into a red run instead of a broken page.
 
-The production deploy is a second job in the same workflow, run only after that
-one is green on a push to main, so a red run is a lock and not only an alarm. It
-needs the maintainer's Cloudflare secrets, and skips with a notice without them.
+One thing it is not, said plainly: the production host deploys on every push to
+main through Cloudflare's own git connection, triggered by the push rather than
+by the workflow. The two run alongside each other and neither waits, so a push
+that breaks the app still deploys the broken app. CI is a smoke alarm and not a
+lock, so still run the suite before you push.
 
 ---
 
