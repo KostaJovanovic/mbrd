@@ -17,14 +17,15 @@ import java.util.TimeZone;
 
 /**
  * Rolling backups of each board file, taken before a save overwrites it, in
- * .backups/ inside the boards folder beside the bin. Desktop twin:
+ * .autosave/ inside the boards folder beside the bin, where the shelf's
+ * "Earlier versions" reads them (MbrdFiles.versions). Desktop twin:
  * desktop/backups.mts, with the same numbers: one copy per board per fifteen
  * minutes, the newest ten, and under 2 GB a board with the newest two aside.
  * A failure is logged by the caller and never stops the save.
  */
 final class MbrdBackups {
 
-    static final String DIR = ".backups";
+    static final String DIR = ".autosave";
     private static final long INTERVAL_MS = 15 * 60 * 1000L;
     private static final int KEEP = 10;
     private static final int MIN_KEEP = 2;

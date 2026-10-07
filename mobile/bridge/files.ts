@@ -4,6 +4,7 @@
 // HandedFile.data arrives as a Blob, never as the file in the page's heap.
 
 import type { HandedFile } from '../../web/assets/js/platform/electron.ts';
+import type { BoardVersion } from '../../web/assets/js/platform/platform.ts';
 import { fetchBlob, fetchBytes, transfer } from './bytes.ts';
 import { call } from './native.ts';
 
@@ -63,6 +64,12 @@ export async function read(path: string): Promise<HandedFile> {
   const r = await call<{ file?: Picked }>('MbrdFiles', 'read', { path });
   if (!r.file) throw new Error('the shell handed back no file');
   return hand(r.file);
+}
+
+/** The rolling copies of one board, newest first (MbrdFiles.versions). */
+export async function versions(path: string): Promise<BoardVersion[]> {
+  const r = await call<{ versions?: BoardVersion[] }>('MbrdFiles', 'versions', { path });
+  return Array.isArray(r.versions) ? r.versions : [];
 }
 
 export async function exists(path: string): Promise<boolean> {

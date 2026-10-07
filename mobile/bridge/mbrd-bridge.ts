@@ -61,6 +61,7 @@ const api: AndroidBridge = {
     tail: files.tail,
     read: files.read,
     exists: files.exists,
+    versions: files.versions,
   }),
 
   // The boards folder, MbrdRoot's: Documents/mbrd with the storage grant.

@@ -7,12 +7,13 @@ import {
   listBoards, switchBoard, newBoard, deleteLibraryBoard, ensureCurrentOnShelf,
   openCloudBoard, relocateLibraryBoard, boardFolder, revealBoardFolder,
   refreshBoardThumb, boardFileThumb, duplicateLibraryBoard, saveLibraryCopy,
+  boardVersions, openBoardVersion,
 } from '../storage/storage.ts';
 import type { BoardEntry } from '../storage/storage.ts';
 import { exampleBoard } from '../storage/example.ts';
 import { platform, fileNameOf } from '../platform/platform.ts';
 import { toast } from '../notify.ts';
-import { markClosed } from '../util.ts';
+import { formatBytes, markClosed } from '../util.ts';
 import { ask } from './dialog.ts';
 import { icon, openAnchored } from './menu.ts';
 import { connectCloud } from './cloud-connect.ts';
@@ -482,6 +483,8 @@ function card(b: BoardEntry) {
         action: () => guard(async () => { if (await switchBoard(b.id)) closeLibrary(); }) },
       { label: 'Duplicate board', icon: 'i-duplicate',
         action: () => guard(async () => { if (await duplicateLibraryBoard(b.id)) await render(); }) },
+      { label: 'Earlier versions…', icon: 'i-restore',
+        action: () => { void showVersions(b, e.clientX, e.clientY); } },
       { sep: true },
       b.current
         ? { label: 'Delete and open another', icon: 'i-delete', danger: true,
@@ -521,6 +524,37 @@ function card(b: BoardEntry) {
     el.append(del);
   }
   return el;
+}
+
+/** "7 Oct 14.05": short, and with no colon, since it goes into a file name. */
+function stampOf(at: number) {
+  const d = new Date(at);
+  const day = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const two = (n: number) => String(n).padStart(2, '0');
+  return `${day} ${two(d.getHours())}.${two(d.getMinutes())}`;
+}
+
+/**
+ * The earlier versions of one board, as a menu where the card's menu was: the
+ * rolling copies a shell keeps in .autosave/, or the browser's snapshots. A
+ * pick opens that version as a board of its own beside this one.
+ */
+async function showVersions(b: BoardEntry, x: number, y: number) {
+  const list = await boardVersions(b);
+  if (!root) return;
+  if (!list.length) {
+    toast(b.path
+      ? 'No earlier versions of this board yet. One is kept before a save, at most every fifteen minutes.'
+      : 'No earlier versions of this board yet. The browser keeps one every fifteen minutes while it is edited.');
+    return;
+  }
+  openAnchored({ left: x, right: x, top: y, bottom: y }, list.map(v => ({
+    label: stampOf(v.at),
+    hint: `${ago(v.at)}, ${formatBytes(v.size)}`,
+    action: () => guard(async () => {
+      if (await openBoardVersion(b, v, stampOf(v.at))) closeLibrary();
+    }),
+  })), { label: `Earlier versions of ${b.title || 'Untitled board'}` });
 }
 
 /**

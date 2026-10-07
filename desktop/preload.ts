@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     tail: (path: string, length: number) => invoke('files:tail', path, length),
     read: (path: string) => invoke('files:read', path),
     exists: (path: string) => invoke('files:exists', path),
+    // The shelf's "Earlier versions": the rolling copies of one board, newest first.
+    versions: (path: string) => invoke('files:versions', path),
   },
 
   // The boards folder (boards.ts): Documents/mbrd, where every board is a file.

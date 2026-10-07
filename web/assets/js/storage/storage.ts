@@ -8,12 +8,13 @@ import { uid, isRecord } from '../util.ts';
 import { toast, busy } from '../notify.ts';
 // Platform abstraction — browser vs desktop file handling.
 import { platform, isDesktop, fileNameOf } from '../platform/platform.ts';
-import type { DocumentRef, PickSpec } from '../platform/platform.ts';
+import type { BoardVersion, DocumentRef, PickSpec } from '../platform/platform.ts';
 import { idbGet, idbSet, idbKeys, idbGetMany } from './idb.ts';
 import type { StoreName } from './idb.ts';
 import {
   libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard, hasLibraryBoard,
   trimLibrary, sweepLibrary, wouldTrim, setLibraryThumb, SHELF_MAX,
+  putSnapshot, snapshotsOf, getSnapshot,
 } from './library.ts';
 import type { LibraryEntry } from './library.ts';
 import {
@@ -1352,6 +1353,87 @@ export async function saveLibraryCopy(id: string) {
     return true;
   } catch (err) {
     if (!isAbort(err)) toast('Could not save that board: ' + detailOf(err), 'error');
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Earlier versions
+// ---------------------------------------------------------------------------
+//
+// A shell keeps rolling copies of each board file before a save overwrites it
+// (desktop/backups.mts, MbrdBackups.java) in .autosave/ beside the boards. The
+// web has no file, so it keeps a few snapshots of the board on screen on the
+// shelf instead (library.ts). The shelf's "Earlier versions" lists either kind
+// and opens one as a new board, never over the board it came from.
+
+/** At most one web snapshot this often, while the board is being edited. */
+const SNAPSHOT_EVERY_MS = 15 * 60 * 1000;
+/** A board whose pictures come to more than this keeps no snapshots: five
+ *  packed copies of it would take the quota the board itself needs. */
+const SNAPSHOT_MAX_BYTES = 96 * 1024 * 1024;
+let lastSnapshot = 0;
+let snapping = false;
+// 'autosaved' is an edit reaching the store, not a pan or a restore.
+bus.on('autosaved', () => { void snapshotBoard(); });
+// A board just opened is snapshotted at its first edit, not fifteen minutes on.
+bus.on('board:load', () => { lastSnapshot = 0; });
+
+async function snapshotBoard() {
+  if (isDesktop() || snapping || notUsersBoard()) return;
+  if (Date.now() - lastSnapshot < SNAPSHOT_EVERY_MS) return;
+  let bytes = 0;
+  for (const a of allAssets().values()) bytes += a.size;
+  if (bytes > SNAPSHOT_MAX_BYTES) return;
+  snapping = true;
+  lastSnapshot = Date.now();
+  try {
+    const id = await ensureBoardId();
+    const { blob } = await packBoard(serializeBoard(), { created, allowMissing: true });
+    await putSnapshot(id, blob);
+  } catch (err) {
+    console.warn('[mbrd] no snapshot this time:', err);
+  } finally {
+    snapping = false;
+  }
+}
+
+/** The earlier versions of a shelf board, newest first. */
+export async function boardVersions(b: BoardEntry): Promise<BoardVersion[]> {
+  try {
+    if (b.path) return (await platform.files.versions?.({ name: fileNameOf(b.path), path: b.path })) ?? [];
+    return await snapshotsOf(b.id);
+  } catch (err) {
+    console.warn('[mbrd] could not list earlier versions:', err);
+    return [];
+  }
+}
+
+/**
+ * Open an earlier version of a board as a board of its own, "<title> (<when>)",
+ * beside the original - in the boards folder where there is one, on the shelf
+ * otherwise. Refused while the board on screen is not the user's, since the
+ * switch to it would file that board away.
+ */
+export async function openBoardVersion(b: BoardEntry, v: BoardVersion, when: string) {
+  if (notUsersBoard()) { toast('This board is not one of yours to leave from here'); return false; }
+  try {
+    const blob = b.path
+      ? await platform.files.read({ name: fileNameOf(v.path), path: v.path })
+      : await getSnapshot(v.path);
+    if (!blob) { toast('That earlier version has gone', 'error'); return false; }
+    const title = `${b.title || 'Untitled board'} (${when})`;
+    const id = uid('brd');
+    if (folder && platform.files.folder) {
+      const ref = await platform.files.folder.create(fileNameFor(title), blob);
+      await putLibraryBoard(id, null, { title, thumb: b.thumb, path: ref.path });
+    } else {
+      await putLibraryBoard(id, blob, { title, thumb: b.thumb });
+    }
+    return await switchBoard(id);
+  } catch (err) {
+    console.error(err);
+    toast('Could not open that version: ' + detailOf(err), 'error');
     return false;
   }
 }

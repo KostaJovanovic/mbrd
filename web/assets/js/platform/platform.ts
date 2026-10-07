@@ -76,6 +76,19 @@ export interface FilesPort {
   read(ref: DocumentRef): Promise<File>;
   /** Whether the file still exists at its path. Web always returns true. */
   exists(ref: DocumentRef): Promise<boolean>;
+  /** A shell only: the rolling copies the shell keeps of this board file
+   *  (desktop/backups.mts, MbrdBackups.java), newest first, each readable with
+   *  read(). Empty where there are none. */
+  versions?(ref: DocumentRef): Promise<BoardVersion[]>;
+}
+
+/** One earlier copy of a board: a backup file in a shell, a snapshot on the web. */
+export interface BoardVersion {
+  /** The file's path in a shell; the snapshot's key on the web. */
+  path: string;
+  /** When it was taken, in ms since the epoch. */
+  at: number;
+  size: number;
 }
 
 /** A file handed over. `ref` with a path means Save writes back to it. */

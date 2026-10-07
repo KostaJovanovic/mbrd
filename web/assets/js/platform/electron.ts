@@ -5,7 +5,7 @@
 import type {
   Platform, FilesPort, LifecyclePort, NativePort, UpdatesPort, UpdateOffer, AuthPort,
   DocumentRef, OpenedFile, PickSpec, TranscodeOpts, BoardFolder, FolderBoard,
-  GoogleSignIn, GoogleGrant,
+  GoogleSignIn, GoogleGrant, BoardVersion,
 } from './platform.ts';
 // StoreBackend is not imported: platform/ sits below storage/ in the layer
 // graph, so electronStore() is checked structurally at the wiring point.
@@ -38,6 +38,9 @@ export interface Bridge {
     tail(path: string, length: number): Promise<{ size: number, data: ArrayBuffer }>;
     read(path: string): Promise<HandedFile>;
     exists(path: string): Promise<boolean>;
+    /** The rolling copies of one board, newest first. Optional: a shell from
+     *  before them has none, and the shelf offers no earlier versions. */
+    versions?(path: string): Promise<BoardVersion[]>;
   };
   /** The boards folder: desktop/boards.ts, and MbrdBoards.java on Android. */
   boards: {
@@ -263,6 +266,13 @@ function electronFiles(bridge: Bridge): FilesPort {
     async exists(ref: DocumentRef) {
       if (!ref.path) return true;
       return bridge.files.exists(ref.path);
+    },
+
+    async versions(ref: DocumentRef) {
+      if (!ref.path || !bridge.files.versions) return [];
+      const list = await bridge.files.versions(ref.path);
+      return Array.isArray(list) ? list.filter(v =>
+        typeof v?.path === 'string' && Number.isFinite(v.at) && Number.isFinite(v.size)) : [];
     },
   };
 }

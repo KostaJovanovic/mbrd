@@ -128,7 +128,10 @@ function main(): void {
         + 'your boards in ' + boardsFolder + ' and its settings in ' + app.getPath('userData') + '.';
       log('warn', 'portable fallback', { note: startupNote });
     }
-    files.setBackupDir(join(app.getPath('userData'), 'backups'));
+    // Beside the boards, as After Effects keeps its Auto-Save folder beside the
+    // project: where somebody looking for an older copy of a board looks first.
+    // Hidden by its dot, so the folder's own listing (boards.ts) skips it.
+    files.setBackupDir(join(boardsFolder, '.autosave'));
     serveWeb();
     wireStore();
     wireFiles();
@@ -1006,6 +1009,7 @@ function wireFiles(): void {
   ipcMain.handle('files:tail', (_e, path: unknown, length: unknown) => files.tail(path, length));
   ipcMain.handle('files:read', (_e, path: unknown) => files.read(path));
   ipcMain.handle('files:exists', (_e, path: unknown) => files.exists(path));
+  ipcMain.handle('files:versions', (_e, path: unknown) => files.versions(path));
   ipcMain.handle('boards:list', () => boards.list());
   ipcMain.handle('boards:create', (_e, suggested: unknown, data: unknown) => boards.create(suggested, data));
   ipcMain.handle('boards:rename', (_e, path: unknown, suggested: unknown) => boards.rename(path, suggested));

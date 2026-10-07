@@ -61,6 +61,10 @@ public class MbrdFiles extends Plugin {
     /** Canonical paths handed out by this process. Grows, as desktop/files.ts's does. */
     private static final Set<String> KNOWN = Collections.synchronizedSet(new HashSet<>());
 
+    /** Rolling copies versions() handed out: read() takes them and nothing that
+     *  writes does, so the page can never overwrite a backup. */
+    private static final Set<String> READ_ONLY = Collections.synchronizedSet(new HashSet<>());
+
     /** A file, or a content:// document, the page may fetch once it has the token. */
     private static final class Handed {
 
@@ -388,11 +392,12 @@ public class MbrdFiles extends Plugin {
 
     // ---- Read and exists ------------------------------------------------------
 
-    /** A shelf row's file, read back. */
+    /** A shelf row's file, read back, or one of its earlier versions. */
     @PluginMethod
     public void read(PluginCall call) {
         try {
-            File file = checked(call.getString("path"));
+            String path = call.getString("path");
+            File file = path != null && READ_ONLY.contains(path) ? new File(path) : checked(path);
             if (!file.isFile()) throw new IOException(file.getName() + " is not there any more");
             call.resolve(fileResult(file));
         } catch (IOException e) {
@@ -416,6 +421,37 @@ public class MbrdFiles extends Plugin {
             JSObject r = new JSObject();
             r.put("size", size);
             r.put("token", token(new Handed(file, null, size - length)));
+            call.resolve(r);
+        } catch (IOException e) {
+            call.reject(e.getMessage());
+        }
+    }
+
+    /** The shelf's "Earlier versions": the rolling copies MbrdBackups keeps of
+     *  one board, newest first. Desktop twin: versions() in desktop/files.ts. */
+    @PluginMethod
+    public void versions(PluginCall call) {
+        try {
+            File board = checked(call.getString("path"));
+            File folder = MbrdBackups.folderFor(new File(MbrdBoards.folder(), MbrdBackups.DIR), board);
+            File[] copies = folder.listFiles((d, n) -> n.endsWith(BOARD_EXT));
+            JSArray list = new JSArray();
+            if (copies != null) {
+                java.util.Arrays.sort(copies, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+                for (File copy : copies) {
+                    if (!copy.isFile()) continue;
+                    String path = copy.getCanonicalPath();
+                    READ_ONLY.add(path);
+                    JSObject o = new JSObject();
+                    o.put("name", copy.getName());
+                    o.put("path", path);
+                    o.put("at", copy.lastModified());
+                    o.put("size", copy.length());
+                    list.put(o);
+                }
+            }
+            JSObject r = new JSObject();
+            r.put("versions", list);
             call.resolve(r);
         } catch (IOException e) {
             call.reject(e.getMessage());

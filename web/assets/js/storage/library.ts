@@ -1,6 +1,6 @@
 // Board library: multiple boards in IndexedDB. Each is a packed .mbrd blob
 // (self-contained, like Export) under its own id, plus a lightweight index for
-// the switcher. Packed blobs (not shared asset rows) so the asset sweep stays
+// the switcher, and a few earlier snapshots of each beside it. Packed blobs (not shared asset rows) so the asset sweep stays
 // per-board and a shelved board cannot be corrupted by the active one.
 // CRUD only — orchestration (pack, swap, load) lives in storage.ts.
 
@@ -97,12 +97,14 @@ function inTurn<T>(work: () => Promise<T>): Promise<T> {
   return run;
 }
 
-/** Remove orphaned blobs (tab closed between blob write and index write).
- *  Cheap — key walk only, no blob reads. */
+/** Remove orphaned blobs (tab closed between blob write and index write), and
+ *  the snapshots of boards no longer on the shelf. Cheap — key walk only, no
+ *  blob reads. Runs right after a shelving, when the board just filed has its
+ *  row, so the board on screen never loses its own. */
 export async function sweepLibrary() {
   const known = new Set((await libraryIndex()).map(e => e.id));
   const keys = await idbKeys(STORE);
-  const orphans = keys.filter(k => typeof k === 'string' && !known.has(k));
+  const orphans = keys.filter(k => typeof k === 'string' && !known.has(snapshotBoard(k) ?? k));
   if (orphans.length) {
     // SAFETY: filter above already narrowed to strings.
     await idbDelMany(STORE, orphans as string[]);
@@ -117,13 +119,73 @@ export async function getLibraryBoard(id: string): Promise<Blob | null> {
   return ((await idbGet(STORE, id)) || null) as Blob | null;
 }
 
-/** Take a board off the shelf - both its blob and its index row. */
+/** Take a board off the shelf - its blob, its snapshots and its index row. */
 export async function removeLibraryBoard(id: string) {
   // Same write chain as put — avoids racing the index read-modify-write.
   return inTurn(async () => {
     await idbDel(STORE, id);
+    await idbDelMany(STORE, (await snapshotKeys(id)).map(s => s.key));
     await writeIndex((await libraryIndex()).filter(e => e.id !== id));
   });
+}
+
+// ---------------------------------------------------------------------------
+// Snapshots: the web's earlier versions
+// ---------------------------------------------------------------------------
+//
+// The apps keep rolling copies of each board file (desktop/backups.mts). The
+// web has no file, so a few packed copies of a board are kept here, in this
+// store beside its blob, under `snap\n<board id>\n<time>`: no new store, so
+// no schema upgrade. Taken from the board on screen at most every fifteen
+// minutes while it is being edited (storage.ts), the newest SNAPSHOTS_KEPT.
+
+const SNAP = 'snap\n';
+
+/** How many earlier versions of one board the browser keeps. */
+export const SNAPSHOTS_KEPT = 5;
+
+/** The board a snapshot key belongs to, or null for a key that is not one. */
+function snapshotBoard(key: unknown): string | null {
+  if (typeof key !== 'string' || !key.startsWith(SNAP)) return null;
+  const rest = key.slice(SNAP.length);
+  const cut = rest.lastIndexOf('\n');
+  return cut > 0 ? rest.slice(0, cut) : null;
+}
+
+/** One board's snapshot keys and times, newest first. */
+async function snapshotKeys(id: string): Promise<{ key: string, at: number }[]> {
+  const prefix = `${SNAP}${id}\n`;
+  return (await idbKeys(STORE))
+    .filter((k): k is string => typeof k === 'string' && k.startsWith(prefix))
+    .map(key => ({ key, at: Number(key.slice(prefix.length)) || 0 }))
+    .sort((a, b) => b.at - a.at);
+}
+
+/** Keep a packed copy of board `id`, and drop the oldest past SNAPSHOTS_KEPT. */
+export async function putSnapshot(id: string, blob: Blob, at = Date.now()) {
+  return inTurn(async () => {
+    await idbSet(STORE, `${SNAP}${id}\n${at}`, blob);
+    const stale = (await snapshotKeys(id)).slice(SNAPSHOTS_KEPT);
+    if (stale.length) await idbDelMany(STORE, stale.map(s => s.key));
+  });
+}
+
+/** A board's snapshots, newest first, as the shelf lists them. */
+export async function snapshotsOf(id: string): Promise<{ path: string, at: number, size: number }[]> {
+  const keys = await snapshotKeys(id);
+  const out = [];
+  for (const { key, at } of keys) {
+    const blob = await idbGet(STORE, key);
+    if (blob instanceof Blob) out.push({ path: key, at, size: blob.size });
+  }
+  return out;
+}
+
+/** One snapshot's packed board, or null when it has gone. */
+export async function getSnapshot(key: string): Promise<Blob | null> {
+  if (snapshotBoard(key) === null) return null;
+  const blob = await idbGet(STORE, key);
+  return blob instanceof Blob ? blob : null;
 }
 
 /** Max boards on the shelf. Without eviction, every Open/New/Switch accumulates

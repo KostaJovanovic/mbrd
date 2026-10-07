@@ -1,14 +1,15 @@
 // File dialogs and read/write for .mbrd boards.
 // A renderer cannot name a path. Every path here comes from a dialog, argv,
-// open-file, trust.mts's file, or the boards folder (boards.ts). Anything else,
+// open-file, trust.mts's file, or the boards folder (boards.ts); a rolling copy
+// versions() listed may be read and never written. Anything else,
 // a path the page stored included, is refused. An imported picture is read once
 // and never becomes a path the page can write.
 
 import { dialog, BrowserWindow } from 'electron';
-import { readFile, access, open as openFile } from 'node:fs/promises';
+import { readFile, readdir, stat, access, open as openFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { writeAtomic } from './atomic.mts';
-import { keepBackup } from './backups.mts';
+import { folderFor, keepBackup } from './backups.mts';
 import { openTrust } from './trust.mts';
 import type { Trust } from './trust.mts';
 import {
@@ -180,7 +181,8 @@ export async function write(path: unknown, data: unknown): Promise<void> {
   await writeAtomic(target, Buffer.from(data), target + '.mbrd-tmp', true);
 }
 
-/** Where the rolling copies go: the data folder, so a portable copy keeps them beside it. */
+/** Where the rolling copies go: .autosave/ in the boards folder, which for a
+ *  portable copy is inside its data folder, so it keeps them beside it. */
 let backupDir = '';
 
 export function setBackupDir(dir: string): void {
@@ -199,6 +201,48 @@ async function backup(target: string): Promise<void> {
   } catch (err) {
     log('warn', 'could not keep a backup', { target, err: String(err) });
   }
+}
+
+/** One rolling copy of a board, as the shelf's "Earlier versions" lists it. */
+export interface Version {
+  name: string;
+  path: string;
+  /** When the copy was taken, in ms since the epoch. */
+  at: number;
+  size: number;
+}
+
+/** Rolling copies handed to the page by versions(): read() takes them, and
+ *  nothing that writes does, so the page can never overwrite a backup. */
+const readOnly = new Set<string>();
+
+/**
+ * The rolling copies of one board (backups.mts), newest first. Each may be
+ * read back through read(), and only read.
+ */
+export async function versions(path: unknown): Promise<Version[]> {
+  const target = checked(path);
+  if (!backupDir) return [];
+  const folder = folderFor(backupDir, target);
+  let names: string[];
+  try {
+    names = (await readdir(folder)).filter(n => n.endsWith('.mbrd'));
+  } catch {
+    return [];
+  }
+  const out: Version[] = [];
+  for (const name of names) {
+    const copy = join(folder, name);
+    try {
+      const s = await stat(copy);
+      if (!s.isFile()) continue;
+      readOnly.add(copy);
+      out.push({ name, path: copy, at: s.mtimeMs, size: s.size });
+    } catch {
+      // Pruned between the listing and the look: one copy fewer.
+    }
+  }
+  return out.sort((a, b) => b.at - a.at);
 }
 
 /**
@@ -268,8 +312,10 @@ export async function tail(path: unknown, length: unknown): Promise<{ size: numb
   }
 }
 
-/** Read a document back. The shelf's file rows are the caller. */
+/** Read a document back. The shelf's file rows are the caller, and its
+ *  "Earlier versions" (versions() above). */
 export async function read(path: unknown): Promise<Handed> {
+  if (typeof path === 'string' && readOnly.has(path)) return hand(path);
   return hand(checked(path));
 }
 
