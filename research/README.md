@@ -58,6 +58,10 @@ The changelog source is `patch-notes.md` at the repository root, not in here.
   in six batches (align carrying notes, drops avoiding cards, Nudge and fence
   scopes, selection and join rows, the viewer, Alt+drag), with three open
   questions. Not yet built.
+- `features-2026-10-07.md` — eighteen features and 1.0 gaps the maintainer
+  picked on 2026-10-07, each with the answers it has to match: colour search,
+  rolling backups, JSON Canvas, colourblind mode, the pen, boards inside
+  boards and the rest. Being built in its order.
 - `patch-notes-full.md` — **an archive, not open work.** It holds every release
   at the length it was first written, internal work included. Nothing generates
   anything from it.
