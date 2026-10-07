@@ -487,7 +487,7 @@ jobs:
           EOF
           fi
           cat >> notes.md <<EOF
-          | Android 7 and later | [mbrd-android-$VERSION.apk]($dl/mbrd-android-$VERSION.apk) | Asks, then installs |
+          | Android 7 and later, sideload only | [mbrd-android-$VERSION.apk]($dl/mbrd-android-$VERSION.apk) | Asks, then installs |
 
           EOF
           if [ "$SYSTEMS" != "all" ]; then
@@ -514,7 +514,7 @@ jobs:
           EOF
           fi
           cat >> notes.md <<EOF
-          - **Android:** when Android asks, allow your browser or file manager to install apps.
+          - **Android:** the app is sideload only - it is not on Google Play, and this page is where it comes from. When Android asks, allow your browser or file manager to install apps. After that it updates itself from here.
 
           mbrd is free software under the GPL, version 3 or later. The source of this release is the tag $tag in this repository, and the archives below are it.
 

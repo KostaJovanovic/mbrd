@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android's own backup, Android 6 to 11 (fullBackupContent in the manifest);
+     data_extraction_rules.xml is the same for 12 and later. Excludes only, so
+     everything else is kept: the boards in files/mbrd when the app has no
+     storage grant, and its preferences. Boards in Documents/mbrd are the
+     user's own files and outside any app backup.
+     Left out: a downloaded update, stale on any other phone; the update
+     check's state, so a restored copy looks again; and the WebView's storage,
+     a cache that alone could pass the 25 MB a backup is allowed, which would
+     lose the backup whole. -->
+<full-backup-content>
+    <exclude domain="file" path="update/" />
+    <exclude domain="sharedpref" path="mbrd-update.xml" />
+    <exclude domain="root" path="app_webview/" />
+</full-backup-content>

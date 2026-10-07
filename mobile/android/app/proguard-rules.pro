@@ -1,21 +1,19 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# R8 rules for the release build (minifyEnabled in build.gradle). Capacitor's
+# consumer rules keep every class extending Plugin and its @PluginMethod
+# methods, which the bridge calls by name. Below is what they do not cover.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# This app's own classes, whole. They are a few thousand lines, so shrinking
+# them saves nothing, and a renamed method the bridge or a manifest entry
+# reaches by name fails only on a phone, at the moment it is first used.
+-keep class com.valjdakosta.mbrd.** { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# The bridge itself: Capacitor reflects over its own classes as well.
+-keep class com.getcapacitor.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Anything the page reaches through addJavascriptInterface.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+
+# Stack traces from a release build that point at a line.
+-keepattributes SourceFile,LineNumberTable,*Annotation*,Signature,InnerClasses,EnclosingMethod

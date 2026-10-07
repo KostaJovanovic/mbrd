@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and later; backup_rules.xml says why each line is here. A
+     phone-to-phone transfer has no size limit, so it carries the WebView's
+     storage - the web side's preferences and store - and the cloud backup
+     does not. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="update/" />
+        <exclude domain="sharedpref" path="mbrd-update.xml" />
+        <exclude domain="root" path="app_webview/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="update/" />
+        <exclude domain="sharedpref" path="mbrd-update.xml" />
+    </device-transfer>
+</data-extraction-rules>
