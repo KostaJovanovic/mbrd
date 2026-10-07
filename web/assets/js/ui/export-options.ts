@@ -16,8 +16,8 @@ import type { ExportOpts } from './snapshot.ts';
 import { cue } from '../cuelume/engine.ts';
 import { onTouch } from '../canvas/viewport.ts';
 
-/** Which of the two buttons asked. Each keeps its own options. */
-export type ExportKind = 'image' | 'pdf';
+/** Which of the three buttons asked. Each keeps its own options. */
+export type ExportKind = 'image' | 'pdf' | 'svg';
 
 /** What the box can leave out, each a checkbox and an ExportOpts flag. */
 type Mark = 'web' | 'sheet' | 'grid' | 'grain' | 'tilt' | 'shadows';
@@ -45,11 +45,12 @@ const SETTLE_MS = 180;
 const kept: Record<ExportKind, ExportOpts> = {
   image: { ...EXPORT_DEFAULTS },
   pdf: { ...EXPORT_DEFAULTS },
+  svg: { ...EXPORT_DEFAULTS },
 };
 
 /** Whether the last Save asked for only the selection, per button. Off to start:
  *  a selection is often left standing, and the whole board is the usual ask. */
-const wantOnly: Record<ExportKind, boolean> = { image: false, pdf: false };
+const wantOnly: Record<ExportKind, boolean> = { image: false, pdf: false, svg: false };
 
 // One at a time: a second call while the box is up is ignored, not stacked.
 let showing = false;
@@ -129,7 +130,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
     shadows: boardShadows(),
   };
 
-  title.textContent = kind === 'pdf' ? 'Save PDF' : 'Save image';
+  title.textContent = kind === 'pdf' ? 'Save PDF' : kind === 'svg' ? 'Save SVG' : 'Save image';
   const current = kept[kind];
   ppi.value = String(current.ppi);
   quality.value = String(Math.round(current.quality * 100));
@@ -196,7 +197,9 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
     const system = board.settings.units === 'imperial' ? 'imperial' : 'metric';
     // formatSize() at a scale of 1 reads its units as millimetres.
     const mm = (n: number) => n / out.ppi * MM_PER_INCH;
-    caption.textContent = `${kind === 'pdf' ? 'Page' : 'Prints at'} ${formatSize(mm(out.w), mm(out.h), 1, system)}`;
+    caption.textContent = `${kind === 'pdf' ? 'Page' : 'Prints at'} ${formatSize(mm(out.w), mm(out.h), 1, system)}`
+      // The cards are HTML inside the SVG: a browser draws them, a drawing program mostly does not.
+      + (kind === 'svg' ? '. The cards stay text, for a browser to open' : '');
   };
 
   return new Promise<ExportOpts | null>(resolve => {

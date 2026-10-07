@@ -24,7 +24,9 @@ import { fitMode } from '../canvas/renderers.ts';
 import { isPrint } from '../canvas/picture-shape.ts';
 import { noteWords, normalizeNoteRich, richLines, NOTE_FONTS } from '../canvas/note-model.ts';
 import type { NoteFont } from '../canvas/note-model.ts';
-import { drawCaptured } from './capture.ts';
+import { drawCaptured, captureCards, rootAttrs } from './capture.ts';
+import { boardSvg as boardSvgText } from './capture-css.ts';
+import type { SvgCard } from './capture-css.ts';
 import { tiltOf } from '../canvas/items.ts';
 import { describeExt } from '../import/formats.ts';
 import { extOf, formatBytes, isRecord } from '../util.ts';
@@ -1664,7 +1666,7 @@ export function exportSize(opts: ExportOpts) {
  * screen, straight for the rest, until an optional durable `meta.tilt` is
  * added deliberately rather than as an export side effect.
  */
-async function renderBoardCanvas(detail: Detail, opts: ExportOpts, maxEdge = MAX_EDGE) {
+async function renderBoardCanvas(detail: Detail, opts: ExportOpts, maxEdge = MAX_EDGE, cards = true) {
   const plan = planRender(detail, opts, maxEdge);
   if (!plan) return null;
   const { items, b, margin, scale, w: W, h: H } = plan;
@@ -1703,7 +1705,8 @@ async function renderBoardCanvas(detail: Detail, opts: ExportOpts, maxEdge = MAX
   const ordered = [...items].sort((p, q) => (p.z || 0) - (q.z || 0));
   paintShadows(ctx, look, ordered, project, scale, W, H);
   const stage = document.createElement('canvas');
-  for (const it of ordered) {
+  // `cards` false is the ground alone - everything under the cards, for boardSvg().
+  for (const it of cards ? ordered : []) {
     const at = project(it.x, it.y);
     const w = it.w * scale;
     const h = it.h * scale;
@@ -1819,6 +1822,48 @@ export async function boardThumb(max = 360) {
     if (webp.startsWith('data:image/webp')) return webp;
     return c.toDataURL('image/jpeg', 0.7);
   } catch { return null; }
+}
+
+/**
+ * The board as an SVG file, or null: the ground as one picture at the
+ * options' resolution, and every card over it as its own markup
+ * (captureCards() in ui/capture.ts) - words stay words, sharp at any zoom and
+ * selectable in a browser. A card that cannot be captured, or every card on
+ * an engine that cannot capture, is its painter's picture instead. The
+ * markup is HTML inside foreignObject, which browsers draw and most drawing
+ * programs do not; the export box says so.
+ */
+export async function boardSvg(opts: ExportOpts) {
+  const plan = planRender('full', opts, MAX_EDGE);
+  const ground = await renderBoardCanvas('full', opts, MAX_EDGE, false);
+  if (!plan || !ground) return null;
+  const { items, b, margin, scale } = plan;
+  const look = readLook('full', opts);
+  const ordered = [...items].sort((p, q) => (p.z || 0) - (q.z || 0));
+  const captured = await captureCards(ordered, scale);
+  const cards: SvgCard[] = [];
+  for (const it of ordered) {
+    const at = { x: (it.x - b.x0) + margin, y: (b.y1 - it.y) + margin, w: it.w, h: it.h, turn: turnOf(it, look) };
+    const markup = captured?.cards.get(it.id);
+    if (markup) { cards.push({ ...at, markup }); continue; }
+    // Painted at the export's resolution, upright; the file turns it.
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(it.w * scale));
+    c.height = Math.max(1, Math.ceil(it.h * scale));
+    const ctx = c.getContext('2d');
+    if (!ctx) continue;
+    ctx.translate(c.width / 2, c.height / 2);
+    await painterFor(it)({ ctx, it, w: c.width, h: c.height, look, scale });
+    cards.push({ ...at, picture: c.toDataURL('image/png') });
+  }
+  const worldW = ground.w / scale, worldH = ground.h / scale;
+  const mm = (units: number) => units / clampScale(board.settings.scale);
+  const svg = boardSvgText({
+    w: worldW, h: worldH, mmW: mm(worldW), mmH: mm(worldH), rootAttrs: rootAttrs(),
+    bodyClass: captured?.bodyClass ?? '', css: captured?.css ?? '',
+    ground: ground.canvas.toDataURL('image/jpeg', opts.quality), cards,
+  });
+  return new Blob([svg], { type: 'image/svg+xml' });
 }
 
 /** The board as a one-page PDF blob, or null. */

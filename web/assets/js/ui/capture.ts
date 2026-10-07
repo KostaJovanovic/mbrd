@@ -108,11 +108,12 @@ const spriteDoc = (url: string) => {
 };
 
 /**
- * The cascade one card is drawn in: the @font-face rules its text is set in,
- * the app's and the board's own, then the sheets with the pictures it shows
- * (a fence's cork, a sheet's grain) inlined and every other address emptied.
+ * What a card needs of the cascade: the @font-face rules its text is set in,
+ * the app's and the board's own, and the stylesheet pictures it shows (a
+ * fence's cork, a sheet's grain) as data: URLs by address. Kept apart so a
+ * file of many cards (boardSvg() in ui/snapshot.ts) carries each once.
  */
-async function dressFor(node: Element, faces: Face[], css: string): Promise<string> {
+async function needsOf(node: Element, faces: Face[]): Promise<{ rules: string[], pictures: Map<string, string> }> {
   const used = new Set<string>();
   const pictures = new Map<string, string>();
   for (const el of [node, ...node.querySelectorAll('*')]) {
@@ -144,7 +145,59 @@ async function dressFor(node: Element, faces: Face[], css: string): Promise<stri
     rules.push(`@font-face{font-family:${JSON.stringify(spec.family)};src:url("${await asData(blob)}");${range}}`);
   }
   for (const [u, data] of pictures) if (!data) pictures.delete(u);
+  return { rules, pictures };
+}
+
+/** The stylesheet for the cards whose needs these are: each face once, each picture once. */
+async function sheetFor(needs: { rules: string[], pictures: Map<string, string> }[]): Promise<string> {
+  const { css } = await readCascade();
+  const rules = [...new Set(needs.flatMap(n => n.rules))];
+  const pictures = new Map(needs.flatMap(n => [...n.pictures]));
   return rules.join('\n') + '\n' + inlineURLs(css, pictures);
+}
+
+/** The document's own attributes, for the root that the cascade's `:root` rules must match. */
+export const rootAttrs = (): [string, string][] => [...document.documentElement.attributes]
+  .filter(a => a.name.startsWith('data-') || a.name === 'style' || a.name === 'lang')
+  .map(a => [a.name, a.value]);
+
+/** One card frozen: its markup, and what it needs of the cascade. */
+type Parts = { card: string, needs: { rules: string[], pictures: Map<string, string> } };
+
+async function captureParts(it: Item, perUnit: number): Promise<Parts | null> {
+  const live = await settle(it);
+  if (!live) return null;
+  try {
+    const { faces } = await readCascade();
+    const copy = live.cloneNode(true);
+    if (!(copy instanceof HTMLElement)) return null;
+    copy.removeAttribute('data-capture');
+    await freeze(copy, live, perUnit);
+    return { card: new XMLSerializer().serializeToString(copy), needs: await needsOf(live, faces) };
+  } catch {
+    return null;
+  } finally {
+    live.remove();
+  }
+}
+
+/**
+ * Cards as markup for one SVG file of them all, by id, and the one stylesheet
+ * they share. A card that cannot be captured is absent, and the caller draws
+ * it some other way. Null where this engine cannot capture at all.
+ */
+export async function captureCards(items: Item[], perUnit: number) {
+  if (!await canCapture()) return null;
+  const cards = new Map<string, string>();
+  const needs: Parts['needs'][] = [];
+  for (const it of items) {
+    if (!capturable(it) || !(it.w > 0) || !(it.h > 0)) continue;
+    const parts = await captureParts(it, perUnit);
+    if (!parts) continue;
+    cards.set(it.id, parts.card);
+    needs.push(parts.needs);
+  }
+  return { cards, css: await sheetFor(needs), bodyClass: document.body.className };
 }
 
 /** The picture an <img> should carry at this size: the original where the card has one, scaled. */
@@ -325,29 +378,15 @@ export async function drawCaptured(ctx: CanvasRenderingContext2D, it: Item, w: n
   const key = keyOf(it, perUnit);
   let img = cache.get(key);
   if (!img) {
-    const live = await settle(it);
-    if (!live) return false;
+    const parts = await captureParts(it, perUnit);
+    if (!parts) return false;
     try {
-      const { faces, css } = await readCascade();
-      const copy = live.cloneNode(true);
-      if (!(copy instanceof HTMLElement)) return false;
-      copy.removeAttribute('data-capture');
-      await freeze(copy, live, perUnit);
-      const dressed = await dressFor(live, faces, css);
-      const root = document.documentElement;
-      const svg = cardSvg({
-        w: it.w, h: it.h,
-        rootAttrs: [...root.attributes].filter(a => a.name.startsWith('data-') || a.name === 'style' || a.name === 'lang')
-          .map(a => [a.name, a.value]),
-        bodyClass: document.body.className,
-        css: dressed,
-        card: new XMLSerializer().serializeToString(copy),
-      });
-      img = await decode(svgURL(svg));
+      img = await decode(svgURL(cardSvg({
+        w: it.w, h: it.h, rootAttrs: rootAttrs(), bodyClass: document.body.className,
+        css: await sheetFor([parts.needs]), card: parts.card,
+      })));
     } catch {
       return false;
-    } finally {
-      live.remove();
     }
     if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value ?? '');
     cache.set(key, img);

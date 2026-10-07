@@ -106,5 +106,43 @@ export function cardSvg(
     + '</foreignObject></svg>';
 }
 
+/** One card in a board SVG: its centre, size and turn in world units and degrees, as markup or as a picture. */
+export type SvgCard = { x: number, y: number, w: number, h: number, turn: number, markup?: string, picture?: string };
+
+const num = (n: number) => String(Math.round(n * 100) / 100);
+
+/**
+ * A whole board as one SVG file: the ground as a picture under everything (the
+ * paper, its grain, the lattice, the lines and the shadows, drawn by the image
+ * export), then every card in order - as its own markup where it was captured,
+ * so its words stay words, and as a picture where it was painted. Sized in
+ * millimetres so it prints at the board's own scale; drawn in world units.
+ */
+export function boardSvg(
+  { w, h, mmW, mmH, rootAttrs, bodyClass, css, ground, cards }:
+  {
+    w: number, h: number, mmW: number, mmH: number, rootAttrs: [string, string][], bodyClass: string,
+    css: string, ground: string, cards: SvgCard[],
+  },
+): string {
+  if (css.includes(']]>')) throw new Error('a stylesheet holds "]]>"');
+  const attrs = rootAttrs.map(([k, v]) => ` ${k}="${attr(v)}"`).join('');
+  const body = cards.map(c => {
+    const at = `<g transform="translate(${num(c.x)} ${num(c.y)})${c.turn ? ` rotate(${num(c.turn)})` : ''}">`;
+    const box = `x="${num(-c.w / 2)}" y="${num(-c.h / 2)}" width="${num(c.w)}" height="${num(c.h)}"`;
+    if (c.markup) {
+      return `${at}<svg ${box} overflow="visible"><foreignObject x="0" y="0" width="${num(c.w)}" height="${num(c.h)}">`
+        + `<body xmlns="http://www.w3.org/1999/xhtml" class="${attr(bodyClass)}">`
+        + `<div id="viewport"><div id="world">${c.markup}</div></div></body></foreignObject></svg></g>`;
+    }
+    return c.picture ? `${at}<image ${box} href="${attr(c.picture)}"/></g>` : '';
+  }).join('\n');
+  return '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + `<svg xmlns="http://www.w3.org/2000/svg" width="${num(mmW)}mm" height="${num(mmH)}mm" viewBox="0 0 ${num(w)} ${num(h)}"${attrs}>\n`
+    + `<style><![CDATA[${css}]]></style>\n`
+    + `<image x="0" y="0" width="${num(w)}" height="${num(h)}" preserveAspectRatio="none" href="${attr(ground)}"/>\n`
+    + body + '\n</svg>\n';
+}
+
 /** A string as a data: URL an <img> decodes as SVG. */
 export const svgURL = (svg: string) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);

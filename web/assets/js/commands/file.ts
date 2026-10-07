@@ -23,7 +23,7 @@ import { connectCloud } from '../ui/cloud-connect.ts';
 import { homePath } from '../page.ts';
 import { assetBytes } from '../storage/assets.ts';
 import { openLibrary } from '../ui/library.ts';
-import { boardImage, boardPdf, exportSize, EXPORT_DEFAULTS } from '../ui/snapshot.ts';
+import { boardImage, boardPdf, boardSvg, exportSize, EXPORT_DEFAULTS } from '../ui/snapshot.ts';
 import { askExportOptions } from '../ui/export-options.ts';
 import type { ExportKind } from '../ui/export-options.ts';
 import { saveWithCooldown } from '../ui/board-actions.ts';
@@ -73,10 +73,11 @@ async function exportPicture(kind: ExportKind): Promise<void> {
   if (!opts) return;
   const job = busy('Drawing the board');
   try {
-    const blob = kind === 'pdf' ? await boardPdf(opts) : await boardImage(opts);
+    const blob = kind === 'pdf' ? await boardPdf(opts) : kind === 'svg' ? await boardSvg(opts) : await boardImage(opts);
     if (!blob) { toast('There is nothing on the board to save yet'); return; }
-    saveBlob(blob, boardArtefactName(kind === 'pdf' ? 'pdf' : 'jpg'));
-    toast(kind === 'pdf' ? 'Saved a PDF of the board' : 'Saved a picture of the board');
+    saveBlob(blob, boardArtefactName(kind === 'pdf' ? 'pdf' : kind === 'svg' ? 'svg' : 'jpg'));
+    toast(kind === 'pdf' ? 'Saved a PDF of the board' : kind === 'svg' ? 'Saved an SVG of the board'
+      : 'Saved a picture of the board');
   } catch (err) {
     console.error(err);
     toast('Could not draw the board: ' + why(err), 'error');
@@ -553,6 +554,7 @@ export function fileCommands() {
     cloudOpen: () => openLibrary(),
     exportImage: () => exportPicture('image'),
     exportPdf: () => exportPicture('pdf'),
+    exportSvg: () => exportPicture('svg'),
     // The board for Obsidian and the other JSON Canvas apps: a .canvas and its files, zipped.
     exportCanvas: () => exportCanvas(),
     // Dynamic import: the encoder is ~30 MB and loaded only on demand.

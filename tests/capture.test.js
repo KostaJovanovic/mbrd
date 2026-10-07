@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  splitSheet, inlineFace, inlineURLs, urlsIn, familiesOf, plainFamily, cardSvg, svgURL,
+  splitSheet, inlineFace, inlineURLs, urlsIn, familiesOf, plainFamily, cardSvg, svgURL, boardSvg,
 } from '../web/assets/js/ui/capture-css.ts';
 
 const BASE = 'https://mbrd.test/assets/css/fonts.css';
@@ -67,4 +67,24 @@ test('the SVG wears the document attributes and refuses a sheet that would end i
   assert.ok(svg.includes('<div id="viewport"><div id="world"><div class="item"></div></div></div>'));
   assert.throws(() => cardSvg({ w: 1, h: 1, rootAttrs: [], bodyClass: '', css: 'a{content:"]]>"}', card: '' }));
   assert.ok(svgURL('<svg/>').startsWith('data:image/svg+xml;charset=utf-8,%3Csvg'));
+});
+
+test('a board SVG is sized in millimetres, drawn in world units, ground first and cards in order', () => {
+  const svg = boardSvg({
+    w: 1000, h: 500, mmW: 250, mmH: 125, rootAttrs: [['data-whimsy', '2']], bodyClass: '', css: '.a{}',
+    ground: 'data:image/jpeg;base64,GG',
+    cards: [
+      { x: 100, y: 120, w: 200, h: 100, turn: 0, markup: '<div class="item" data-id="a"></div>' },
+      { x: 500, y: 250, w: 80, h: 80, turn: -12.3456, picture: 'data:image/png;base64,PP' },
+      { x: 0, y: 0, w: 10, h: 10, turn: 0 },
+    ],
+  });
+  assert.ok(svg.startsWith('<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="250mm" height="125mm" viewBox="0 0 1000 500" data-whimsy="2">'));
+  const ground = svg.indexOf('href="data:image/jpeg;base64,GG"');
+  const first = svg.indexOf('data-id="a"');
+  const second = svg.indexOf('href="data:image/png;base64,PP"');
+  assert.ok(ground > 0 && ground < first && first < second);
+  assert.ok(svg.includes('<g transform="translate(100 120)"><svg x="-100" y="-50" width="200" height="100" overflow="visible">'));
+  assert.ok(svg.includes('<g transform="translate(500 250) rotate(-12.35)"><image x="-40" y="-40" width="80" height="80"'));
+  assert.equal((svg.match(/<g /g) || []).length, 2, 'a card with neither markup nor picture is left out');
 });

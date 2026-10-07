@@ -2,7 +2,9 @@
 // real Save image box, at each whimsy tier, beside a screenshot of the board.
 // Chromium and Firefox draw the cards from their DOM (ui/capture.ts);
 // `painters` shows the path Safari takes. Compare by eye. After a build:
-//   node research/export-trace/export.mjs [chromium|firefox|painters] [outdir]
+//   node research/export-trace/export.mjs [chromium|firefox|painters] [outdir] [svg]
+// With `svg` it saves through Save SVG instead, and screenshots the file as
+// the same browser opens it.
 // Playwright comes from desktop/node_modules. Serves web/ itself, with the
 // deployed CSP; never serve.py.
 
@@ -10,7 +12,7 @@ import { createServer } from 'node:http';
 import { createReadStream, readFileSync, statSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { extname, join, normalize, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 
 const ROOT = resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -19,7 +21,8 @@ const WEB = join(ROOT, 'web');
 // path Safari takes: every card drawn by its painter in ui/snapshot.ts.
 const MODE = process.argv[2] || 'chromium';
 const ENGINE = MODE === 'painters' ? 'chromium' : MODE;
-const OUT = resolve(process.argv[3] || join(tmpdir(), `mbrd-export-${MODE}`));
+const SVG = process.argv[4] === 'svg';
+const OUT = resolve(process.argv[3] || join(tmpdir(), `mbrd-export-${MODE}${SVG ? '-svg' : ''}`));
 mkdirSync(OUT, { recursive: true });
 
 const CSP = readFileSync(join(WEB, '_headers'), 'utf8')
@@ -72,14 +75,22 @@ for (const whimsy of ['0', '1', '2']) {
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 120_000 }),
     (async () => {
-      void page.evaluate(() => window.mbrd.cmds.exportImage());
+      void page.evaluate(svg => (svg ? window.mbrd.cmds.exportSvg() : window.mbrd.cmds.exportImage()), SVG);
       const go = page.locator('dialog[open] button', { hasText: /^Save/ }).last();
       await go.waitFor({ timeout: 15_000 });
       await go.click();
     })(),
   ]);
-  await download.saveAs(join(OUT, `w${whimsy}-export.jpg`));
-  console.log(`whimsy ${whimsy}: exported in ${Date.now() - t0} ms`);
+  const file = join(OUT, `w${whimsy}-export.${SVG ? 'svg' : 'jpg'}`);
+  await download.saveAs(file);
+  console.log(`whimsy ${whimsy}: exported in ${Date.now() - t0} ms, ${Math.round(statSync(file).size / 1024)} KB`);
+  if (SVG) {
+    const view = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+    await view.goto(pathToFileURL(file).href);
+    await view.waitForTimeout(800);
+    await view.screenshot({ path: join(OUT, `w${whimsy}-svg-opened.png`) });
+    await view.close();
+  }
 }
 console.log('console errors:', errors.length ? errors : 'none');
 console.log('written to', OUT);
