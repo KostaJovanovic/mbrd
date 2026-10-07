@@ -11,11 +11,12 @@ import {
 } from '../storage/storage.ts';
 import type { BoardEntry } from '../storage/storage.ts';
 import { exampleBoard } from '../storage/example.ts';
+import { STARTERS } from '../storage/starters.ts';
 import { platform, fileNameOf } from '../platform/platform.ts';
 import { toast } from '../notify.ts';
 import { formatBytes, markClosed } from '../util.ts';
 import { ask } from './dialog.ts';
-import { icon, openAnchored } from './menu.ts';
+import { icon, justDismissed, openAnchored } from './menu.ts';
 import { connectCloud } from './cloud-connect.ts';
 import type { RemoteBoard } from '../storage/cloud/sync.ts';
 
@@ -156,6 +157,25 @@ async function render() {
     await newBoard(exampleBoard());
     closeLibrary();
   }));
+  // Empty boards with a structure to fill (storage/starters.ts), as a menu so
+  // the head keeps one button for all of them.
+  const starter = document.createElement('button');
+  starter.type = 'button';
+  starter.className = 'library-new';
+  starter.textContent = 'Starter…';
+  starter.title = 'An empty board with sections to fill: a moodboard, a character sheet, a brief, a reference grid';
+  starter.addEventListener('click', () => {
+    if (justDismissed(starter)) return;
+    const r = starter.getBoundingClientRect();
+    openAnchored(r, STARTERS.map(s => ({
+      label: s.label,
+      hint: s.hint,
+      action: () => guard(async () => {
+        await newBoard(s.board());
+        closeLibrary();
+      }),
+    })), { label: 'Start from', owner: starter });
+  });
   const shut = document.createElement('button');
   shut.type = 'button';
   shut.className = 'library-close';
@@ -163,7 +183,7 @@ async function render() {
   shut.title = 'Close the board list';
   shut.append(icon('i-close'));
   shut.addEventListener('click', closeLibrary);
-  head.append(title, spacer, example, fresh, shut);
+  head.append(title, spacer, example, starter, fresh, shut);
 
   const grid = document.createElement('div');
   grid.className = 'library-grid';
