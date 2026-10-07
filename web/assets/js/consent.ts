@@ -23,7 +23,8 @@ export type CeilingId =
   | 'mesh-triangles'
   | 'mesh-buffer'
   | 'font-bytes'
-  | 'text-edit';
+  | 'text-edit'
+  | 'pur-bytes';
 
 /** One crossed ceiling. `what` is the measurement; the risk sentence comes from RISKS. */
 export type Crossed = { ceiling: CeilingId, what: string };
@@ -94,6 +95,10 @@ const RISKS: Record<CeilingId, string> = {
     'The editor holds the whole file in the page as editable text and reads it back as you type, so past '
     + 'this size typing can lag and a long session can stall the tab. Left alone the file opens to read, '
     + 'with its first part shown.',
+  'pur-bytes':
+    'A PureRef file is read whole, and every picture in it is then copied out as a file of its own, so '
+    + 'bringing it in holds about twice its size at once. Past this the tab can run out of memory, and a tab '
+    + 'that crashes takes an unsaved board with it. Save first if this board matters.',
 };
 
 /** The sentence for one crossed ceiling: what was measured, then what it costs. */

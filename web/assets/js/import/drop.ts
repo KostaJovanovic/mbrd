@@ -36,6 +36,7 @@ import { makeThumb, shrinkPicture, DISPLAY_SIDE } from '../optimize/picture.ts';
 import { looksLikeMbrd } from '../storage/mbrd.ts';
 import { openOrMergeFile, mergeBoardFile } from '../storage/storage.ts';
 import { importCanvas, looksLikeCanvas } from './canvas-file.ts';
+import { importPur, looksLikePur } from './pur-file.ts';
 import { stickerShape, stickerTint, DEFAULT_SHAPE } from '../stickers/catalogue.ts';
 import { tilePictures } from '../style-tile.ts';
 import { NOTE_TINTS } from '../canvas/note-model.ts';
@@ -590,6 +591,13 @@ export async function importFiles(
     const others = files.filter((f): f is File => isFile(f) && !looksLikeCanvas(f));
     for (const c of canvases) await importCanvas(c, others);
     return [];
+  }
+  // A PureRef file is a board of pictures; whatever came with it lands as usual.
+  const purs = replace ? [] : files.filter((f): f is File => isFile(f) && looksLikePur(f));
+  if (purs.length) {
+    for (const p of purs) await importPur(p);
+    files = files.filter(f => !isFile(f) || !purs.includes(f));
+    if (!files.length) return [];
   }
   const sole = files.length === 1 ? files[0] : null;
   if (!replace && sole && isFile(sole) && looksLikeMbrd(sole)) {
