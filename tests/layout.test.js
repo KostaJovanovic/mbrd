@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  arrange, ARRANGEMENTS,
+  arrange, ARRANGEMENTS, blockUnder,
   mobileOrder, mobileArrangement, MOBILE_ARRANGEMENTS, MOBILE_DEFAULT,
 } from '../web/assets/js/arrange/arrangements.ts';
 import { latticeBox } from '../web/assets/js/geometry.ts';
@@ -22,6 +22,31 @@ import { item } from './helpers.js';
 
 const items = n => Array.from({ length: n }, (_, i) => item({ id: `i${i}`, w: 100, h: 80 }));
 const named = ARRANGEMENTS.map(a => a.id);
+
+test('a block hung under the title is centred under it, one step below its foot, in its own shape', () => {
+  // The title card's foot at y 950 (world y runs up), its middle at x 500.
+  const title = { x: 500, foot: 950 };
+  const step = 20;
+  const cards = items(13);
+  for (const name of named.filter(n => n !== 'free')) {
+    const lay = (dx, dy) => arrange(cards, { name, center: { x: dx, y: dy }, seed: 7 });
+    const free = lay(0, 0);
+    const hung = blockUnder(cards, free, title.x, title.foot - step, lay);
+    const tops = hung.map((p, k) => p.y + cards[k].h / 2);
+    assert.ok(Math.abs(Math.max(...tops) - (title.foot - step)) < 0.5, `${name}: top edge not one step below the foot`);
+    const left = Math.min(...hung.map((p, k) => p.x - cards[k].w / 2));
+    const right = Math.max(...hung.map((p, k) => p.x + cards[k].w / 2));
+    assert.ok(Math.abs((left + right) / 2 - title.x) < 0.5, `${name}: not centred under the title`);
+    // The layout it would have made with no title there, moved whole - not a
+    // shape bent round the title, which was the cone with a gap above it.
+    const dx = hung[0].x - free[0].x;
+    const dy = hung[0].y - free[0].y;
+    hung.forEach((p, k) => {
+      assert.ok(Math.abs(p.x - free[k].x - dx) < 0.5 && Math.abs(p.y - free[k].y - dy) < 0.5,
+        `${name}: card ${k} moved differently from the rest`);
+    });
+  }
+});
 
 test('Mobile grid ink excludes complete marks centred on board edges', () => {
   const box = inkBox({

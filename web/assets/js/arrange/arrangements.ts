@@ -3,7 +3,7 @@
 // `seed` permits variation; without one, layouts are deterministic.
 // MOBILE_ARRANGEMENTS further down are orders, not shapes: (items, opts) => items.
 
-import { cellInset } from '../geometry.ts';
+import { cellInset, rotatedExtents } from '../geometry.ts';
 import { hasOwn, shuffle } from '../util.ts';
 import { packColumns } from './columns.ts';
 
@@ -77,6 +77,44 @@ type Laying = ArrangeOpts & { center: Point, spacing: number };
 
 /** Items in, one position per item out, same order. */
 type Layout = (items: ArrangeItem[], o: Laying) => Point[];
+
+/**
+ * Bring a finished layout under a point as one block: centred across on `x`,
+ * its top edge at `top` (world y runs up, so the top is the largest y + hh).
+ *
+ * `relay` lays the block out again about a centre moved by (dx, dy), so it can
+ * still keep clear of whatever else it was told to avoid at its new place. A
+ * layout that changes shape as it moves gets a few tries, then the rest of the
+ * way as a plain shift. Used by Rearrange's "keep cards below the title card",
+ * which lays the cards out as if the title were not there and then hangs the
+ * block under it: avoiding the title instead pushed cards round its sides and
+ * left a cone that narrowed towards it, with a gap above.
+ */
+export function blockUnder(
+  items: readonly (ArrangeItem & { rot?: number })[], spots: Point[], x: number, top: number,
+  relay: (dx: number, dy: number) => Point[],
+): Point[] {
+  const miss = (at: Point[]) => {
+    let x0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    at.forEach((p, k) => {
+      const { hw, hh } = rotatedExtents(items[k]);
+      x0 = Math.min(x0, p.x - hw);
+      x1 = Math.max(x1, p.x + hw);
+      y1 = Math.max(y1, p.y + hh);
+    });
+    return { dx: x - (x0 + x1) / 2, dy: top - y1 };
+  };
+  let mx = 0, my = 0;
+  for (let tries = 0; tries < 4; tries++) {
+    const { dx, dy } = miss(spots);
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return spots;
+    mx += dx;
+    my += dy;
+    spots = relay(mx, my);
+  }
+  const { dx, dy } = miss(spots);
+  return spots.map(p => ({ x: p.x + dx, y: p.y + dy }));
+}
 
 // Y is negated in and out so layouts can work top-down; `free` is exempt.
 export function arrange(items: ArrangeItem[], opts: ArrangeOpts = {}): Point[] {

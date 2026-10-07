@@ -28,7 +28,7 @@ import { flushEditor } from './viewer.ts';
 import { getAsset } from '../storage/assets.ts';
 import { saveBoard, exportBoard, autosave, clearAllData } from '../storage/storage.ts';
 import { defaultSize, measureSize } from '../canvas/renderers.ts';
-import { arrange, mobileOrder } from '../arrange/arrangements.ts';
+import { arrange, blockUnder, mobileOrder } from '../arrange/arrangements.ts';
 import { nudgeApart } from '../arrange/nudge.ts';
 import type { Obstacle } from '../arrange/arrangements.ts';
 import { syncBoardMode } from './board-view.ts';
@@ -498,31 +498,16 @@ export function titleAbove(): Item | null {
 export const keepsBelowTitle = () => !!titleAbove();
 
 /**
- * Bring a finished layout down until nothing in it stands above `limit`, the
- * height of the title card's foot (world y runs up).
- *
- * Moved as a block rather than card by card, so the arrangement keeps its
- * shape: the layout is asked again about a lower centre, which keeps it clear
- * of the anchored cards - the title card among them - at its new height. A
- * layout that grows upward again as it moves gets a few more tries and then
- * the rest of the way as a plain shift. `free` shakes each card where it stands,
- * so a block move there would carry the whole board; its cards are taken down
- * one at a time instead.
+ * Take down, card by card, whatever in a Free layout stands above `limit`, the
+ * height of the title card's foot (world y runs up). Free shakes each card
+ * where it stands, so moving it as a block (blockUnder(), which every other
+ * arrangement gets) would carry the whole board off.
  */
-function keepBelow(laid: Item[], spots: Point[], limit: number, relay: (dy: number) => Point[], shake: boolean) {
-  const top = (k: number) => spots[k].y + rotatedExtents(laid[k]).hh;
-  if (shake) {
-    spots.forEach((p, k) => { const over = top(k) - limit; if (over > 0) p.y -= over; });
-    return spots;
-  }
-  const overshoot = () => Math.max(...spots.map((_, k) => top(k))) - limit;
-  let moved = 0;
-  for (let tries = 0; tries < 4 && overshoot() > 0; tries++) {
-    moved += overshoot();
-    spots = relay(moved);
-  }
-  const rest = overshoot();
-  if (rest > 0) for (const p of spots) p.y -= rest;
+function keepBelow(laid: Item[], spots: Point[], limit: number) {
+  spots.forEach((p, k) => {
+    const over = p.y + rotatedExtents(laid[k]).hh - limit;
+    if (over > 0) p.y -= over;
+  });
   return spots;
 }
 
@@ -727,23 +712,31 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     placed = placeMobileItems(placed, obstacles, { preserveSize: true, blockers: anchored });
   } else {
     const name = options.name || board.arrangement;
-    const lay = (dy: number) => arrange(laid, {
+    // Hung under the title as one block: laid out as though the title card were
+    // not there, then centred under it (blockUnder()). Free alone keeps it as an
+    // obstacle, since Free moves each card only as far as it must.
+    const block = !!title && name !== 'free';
+    const avoid = block ? anchored.filter(item => item.id !== title.id) : anchored;
+    const lay = (dx: number, dy: number) => arrange(laid, {
       name,
-      center: { x: at.x, y: at.y - dy },
+      center: { x: at.x + dx, y: at.y + dy },
       spacing: board.settings.spacing,
       // Snapping reserves whole cells so the per-item lattice snap below cannot
       // round two tight cards into an overlap - see arrange()/toCells.
       cellStep: snapDesktop ? step : 0,
       seed,
-      obstacles: anchored.map(item => obstacleBox(item, snapDesktop ? step : 0)),
+      obstacles: avoid.map(item => obstacleBox(item, snapDesktop ? step : 0)),
       width: room ? room.x1 - room.x0 : undefined,
     });
-    let spots = lay(0);
+    let spots = lay(0, 0);
     if (room) squeezeInto(laid, spots, room);
-    // Under the title card's foot, with the board's spacing between them.
     if (title) {
-      const limit = title.y - rotatedExtents(title).hh - board.settings.spacing;
-      spots = keepBelow(laid, spots, limit, lay, name === 'free');
+      // One grid step under the title card's foot: close enough to read as the
+      // title's, and on the lattice the snap below rounds to.
+      const foot = title.y - rotatedExtents(title).hh;
+      spots = block
+        ? blockUnder(laid, spots, title.x, foot - step, lay)
+        : keepBelow(laid, spots, foot - board.settings.spacing);
     }
     placed = laid.map((item, slot) => ({
       ...item,
