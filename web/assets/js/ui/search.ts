@@ -1,7 +1,7 @@
 // Board search palette (Ctrl+K). Picks a result → selects the item and flies to it.
 // Built per query, no index. Items are renamed/edited constantly; rebuilding
 // a few hundred string reads per keystroke is cheaper than invalidation bugs.
-// The one thing kept is each picture's colours (colour words, ui/colour-words.ts),
+// The one thing kept is each picture's colours (colour words, colour-words.ts),
 // by asset hash: the bytes behind a hash never change, so neither do they.
 
 import { board, byId, isContent, itemTags, select, rolledAway, unrollFor } from '../state.ts';
@@ -18,7 +18,7 @@ import { shownHash, shownName } from '../board-model.ts';
 import { swatchHex } from '../canvas/renderers.ts';
 import { assetURL, getAsset } from '../storage/assets.ts';
 import { dominantColors, samplePixels } from './pigments.ts';
-import { colourQuery } from './colour-words.ts';
+import { colourQuery } from '../colour-words.ts';
 
 const MAX_HITS = 12;
 const SNIPPET = 90;

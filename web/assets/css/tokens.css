@@ -1791,6 +1791,49 @@
 }
 
 /* =========================================================
+   6b. Colourblind mode
+   ---------------------------------------------------------
+   data-cvd on <html> (ui/colour-vision.ts, per device, never in a board):
+   deutan and protan for red-green, tritan for blue-yellow. Each remaps what
+   the interface says by colour alone - the selection, danger, the note sheets
+   and their washes - onto the Okabe-Ito set, chosen to stay apart under that
+   kind of vision. The board's own palette is left alone: it is somebody's
+   look, and swatches say their names instead (items.css .swatch-says).
+
+   The repeated [data-cvd] is there for its weight: it lifts these above the
+   (0,4,0) of the dark palette blocks, which would otherwise win back the note
+   sheets on a dark board. A look's own inline value still wins, as it does
+   over everything in this file. Above section 7 because the sheets still mix;
+   the washes are eight-digit hex so they hold on a browser without color-mix().
+   ========================================================= */
+
+:root[data-cvd][data-cvd][data-cvd]:is([data-cvd="deutan"], [data-cvd="protan"]) {
+  --select:      #0072b2;
+  --select-fill: #0072b229;
+  --danger:      #d55e00;
+  --note-1: color-mix(in srgb, #e69f00 30%, var(--paper-card));
+  --note-2: color-mix(in srgb, #cc79a7 26%, var(--paper-card));
+  --note-3: color-mix(in srgb, #56b4e9 28%, var(--paper-card));
+  --note-4: color-mix(in srgb, var(--ink) 8%, var(--paper-card));
+  --note-wash-amber:      #f0e4428c;
+  --note-wash-terracotta: #cc79a761;
+  --note-wash-olive:      #56b4e961;
+}
+
+:root[data-cvd][data-cvd][data-cvd][data-cvd="tritan"] {
+  --select:      #0072b2;
+  --select-fill: #0072b229;
+  --danger:      #b2182b;
+  --note-1: color-mix(in srgb, #d55e00 22%, var(--paper-card));
+  --note-2: color-mix(in srgb, #cc79a7 26%, var(--paper-card));
+  --note-3: color-mix(in srgb, #009e73 24%, var(--paper-card));
+  --note-4: color-mix(in srgb, var(--ink) 8%, var(--paper-card));
+  --note-wash-amber:      #d55e0052;
+  --note-wash-terracotta: #cc79a761;
+  --note-wash-olive:      #009e7357;
+}
+
+/* =========================================================
    7. The palette without color-mix().
 
    WebKit got color-mix() in 16.2, and everything above reaches for it 141

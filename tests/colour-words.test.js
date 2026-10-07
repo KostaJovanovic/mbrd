@@ -1,11 +1,11 @@
-// Colour words for Find (ui/colour-words.ts): which colour goes by which name,
+// Colour words for Find (colour-words.ts): which colour goes by which name,
 // what the modifiers narrow, and that a query with any other word in it is
 // left to the text search.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { colourQuery, colourName, COLOUR_NAMES } from '../web/assets/js/ui/colour-words.ts';
+import { colourQuery, colourName, COLOUR_NAMES } from '../web/assets/js/colour-words.ts';
 import { oklch, parseHex } from '../web/assets/js/color.ts';
 
 const named = hex => colourName(oklch(...parseHex(hex)));

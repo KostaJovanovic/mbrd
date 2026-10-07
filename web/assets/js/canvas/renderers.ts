@@ -6,6 +6,8 @@
 
 import { cue } from '../cuelume/engine.ts';
 import { extOf, baseName, formatBytes, hasOwn, isRecord } from '../util.ts';
+import { oklch, parseHex } from '../color.ts';
+import { colourName } from '../colour-words.ts';
 import { shownHash, type Item, type ItemType } from '../board-model.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { noPreview } from '../notify.ts';
@@ -1552,6 +1554,10 @@ const RENDERERS = {
 
     const code = document.createElement('div');
     code.className = 'swatch-hex';
+    // The colour's name, for somebody who cannot tell it by looking: drawn
+    // always, shown only in colourblind mode (items.css, ui/colour-vision.ts).
+    const says = document.createElement('div');
+    says.className = 'swatch-says';
 
     const show = (value: string) => {
       // The colour reaches the stylesheet as a property rather than as an
@@ -1560,13 +1566,14 @@ const RENDERERS = {
       // and a renderer that wrote `background` would have settled that here.
       card.style.setProperty('--swatch', value);
       code.textContent = value.toUpperCase();
+      says.textContent = colourName(oklch(...parseHex(value)));
     };
     show(hex);
 
     well.addEventListener('input', () => show(swatchHex(well.value)));
     well.addEventListener('change', () => setSwatchHex(item.id, well.value));
 
-    card.append(well, code);
+    card.append(well, code, says);
     return card;
   },
 

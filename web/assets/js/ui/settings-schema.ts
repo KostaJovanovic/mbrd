@@ -29,6 +29,7 @@ import { canShareLink } from '../storage/cloud/provider.ts';
 import { syncedNow } from '../storage/cloud/sync.ts';
 import { anyConnected, cloudProviders } from '../storage/cloud/cloud.ts';
 import { isDesktop, updateOffer, autoUpdatesOn, setAutoUpdates } from '../platform/platform.ts';
+import { VISIONS, visionMode, visionSimulated, setVisionMode, setVisionSimulated } from './colour-vision.ts';
 import type { UpdateOffer } from '../platform/platform.ts';
 
 // ---------------------------------------------------------------------------
@@ -1140,6 +1141,21 @@ export const SECTIONS: Section[] = [
         set: v => setQualityOverride('build', +v) },
       { type: 'buttons', advanced: true,
         buttons: [{ cmd: 'reset-quality', label: 'Reset' }] },
+    ],
+  },
+  {
+    // Colourblind mode. Per device, like the rest of this tab, since it is
+    // about the person at this screen and not about the board: ui/colour-vision.ts.
+    // The first row redraws the interface's colours and names every swatch; the
+    // second shows the board as that kind of vision sees it, to check a board by.
+    id: 'vision', tab: 'system', title: 'Colour vision',
+    controls: [
+      { id: 'opt-vision', type: 'picker', label: 'Draw the interface for',
+        options: () => VISIONS.map(v => ({ value: v.value, label: v.label })),
+        get: () => visionMode(), set: v => setVisionMode(v) },
+      { id: 'opt-vision-sim', type: 'picker', label: 'Show the board as',
+        options: () => VISIONS.map(v => ({ value: v.value, label: v.value ? `Seen with ${v.label.toLowerCase()}` : v.label })),
+        get: () => visionSimulated(), set: v => setVisionSimulated(v) },
     ],
   },
   {

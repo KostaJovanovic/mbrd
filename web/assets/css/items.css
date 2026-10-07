@@ -664,6 +664,17 @@
   color: var(--ink-2);
 }
 
+/* The colour's name under its hex, for colourblind mode alone (colour-vision.ts
+   sets data-cvd): elsewhere the hex is the card's whole caption. */
+.swatch-says {
+  display: none;
+  flex: none;
+  text-align: center;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+}
+:root[data-cvd] .swatch-says { display: block; }
+
 /* ── The font specimen ───────────────────────────────────────────────────────
    A dropped face, shown as its own letters. The specimen is SVG text fitted to
    the card by the renderer (viewBox + preserveAspectRatio="meet"), so the font

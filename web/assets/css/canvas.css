@@ -905,6 +905,16 @@
    are unrelated: --leaf is 10px, --leafy is #66842b. */
 #web .web-c-leaf   { stroke: var(--leafy); }
 #web .web-c-danger { stroke: var(--danger); }
+/* Colourblind mode (tokens.css section 8): the four line colours on the
+   Okabe-Ito set, and the line the router could not join drawn dash-dot, so it
+   is told from a line somebody chose to dash by its pattern and not its red. */
+:root:is([data-cvd="deutan"], [data-cvd="protan"]) #web .web-c-accent { stroke: #0072b2; }
+:root:is([data-cvd="deutan"], [data-cvd="protan"]) #web .web-c-warm   { stroke: #e69f00; }
+:root:is([data-cvd="deutan"], [data-cvd="protan"]) #web .web-c-leaf   { stroke: #56b4e9; }
+:root[data-cvd="tritan"] #web .web-c-accent { stroke: #0072b2; }
+:root[data-cvd="tritan"] #web .web-c-warm   { stroke: #d55e00; }
+:root[data-cvd="tritan"] #web .web-c-leaf   { stroke: #009e73; }
+:root[data-cvd] #web .web-blocked { stroke-dasharray: 10 4 2 4; }
 /* Weight is relative to the board's own, so a bold line stays bold when the
    whimsy axis or a hand-set token moves --web-weight underneath it. */
 #web .web-w-fine { stroke-width: calc(var(--web-weight) * 0.7); }
@@ -1126,6 +1136,14 @@
   outline-offset: 3px;
   border-radius: inherit;
 }
+
+/* "Show the board as" (ui/colour-vision.ts): the board seen through one kind
+   of colour vision, to check a board for it. The filters are an SVG the module
+   puts in the page. The board alone, so the panel used to turn it off stays
+   readable. */
+:root[data-cvd-sim="deutan"] #world { filter: url(#mbrd-sim-deutan); }
+:root[data-cvd-sim="protan"] #world { filter: url(#mbrd-sim-protan); }
+:root[data-cvd-sim="tritan"] #world { filter: url(#mbrd-sim-tritan); }
 
 /* The line in flight, from the picked card to the pointer.
    Dashed and in the accent so it never reads as a connection that exists: a

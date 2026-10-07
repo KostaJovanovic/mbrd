@@ -189,6 +189,8 @@
   cursor: pointer;
 }
 .toast-line.is-error { border-color: var(--danger); color: var(--danger); }
+/* Colourblind mode: an error says so in a word as well as in red. */
+:root[data-cvd] .toast-line.is-error::before { content: "Error: "; font-weight: 700; }
 @keyframes rise { from { opacity: 0; transform: translateY(10px) rotate(-3deg); } }
 
 @media (prefers-reduced-motion: reduce) {

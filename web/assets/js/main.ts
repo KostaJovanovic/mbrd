@@ -72,6 +72,7 @@ import { initMenu, isMenuOpen, openAnchored, justDismissed } from './ui/menu.ts'
 import { initFencePrompt } from './ui/fence-prompt.ts';
 import { initConnChip } from './ui/conn-chip.ts';
 import { initSearch } from './ui/search.ts';
+import { initColourVision } from './ui/colour-vision.ts';
 import { initIdle } from './ui/idle.ts';
 import { initBackfill } from './optimize/backfill.ts';
 import { initScaleBar } from './ui/scalebar.ts';
@@ -376,6 +377,7 @@ initMenu(vp, cmds);
 // Fence prompt after rubber-band selection.
 initFencePrompt(vp);
 initSearch(vp, revealInFeed);
+initColourVision();
 setRevealInFeed(revealInFeed);
 // Skipped on /patch: idle fade would hide the only controls on a prose page.
 // And on #bench, where a fade landing mid-scenario would be measured.

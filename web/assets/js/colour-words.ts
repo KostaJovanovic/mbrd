@@ -1,11 +1,12 @@
-// Colour words for Find: "red", "dark green", "pastel", "#3a6ea5". Pure - a
-// query in, a test on a #rrggbb out - so it is tested with no browser. Read in
+// Colour words for Find: "red", "dark green", "pastel", "#3a6ea5", and the
+// name a swatch shows when colourblind mode is on. Pure - a query in, a test on
+// a #rrggbb out - so it is tested with no browser, and below canvas/ and ui/. Read in
 // OKLCh, whose L is perceptual, so "light" and "dark" mean what an eye says.
 // A query with any word that is not a colour word is not a colour query: "red
 // car" stays a text search for a card called that.
 
-import { oklch, parseHex, type OKLCh } from '../color.ts';
-import { hasOwn } from '../util.ts';
+import { oklch, parseHex, type OKLCh } from './color.ts';
+import { hasOwn } from './util.ts';
 
 /** The basic names, as somebody would type them. */
 export const COLOUR_NAMES = [
