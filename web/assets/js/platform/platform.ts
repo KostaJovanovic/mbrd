@@ -4,6 +4,8 @@
 // The window's frame is not a member. Unwired is the web. setPlatform() wires a
 // shell. The bridge global is read only in main.ts; this module never touches it.
 
+import { readPref, writePref } from '../prefs.ts';
+
 /** A file the app has open. `path` is desktop-only; the web uses a handle. */
 export interface DocumentRef {
   name: string;
@@ -124,6 +126,21 @@ export interface UpdatesPort {
   onOffer(fn: (offer: UpdateOffer | null) => void): void;
   /** Put the offered update in place. The caller saves the board first. */
   install(): Promise<void>;
+  /** Tell the shell whether its own daily check may run. The check on request
+   *  (Help, the panel row) runs either way. */
+  setAuto(on: boolean): void;
+}
+
+/** Per device, never in a board: whether to look for an update by itself. */
+const AUTO_UPDATES_KEY = 'mbrd.updates.auto';
+
+/** Whether the shell checks for updates by itself. On unless turned off. */
+export const autoUpdatesOn = (): boolean => readPref(AUTO_UPDATES_KEY) !== '0';
+
+/** The panel's switch: remembered here and handed to the shell at once. */
+export function setAutoUpdates(on: boolean): void {
+  writePref(AUTO_UPDATES_KEY, on ? '1' : '0');
+  current.updates.setAuto(on);
 }
 
 /** What the phone's updater says (MbrdUpdate.java). The first four are an
@@ -434,6 +451,7 @@ const webUpdates: UpdatesPort = {
   answersOnPage: false,
   onOffer: () => {},
   install: async () => {},
+  setAuto: () => {},
 };
 
 const webAuth: AuthPort = {

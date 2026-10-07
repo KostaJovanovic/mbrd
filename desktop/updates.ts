@@ -5,7 +5,8 @@
 // installs. No electron-updater, no latest.yml. A dev copy never checks.
 // Every answer goes to the title bar's Update button, never a native dialog. A
 // check finds a new version, and a press on Update downloads it, then installs
-// it (research/old/done-2026-09-15.md, R3).
+// it (research/old/done-2026-09-15.md, R3). The daily check is the page's
+// switch to turn off (setAutoCheck); Help > Check for updates always runs.
 
 import { app, net, shell } from 'electron';
 import { spawn } from 'node:child_process';
@@ -103,6 +104,28 @@ function say(offer: UpdateOffer, ms = 0): void {
 export const currentOffer = (): UpdateOffer | null => offered;
 
 const stampFile = () => join(app.getPath('userData'), 'update-check.json');
+/** The panel's "Check for updates automatically", kept here as well as in the
+ *  page so the first look, twenty seconds in, never has to wait for the page. */
+const autoFile = () => join(app.getPath('userData'), 'update-auto.json');
+
+/** Whether the daily check may run. On unless the page has said off. */
+function autoCheck(): boolean {
+  try {
+    return JSON.parse(readFileSync(autoFile(), 'utf8'))?.on !== false;
+  } catch {
+    return true;
+  }
+}
+
+/** The page's switch. Help > Check for updates runs whatever it says. */
+export function setAutoCheck(on: boolean): void {
+  if (on === autoCheck()) return;
+  try {
+    writeFileSync(autoFile(), JSON.stringify({ on }));
+  } catch (err) {
+    log('warn', 'could not note the update switch', { err: errorText(err) });
+  }
+}
 
 /** When the last check got an answer, in ms since the epoch. 0 when never. */
 function lastCheck(): number {
@@ -174,7 +197,7 @@ export function startUpdates(opts: UpdateOptions): void {
   if (kind === 'appimage' && image) {
     for (const stale of [image + '.new', image + '.new.part']) tidy(stale);
   }
-  const look = () => { if (due()) void check(false); };
+  const look = () => { if (autoCheck() && due()) void check(false); };
   setTimeout(look, FIRST_CHECK_MS);
   setInterval(look, LOOK_MS).unref();
 }

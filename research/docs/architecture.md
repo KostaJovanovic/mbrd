@@ -1785,10 +1785,11 @@ person using the app — a new one is a sentence there in the same commit:
 - `canvas/embed.ts` turns a link card into a YouTube or Spotify player **per
   click, never by default**, because loading an embed tells someone else's
   server what is on this board.
-- `canvas/embed-meta.ts` is the one that does not wait for a click: a player
-  card with no stored title asks the service's oEmbed endpoint for one, and
-  Spotify's CDN for the cover, when it is shown. So a board with such a link
-  tells that service the link was looked at.
+- `canvas/embed-meta.ts` rides on that same click: when a player is pressed (a
+  canvas card, a Feed tile, the viewer) and its card has no stored title, it
+  asks the service's oEmbed endpoint for one, and Spotify's CDN for the cover.
+  The player is contacting the service at that moment anyway, so the fetch
+  tells it nothing new, and drawing a card fetches nothing.
 - `optimize/media.ts` fetches the ffmpeg core from jsdelivr on first use, since
   thirty megabytes is not something to ship in the shell. Nothing about a board
   is sent, only the request for the core, and it is the one thing in
@@ -1801,7 +1802,10 @@ person using the app — a new one is a sentence there in the same commit:
 - The update checks: `ui/web-update.ts` asks the site's own host for a new
   service worker every fifteen minutes and on a return to the tab;
   `desktop/updates.ts` and `MbrdUpdate.java` ask GitHub's API for the latest
-  release about once a day, and download from GitHub on Update.
+  release about once a day, and download from GitHub on Update. The daily
+  question is the panel's "Check for updates automatically", on by default,
+  kept per device by `platform.ts` and handed to the shell (`updates.auto`)
+  at every start, since each shell's first look comes before the page is up.
 
 `ui/fonts.ts` is the counter-example: a dropped `.woff2` goes into the `.mbrd`
 as an asset rather than a face being fetched, so a board keeps its look when it

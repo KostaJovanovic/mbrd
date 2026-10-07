@@ -273,6 +273,16 @@ public class MbrdShell extends Plugin {
         call.resolve();
     }
 
+    /** The panel's "Check for updates automatically", through updates.auto()
+     *  in the bridge. The page sends it at every start as well as on a change,
+     *  and MbrdUpdate reads it at the next start's check. */
+    @PluginMethod
+    public void autoUpdates(PluginCall call) {
+        Boolean on = call.getBoolean("on");
+        if (on != null) MbrdUpdate.setAuto(getContext(), on);
+        call.resolve();
+    }
+
     /** The sidebar's Update row, through updates.install() in
      *  mobile/bridge/mbrd-bridge.ts. The page has saved the board first. */
     @PluginMethod

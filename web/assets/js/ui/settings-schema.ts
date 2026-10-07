@@ -28,7 +28,7 @@ import {
 import { canShareLink } from '../storage/cloud/provider.ts';
 import { syncedNow } from '../storage/cloud/sync.ts';
 import { anyConnected, cloudProviders } from '../storage/cloud/cloud.ts';
-import { isDesktop, updateOffer } from '../platform/platform.ts';
+import { isDesktop, updateOffer, autoUpdatesOn, setAutoUpdates } from '../platform/platform.ts';
 import type { UpdateOffer } from '../platform/platform.ts';
 
 // ---------------------------------------------------------------------------
@@ -1264,6 +1264,10 @@ export const SECTIONS: Section[] = [
         { cmd: 'check-updates', label: 'Check for updates', closesPanel: true,
           title: () => 'Ask for a newer mbrd. The answer comes back in a moment, and an update to install waits as a button' },
       ] },
+      // The once-a-day look the app takes by itself. Per device, never in a
+      // board (platform.ts keeps it), and the row above works whatever it says.
+      { id: 'opt-auto-updates', type: 'check', label: 'Check for updates automatically', when: isDesktop,
+        get: () => autoUpdatesOn(), set: v => setAutoUpdates(v) },
     ],
   },
   {

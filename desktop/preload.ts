@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     // so the page is never told of one and never installs one.
     onOffer: () => {},
     install: () => Promise.resolve(),
+    // The panel's "Check for updates automatically"; Help's check runs either way.
+    auto: (on: boolean) => invoke('updates:auto', on),
   },
 
   // Google Drive's sign-in, which main runs in the system browser.

@@ -25,7 +25,7 @@ import { mountEditor } from './editor/view.ts';
 import type { Editor, EditorOptions } from './editor/view.ts';
 import { measureForEdit } from './editor/markdown.ts';
 import { baseName, formatBytes, markClosed, wasClosed } from '../util.ts';
-import { linkURL, MARKDOWN } from '../canvas/renderers.ts';
+import { linkURL, MARKDOWN, enrichEmbedCard } from '../canvas/renderers.ts';
 import { embedFor, frameFor } from '../canvas/embed.ts';
 import { noteTint } from '../canvas/note-model.ts';
 import type { NoteEntrance } from '../canvas/notes.ts';
@@ -1485,6 +1485,8 @@ const VIEWS: Record<string, View> = {
       wrap.dataset.provider = spec.provider;
       wrap.append(frameFor(spec));
       host.append(wrap);
+      // The player is asking the provider now, so the card may as well learn its title.
+      enrichEmbedCard(item);
       return;
     }
     const a = document.createElement('a');

@@ -100,6 +100,7 @@ const api: AndroidBridge = {
       } : null);
     }),
     install: () => call<void>('MbrdShell', 'installUpdate'),
+    auto: (on: boolean) => call<void>('MbrdShell', 'autoUpdates', { on }),
   }),
 
   // Google Drive's sign-in, in Android's own account sheet (MbrdAuth.java).

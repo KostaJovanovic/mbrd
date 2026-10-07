@@ -8,7 +8,7 @@ import { toast } from './notify.ts';
 import { initErrors, setBoardProbe, reportCaught } from './errors.ts';
 import { setRiskPrompt } from './consent.ts';
 // The Electron adapter — window.mbrdDesktop is read only in this file.
-import { platform, isDesktop, refForHandle, setPlatform, setUpdateOffer } from './platform/platform.ts';
+import { platform, isDesktop, refForHandle, setPlatform, setUpdateOffer, autoUpdatesOn } from './platform/platform.ts';
 import { electronPlatform, electronStore } from './platform/electron.ts';
 import type { Bridge } from './platform/electron.ts';
 import type { ShareProvider } from './storage/cloud/provider.ts';
@@ -121,6 +121,9 @@ const bridge = window.mbrdDesktop;
 if (bridge) {
   setPlatform(electronPlatform(bridge));
   setStoreBackend(electronStore(bridge));
+  // The shell keeps its own copy of the update switch, for the check it runs
+  // before the page is up; sent at every start, this keeps that copy current.
+  platform.updates.setAuto(autoUpdatesOn());
   // Shell startup messages (e.g. portable fallback path). Not awaited.
   void bridge.startupNotes()
     .then(note => { if (note) toast(note); })
@@ -273,8 +276,9 @@ setNoteMenu((anchor, rows, current, pick) => {
 setMarkdownRenderer(renderMarkdown);
 // Formulas typeset by KaTeX from here on; unwired (a test, the patch page) they stay their TeX.
 enableMath();
-// The one hook that fetches: a Spotify card fills in its title and cover on
-// load if it has none. Unwired (a test) this never runs and nothing is fetched.
+// The one hook that fetches: a Spotify or YouTube card fills in its title (and
+// Spotify's cover) when first played, if it has none. Unwired (a test) this
+// never runs and nothing is fetched.
 if (!isPatch) setEmbedEnrich(enrichEmbed);
 // Before anything reads a quality flag.
 armQuality();

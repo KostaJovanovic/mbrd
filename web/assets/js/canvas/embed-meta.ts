@@ -1,9 +1,10 @@
 // Fetches a player card's title (and, for Spotify, its cover art) and stores
 // them on the card. The one place in the app that reaches the network to
 // decorate a card - see the local-first note in canvas/renderers.ts, which this
-// deliberately steps outside of. It runs only for a card that has no title
-// stored yet, so a board that has been seen once fetches nothing on the next
-// load.
+// deliberately steps outside of. It runs only when a player is pressed (the
+// canvas card, a Feed tile, the viewer), the moment the frame contacts the
+// provider anyway, and only for a card that has no title stored yet. Drawing a
+// card fetches nothing.
 //
 // Spotify and YouTube, each through its own oembed (both send a CORS header the
 // browser can read). Spotify also carries a cover on i.scdn.co, stored as an
@@ -24,8 +25,8 @@ import type { Item } from '../board-model.ts';
 // card mid-flight does not open a second request. Cleared in the finally.
 const inFlight = new Set<string>();
 
-// Pages whose oembed failed this session. A card mounts again on every pan
-// back, and each mount asked again; the next load still tries once more.
+// Pages whose oembed failed this session, so pressing play again does not ask
+// again; the next load still tries once more.
 const failed = new Set<string>();
 
 // The cover host in the oembed reply. Checked before it is fetched so a reply

@@ -62,6 +62,9 @@ export interface Bridge {
     onOffer(fn: (offer: UpdateOffer | null) => void): void;
     /** Put the offered update in place. The page has saved the board. */
     install(): Promise<void>;
+    /** Whether the shell's own daily check may run. Optional: a shell from
+     *  before the switch has none, and keeps checking. */
+    auto?(on: boolean): Promise<void>;
   };
   /** Google Drive's sign-in, outside the page: the system browser on the
    *  desktop (google-oauth.mts), the account sheet on Android (MbrdAuth.java). */
@@ -343,6 +346,7 @@ function electronUpdates(bridge: Bridge): UpdatesPort {
     answersOnPage: phone,
     onOffer: fn => bridge.updates.onOffer(fn),
     install: () => bridge.updates.install().catch(() => {}),
+    setAuto: on => { void bridge.updates.auto?.(on).catch(() => {}); },
   };
 }
 

@@ -1097,9 +1097,6 @@ function fillLink(t: Tile) {
     card.append(hostEl, offerButton(spec));
     t.el.appendChild(card);
     actAsButton(t.el, () => mountEmbed(t, spec), 'link');
-    // On load if missing, the same hook the canvas card uses - so a title
-    // fetched on either surface shows on both.
-    enrichEmbedCard(t.item);
     return;
   }
 
@@ -1134,6 +1131,9 @@ function mountEmbed(t: Tile, spec: EmbedSpec) {
   const frame = frameFor(spec);
   frame.classList.add('feed-embed-frame');
   t.el.replaceChildren(frame);
+  // On play if missing, the same hook the canvas card uses - so a title
+  // fetched on either surface shows on both.
+  enrichEmbedCard(t.item);
 }
 
 function fillSwatch(t: Tile) {

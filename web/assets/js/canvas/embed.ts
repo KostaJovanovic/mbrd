@@ -207,7 +207,12 @@ export function offerButton(spec: EmbedSpec, label: string = spec.label): HTMLBu
   return btn;
 }
 
-export function embedOffer(item: Item, spec: EmbedSpec, card: HTMLElement): HTMLButtonElement {
+// `onPlay` runs on the press, beside the frame: it is how the card's title and
+// cover get fetched (embed-meta.ts) only once somebody has chosen to contact
+// the provider, never merely because the card was drawn.
+export function embedOffer(
+  item: Item, spec: EmbedSpec, card: HTMLElement, onPlay: () => void = () => {},
+): HTMLButtonElement {
   // The song, once fetched (embed-meta.ts), reads on the button itself; until
   // then the standing offer verb.
   const title = typeof item.meta?.title === 'string' && item.meta.title ? item.meta.title : spec.label;
@@ -225,6 +230,7 @@ export function embedOffer(item: Item, spec: EmbedSpec, card: HTMLElement): HTML
     }
     card.append(frameFor(spec));
     fitToPlayer(item.id, spec);
+    onPlay();
   });
   return btn;
 }

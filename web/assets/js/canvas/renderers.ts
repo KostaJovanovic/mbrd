@@ -113,8 +113,8 @@ export function setEmbedEnrich(fn: EmbedEnrich | null | undefined) {
   enrich = typeof fn === 'function' ? fn : () => {};
 }
 
-/** Kick off the enrichment for a link that is a player. Exported so the Feed's
- *  own tile builder (ui/feed.ts) reaches the same hook the card does. */
+/** Kick off the enrichment for a link that is a player, when it is played.
+ *  Exported so the Feed and the viewer reach the same hook the card does. */
 export function enrichEmbedCard(item: Item) {
   enrich(item);
 }
@@ -1162,11 +1162,11 @@ const RENDERERS = {
       const title = document.createElement('div');
       title.className = 'embed-title';
       title.textContent = embedTitle(item, u, spec.provider);
-      card.append(title, embedOffer(item, spec, card));
-      // On load if missing: fetch the title and cover and store them
-      // (embed-meta.ts, wired in main.ts). A no-op until wired, so a test that
-      // builds this card reaches no network.
-      enrich(item);
+      // On the first press, if missing: fetch the title and cover and store
+      // them (embed-meta.ts, wired in main.ts). Not on display - drawing a card
+      // tells the provider nothing, and the press is when the player asks it
+      // anyway. A no-op until wired, so a test reaches no network.
+      card.append(title, embedOffer(item, spec, card, () => enrich(item)));
       return card;
     }
 

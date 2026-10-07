@@ -1037,6 +1037,11 @@ function wireApp(): void {
 
   // The answer goes to the title bar's Update button, so the page gets nothing back.
   ipcMain.handle('updates:check', () => { void updates.checkForUpdates(); });
+  // The panel's switch for the daily check. Only a boolean is heard, so a
+  // malformed call changes nothing.
+  ipcMain.handle('updates:auto', (_event, on: unknown) => {
+    if (typeof on === 'boolean') updates.setAutoCheck(on);
+  });
 
   // Google Drive's sign-in, in the system browser (google-oauth.mts). The
   // board comes forward again when the browser hands the answer back.

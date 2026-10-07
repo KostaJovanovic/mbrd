@@ -48,7 +48,8 @@ import org.json.JSONObject;
  * named mbrd-android-<version>.apk its download URL, its size and the SHA-256
  * digest GitHub computed for it.
  *
- * At most one check a day, at start-up. A newer tag downloads in the
+ * At most one check a day, at start-up, unless the panel's "Check for updates
+ * automatically" is off (setAuto, from the page). A newer tag downloads in the
  * background, and the page's sidebar shows an Update row (the "update" event,
  * MbrdShell). Where Data Saver restricts background data on a metered network
  * nothing downloads, and a press on the row downloads it in the foreground,
@@ -211,9 +212,18 @@ public final class MbrdUpdate {
     }
 
     /** Called from MainActivity.onCreate. Returns at once: the work runs on NET.
-     *  A download already waiting is offered again, and no check runs. */
+     *  A download already waiting is offered again, and no check runs. Nothing
+     *  at all when the panel's switch is off. */
     static void maybeCheck(Activity activity) {
+        SharedPreferences prefs = activity.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (!prefs.getBoolean("auto", true)) return;
         check(activity, false);
+    }
+
+    /** The panel's "Check for updates automatically" (MbrdShell.autoUpdates). */
+    static void setAuto(Context context, boolean on) {
+        context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putBoolean("auto", on).apply();
     }
 
     /** The panel's "Check for updates" (MbrdShell.checkUpdates): no day's
