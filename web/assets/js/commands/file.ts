@@ -33,6 +33,7 @@ import { recentFaults } from '../errors.ts';
 import { VERSION } from '../version.js';
 import { ISSUES } from './view.ts';
 import { startTour } from '../ui/tour.ts';
+import { exportCanvas } from '../import/canvas-file.ts';
 
 /**
  * What a bug report wants and nothing it does not: the version, the browser,
@@ -552,6 +553,8 @@ export function fileCommands() {
     cloudOpen: () => openLibrary(),
     exportImage: () => exportPicture('image'),
     exportPdf: () => exportPicture('pdf'),
+    // The board for Obsidian and the other JSON Canvas apps: a .canvas and its files, zipped.
+    exportCanvas: () => exportCanvas(),
     // Dynamic import: the encoder is ~30 MB and loaded only on demand.
     optimize: () => import('../optimize/ui.ts').then(m => m.optimizeBoard()),
     discardOriginals: () => import('../optimize/ui.ts').then(m => m.discardOptimizeOriginals()),

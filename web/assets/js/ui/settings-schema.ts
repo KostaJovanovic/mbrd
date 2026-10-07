@@ -485,6 +485,12 @@ export const SECTIONS: Section[] = [
         { cmd: 'export-image', label: 'Save image…', closesPanel: true },
         { cmd: 'export-pdf', label: 'Save PDF…', closesPanel: true },
       ] },
+      // The board for another app rather than a picture of it: JSON Canvas,
+      // which Obsidian reads. A .canvas dropped on the board comes back in.
+      { type: 'buttons', advanced: true, buttons: [
+        { cmd: 'export-canvas', label: 'Save as JSON Canvas', closesPanel: true,
+          title: () => 'A .canvas file and its pictures, zipped, for Obsidian and other canvas apps' },
+      ] },
     ],
   },
   // No Add section. Its two buttons - Add files, Write a note - are the

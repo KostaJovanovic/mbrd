@@ -57,6 +57,7 @@ const MENU: { id: string, label: string, rows: Row[] }[] = [
       { id: 'file.exportAs', label: 'Export a Copy…', cmd: 'exportAs' },
       { id: 'file.exportImage', label: 'Export as Picture…', cmd: 'exportImage' },
       { id: 'file.exportPdf', label: 'Export as PDF…', cmd: 'exportPdf' },
+      { id: 'file.exportCanvas', label: 'Export as JSON Canvas…', cmd: 'exportCanvas' },
       { separator: true },
       { id: 'file.addFiles', label: 'Add Files…', cmd: 'addFiles' },
       { separator: true },

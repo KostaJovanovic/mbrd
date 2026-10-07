@@ -35,6 +35,7 @@ import { isTiffFile, tiffRaster } from './tiff.ts';
 import { makeThumb, shrinkPicture, DISPLAY_SIDE } from '../optimize/picture.ts';
 import { looksLikeMbrd } from '../storage/mbrd.ts';
 import { openOrMergeFile, mergeBoardFile } from '../storage/storage.ts';
+import { importCanvas, looksLikeCanvas } from './canvas-file.ts';
 import { stickerShape, stickerTint, DEFAULT_SHAPE } from '../stickers/catalogue.ts';
 import { tilePictures } from '../style-tile.ts';
 import { NOTE_TINTS } from '../canvas/note-model.ts';
@@ -581,6 +582,15 @@ export async function importFiles(
   // A .mbrd is a board, not content. openOrMergeFile() asks "open or merge?"
   // when the current board is non-empty. Not out of an archive: Unzip asked
   // for what is inside to land on this board, not for a board to open.
+  // A JSON Canvas is a board too, from another app. The rest of the drop is
+  // read as its files - a vault folder, or the pictures beside it - and not
+  // brought in as cards of their own.
+  const canvases = replace ? [] : files.filter((f): f is File => isFile(f) && looksLikeCanvas(f));
+  if (canvases.length) {
+    const others = files.filter((f): f is File => isFile(f) && !looksLikeCanvas(f));
+    for (const c of canvases) await importCanvas(c, others);
+    return [];
+  }
   const sole = files.length === 1 ? files[0] : null;
   if (!replace && sole && isFile(sole) && looksLikeMbrd(sole)) {
     await openOrMergeFile(sole);
