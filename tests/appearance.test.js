@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 
-import { TOKENS, safeVars } from '../web/assets/js/ui/look.ts';
+import { TOKENS, safeVars, PLAYFAIR_STACK, FRAUNCES_STACK } from '../web/assets/js/ui/look.ts';
 import {
   PALETTE_TOKENS, TYPOGRAPHY_TOKENS, AXIS_TOKENS,
 } from '../web/assets/js/layout-settings.ts';
@@ -52,6 +52,16 @@ test('a look that still says "Same as display" for the body reads as the default
   assert.deepEqual(safeVars({ '--font-body': 'var( --font-display )' }), {});
   // The display face may still point anywhere it could before.
   assert.deepEqual(safeVars({ '--font-display': 'var(--font-sans)' }), { '--font-display': 'var(--font-sans)' });
+});
+
+test('a display face saved before Piazzolla joined its stack is read as the new stack', () => {
+  // The menu matches by value: unmapped, a board that chose Playfair would show "Default".
+  assert.deepEqual(safeVars({ '--font-display': '"Playfair", Georgia, serif' }),
+    { '--font-display': PLAYFAIR_STACK });
+  assert.deepEqual(safeVars({ '--font-display': '"Fraunces", Georgia, serif' }),
+    { '--font-display': FRAUNCES_STACK });
+  assert.match(PLAYFAIR_STACK, /"Piazzolla"/);
+  assert.match(FRAUNCES_STACK, /"Piazzolla"/);
 });
 
 test('a value cannot end its own declaration', () => {

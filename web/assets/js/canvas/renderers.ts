@@ -34,7 +34,7 @@ import { landCopy } from './hires.ts';
 import { meshKind } from '../mesh.ts';
 import { faceName, pixelHash, TILE_SWATCHES } from '../style-tile.ts';
 import { buildSpotlessCard, SPOTLESS_SIZE } from './spotless.ts';
-import { normalizeNoteRich, applyNoteStyle, buildNoteLine, blockRuns } from './note-model.ts';
+import { normalizeNoteRich, applyNoteStyle, buildNoteLine, blockRuns, markLang } from './note-model.ts';
 import type { NoteRichInput } from './note-model.ts';
 import {
   stickerArt, DEFAULT_SHAPE, stickerShape, stickerTint,
@@ -1312,6 +1312,7 @@ const RENDERERS = {
     const name = document.createElement('div');
     name.className = 'title-name';
     name.textContent = board.title;
+    markLang(name, board.title);
     // Dim an unnamed board here, not only in main.ts's paintMobileTitle: this
     // runs on every build, so the card keeps its quiet grey across an unmount and
     // remount (a layout switch to Mobile and back) where paintMobileTitle - which

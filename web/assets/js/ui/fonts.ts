@@ -9,6 +9,7 @@ import { isFamily } from '../util.ts';
 import { toast } from '../notify.ts';
 import { allow, fileKey, mb } from '../consent.ts';
 import { addFontCard } from '../import/drop.ts';
+import { PLAYFAIR_STACK, FRAUNCES_STACK } from '../layout-settings.ts';
 import type { FontAxis, FontSpec } from '../board-model.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
@@ -58,7 +59,7 @@ const BUILTIN_HEADER_FACES: HeaderFace[] = [
   {
     label: 'Playfair',
     value: 'Playfair',
-    stack: '"Playfair", Georgia, serif',
+    stack: PLAYFAIR_STACK,
     // The one face here with its own opening size - 15% of the strip vs.
     // 13% for the others - since a Didone's stem/hairline contrast makes the
     // same percentage read smaller than in Geist or Fraunces. An opening
@@ -79,7 +80,7 @@ const BUILTIN_HEADER_FACES: HeaderFace[] = [
   {
     label: 'Fraunces',
     value: 'Fraunces',
-    stack: '"Fraunces", Georgia, serif',
+    stack: FRAUNCES_STACK,
     // `default` is the masthead's opening position, not the fvar default -
     // Fraunces's own default (opsz 9, wght 900) is a black caption, a poor
     // place to start a title. min/max are the file's.

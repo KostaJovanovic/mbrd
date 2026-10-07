@@ -24,6 +24,7 @@ import {
   resetTilt, restingTilt, retilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook, writeNoteTint,
   writeMissing, fillCaption, fitCaption,
 } from './item-dom.ts';
+import { markLang } from './note-model.ts';
 import { POSTER_TIME } from './video.ts';
 import { clearDisplay } from './display.ts';
 import { releasePlayers } from './audio.ts';
@@ -1657,7 +1658,9 @@ function rebuild(id: string) {
   // ordinary re-render.
   const head = el.querySelector<HTMLElement>(':scope > .far-head');
   if (head) {
-    head.querySelector('.fh-name')!.textContent = shownName(item);
+    const line = head.querySelector<HTMLElement>('.fh-name')!;
+    line.textContent = shownName(item);
+    markLang(line, line.textContent);
     // The kind follows a rename too: the extension is read off item.name, so
     // renaming "sketch.png" to "sketch" changes what this card calls itself.
     head.querySelector('.fh-kind')!.textContent = farKind(item);

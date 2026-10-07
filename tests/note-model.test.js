@@ -13,7 +13,7 @@ import {
   normalizeNoteRich, flattenNoteRich, parseNoteText,
   NOTE_WASHES, NOTE_TAGS, NOTE_ALIGNS, NOTE_MARKER,
   richLines, linesRich, linesLength, linesMarkdown, styleAt, sliceLines, deleteRange,
-  insertLines, restyle, withPending, tidyRuns, cutRuns, cyrillicLang,
+  insertLines, restyle, withPending, tidyRuns, cutRuns, cyrillicLang, markLang,
 } from '../web/assets/js/canvas/note-model.ts';
 
 test('a note in Serbian or Macedonian Cyrillic is marked so its italic draws their forms', () => {
@@ -28,6 +28,14 @@ test('a note in Serbian or Macedonian Cyrillic is marked so its italic draws the
   // Latin is never marked, whatever the locale: the Latin faces have no locl to switch.
   assert.equal(cyrillicLang('Dobar dan', 'sr-Latn-RS'), '');
   assert.equal(cyrillicLang('Добар дан', 'srb'), '', 'a locale that only starts with sr');
+});
+
+test('markLang marks a name and takes the mark back off when the name changes', () => {
+  const node = { lang: '', removeAttribute(name) { if (name === 'lang') this.lang = ''; } };
+  markLang(node, 'Ћирилица');
+  assert.equal(node.lang, 'sr');
+  markLang(node, 'Latin');
+  assert.equal(node.lang, '', 'a rename to Latin leaves no stale mark behind');
 });
 
 const block = (props = {}) => ({ tag: 'p', align: 'left', text: 'x', ...props });

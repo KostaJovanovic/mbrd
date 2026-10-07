@@ -21,6 +21,7 @@ import {
 // Pure look arithmetic — in its own module so it stays testable without a browser.
 import {
   safeVars, cloneLook, sameLook, hasLook, autoOn, clampWhimsy, WHIMSY, DEFAULT_WHIMSY,
+  PLAYFAIR_STACK, FRAUNCES_STACK,
 } from './look.ts';
 
 import {
@@ -45,8 +46,8 @@ const HARSH = 2;
 // system fonts (offline-first). Values travel in .mbrd — keep under 160 chars.
 const DISPLAY_FACES = [
   { label: 'Default', value: '' },
-  { label: 'Playfair',             value: '"Playfair", Georgia, serif' },
-  { label: 'Fraunces',             value: '"Fraunces", Georgia, serif' },
+  { label: 'Playfair',             value: PLAYFAIR_STACK },
+  { label: 'Fraunces',             value: FRAUNCES_STACK },
   { label: 'Iowan Old Style',      value: '"Iowan Old Style", Palatino, serif' },
   { label: 'Palatino',             value: '"Palatino Linotype", "Book Antiqua", Palatino, serif' },
   { label: 'Georgia',              value: 'Georgia, "Times New Roman", serif' },

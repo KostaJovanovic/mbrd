@@ -425,11 +425,17 @@ export function cyrillicLang(text: string, locale = ''): string {
   return '';
 }
 
+/** Mark an element with the language of the text it shows, or unmark it. For
+ *  every user-written name on screen: a note, a caption, the board title. */
+export function markLang(node: HTMLElement, text: string): void {
+  const lang = cyrillicLang(text, globalThis.navigator?.language);
+  if (lang) node.lang = lang;
+  else node.removeAttribute('lang');
+}
+
 /** Write a note's board-wide look onto its rich wrapper (font, size, vAlign). */
 export function applyNoteStyle(wrap: HTMLElement, rich: NoteRich): void {
-  const lang = cyrillicLang(rich.blocks.map(b => b.text).join('\n'), globalThis.navigator?.language);
-  if (lang) wrap.lang = lang;
-  else wrap.removeAttribute('lang');
+  markLang(wrap, rich.blocks.map(b => b.text).join('\n'));
   wrap.style.fontFamily = NOTE_FONTS[rich.font];
   // setProperty takes a string; the number was being converted by the binding
   // layer on the way in, and String() is that same conversion said out loud.

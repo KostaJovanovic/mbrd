@@ -6,6 +6,7 @@ import { el, makeEditable, markClosed, selectContents, caretToEnd } from '../uti
 import {
   board, bus, renameBoard, cleanBoardTitle, cleanBoardTitleDraft, isDefaultTitle,
 } from '../state.ts';
+import { markLang } from '../canvas/note-model.ts';
 
 /**
  * A tap on the name, told apart from a drag across it.
@@ -59,6 +60,7 @@ export function paintMobileTitle() {
   // well as on a real rename, and rewriting the field mid-word would take the
   // caret with it - the same guard the sidebar's name field keeps.
   if (!field.isContentEditable) field.textContent = board.title;
+  markLang(field, board.title);
   header.toggleAttribute('data-untitled', isDefaultTitle(board.title));
   // The Desktop title card carries the same name. It is not inline-editable, so
   // no caret guard is needed - just keep it current and dim it while untitled,
@@ -68,6 +70,7 @@ export function paintMobileTitle() {
     // Not over an inline rename in progress on the card, the same caret guard the
     // masthead gets above: rewriting the text mid-word would take the caret with it.
     if (!card.isContentEditable) card.textContent = board.title;
+    markLang(card, board.title);
     card.classList.toggle('is-untitled', isDefaultTitle(board.title));
   }
 }

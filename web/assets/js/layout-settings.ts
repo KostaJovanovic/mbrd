@@ -11,6 +11,12 @@ export const PALETTE_TOKENS = [
 export const TYPOGRAPHY_TOKENS = ['--font-display', '--font-body'];
 const paletteToken = new Set([...PALETTE_TOKENS, ...TYPOGRAPHY_TOKENS]);
 
+/** The font menus' two bundled serifs, with Piazzolla behind each for the
+ *  Cyrillic neither carries. One string for the menu, the masthead and the
+ *  mapping in ui/look.ts, so a board's stored choice matches its menu entry. */
+export const PLAYFAIR_STACK = '"Playfair", "Piazzolla", Georgia, serif';
+export const FRAUNCES_STACK = '"Fraunces", "Piazzolla", Georgia, serif';
+
 /**
  * Tokens the whimsy axis owns — sliding the axis drops these back to the
  * stylesheet. Rule: the axis owns what only the axis declares (not palette

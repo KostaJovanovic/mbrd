@@ -7,7 +7,7 @@ import { extOf, shuffle } from '../util.ts';
 import { formatName } from '../import/formats.ts';
 import { adjustFilter, baseStep, flipTransform, isFence, isLocked, itemBare, itemFaded } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
-import { noteTint } from './note-model.ts';
+import { markLang, noteTint } from './note-model.ts';
 import type { Item } from '../board-model.ts';
 import { shownName } from '../board-model.ts';
 
@@ -773,6 +773,7 @@ export function fillCaption(label: HTMLElement, item: ItemLike) {
     label.append(tail);
   }
   label.hidden = !item.name;
+  markLang(label, name);
 }
 
 /** Fade the caption's stem if it runs past the plate - measured at hover, when the plate shows. */
@@ -816,6 +817,7 @@ function farHead(item: ItemLike): HTMLDivElement {
   const line = document.createElement('span');
   line.className = 'fh-name';
   line.textContent = shownName(item);
+  markLang(line, line.textContent);
 
   head.append(kind, line);
   head.hidden = !item.name;

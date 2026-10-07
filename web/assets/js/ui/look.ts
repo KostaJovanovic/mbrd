@@ -50,6 +50,13 @@ const SAFE_FN = new Set([
   'cubic-bezier', 'steps', 'linear',
 ]);
 
+/** What a board saved before Piazzolla joined the stacks, mapped forward so the
+ *  menu still shows the face as chosen and Cyrillic gets the serif. */
+const RETIRED_STACKS: Record<string, string> = {
+  '"Playfair", Georgia, serif': PLAYFAIR_STACK,
+  '"Fraunces", Georgia, serif': FRAUNCES_STACK,
+};
+
 /** Filter vars to safe-to-apply tokens. Unknown tokens are dropped, not the whole look. */
 export function safeVars(vars: unknown): Record<string, string> {
   const out: Record<string, string> = {};
@@ -62,7 +69,7 @@ export function safeVars(vars: unknown): Record<string, string> {
     // "Same as display" left the body font list (research/old/done-2026-09-15.md,
     // R6). A look that still carries it reads as the default body font.
     if (key === '--font-body' && value.replace(/\s/g, '') === 'var(--font-display)') continue;
-    out[key] = value;
+    out[key] = RETIRED_STACKS[value] ?? value;
   }
   return out;
 }
@@ -74,6 +81,8 @@ export function safeVars(vars: unknown): Record<string, string> {
 // every look the app handles.
 
 import { clamp } from '../util.ts';
+import { PLAYFAIR_STACK, FRAUNCES_STACK } from '../layout-settings.ts';
+export { PLAYFAIR_STACK, FRAUNCES_STACK };
 import type { Look } from './appearance-controls.ts';
 
 /** The three stops on the whimsy axis, in order, as the slider labels them. */
