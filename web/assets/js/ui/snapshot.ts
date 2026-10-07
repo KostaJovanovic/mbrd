@@ -1,9 +1,10 @@
 // Board snapshot — composites every item onto a canvas, exports JPEG or
-// one-page hand-written PDF. Manual compositing because foreignObject
-// taints the canvas. detail 'full' for exports, 'thumb' for the library
-// card — one parameter so the two renderers can't disagree. What a full
-// export contains and how big it comes out is ExportOpts, below, which
-// ui/export-options.ts fills from the box it shows.
+// one-page hand-written PDF. On Chromium an export draws each card from its
+// own DOM (ui/capture.ts); on Safari and Firefox, where foreignObject taints
+// the canvas, and for every thumbnail, each card has a painter here instead.
+// detail 'full' for exports, 'thumb' for the library card — one parameter so
+// the two renderers can't disagree. What a full export contains and how big it
+// comes out is ExportOpts, below, which ui/export-options.ts fills from the box.
 
 import { readToken } from '../util.ts';
 import { board, adjustFilter, itemCrop, itemFaded, itemFlip, itemRotate, itemMatte } from '../state.ts';
@@ -21,10 +22,12 @@ import { cutout } from '../canvas/matte.ts';
 import { surface } from '../canvas/surface.ts';
 import { fitMode } from '../canvas/renderers.ts';
 import { isPrint } from '../canvas/picture-shape.ts';
-import { noteWords } from '../canvas/note-model.ts';
+import { noteWords, normalizeNoteRich, richLines, NOTE_FONTS } from '../canvas/note-model.ts';
+import type { NoteFont } from '../canvas/note-model.ts';
+import { drawCaptured } from './capture.ts';
 import { tiltOf } from '../canvas/items.ts';
 import { describeExt } from '../import/formats.ts';
-import { extOf, formatBytes } from '../util.ts';
+import { extOf, formatBytes, isRecord } from '../util.ts';
 import { STICKER_SPRITE, STICKER_VIEWBOX } from '../stickers/catalogue.ts';
 import type { Item, ItemType } from '../board-model.ts';
 import { encodeJpeg } from './jpeg.ts';
@@ -267,12 +270,21 @@ const metaStr = (v: unknown): string => (typeof v === 'string' ? v : '');
 type Look = {
   detail: Detail;
   ink: string;
+  ink2: string;
   ink3: string;
   paper: string;
+  /** A card's face, --paper-card, and the hairline round it. */
   card: string;
+  border: string;
+  /** The quieter paper a pill or a well sits on. */
+  paper2: string;
   rule: string;
   display: string;
   body: string;
+  mono: string;
+  /** A note's title size and its corner, world units, resolved. */
+  noteTitle: number;
+  noteRadius: number;
   /** The most a card leans, in degrees - see leanOf(). */
   lean: number;
   /** The underlay's shadows, cards and notes apart, as the twins wear them. */
@@ -365,16 +377,19 @@ function readShadows(): Shadows | null {
   return { card: card.layers, note: note.layers, radius: card.radius, noteRadius: note.radius };
 }
 
-/** --radius resolved to world units, the way readShadows() resolves it. */
-function readRadius(): number {
+/** A length token resolved to world units, the way readShadows() resolves it. */
+function readLength(value: string, prop: 'borderRadius' | 'fontSize' = 'borderRadius'): number {
   const probe = document.createElement('div');
   probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:100px;height:100px';
-  probe.style.borderRadius = 'var(--radius)';
+  probe.style[prop] = value;
   document.body.appendChild(probe);
-  const r = parseFloat(getComputedStyle(probe).borderTopLeftRadius) || 0;
+  const cs = getComputedStyle(probe);
+  const r = parseFloat(prop === 'fontSize' ? cs.fontSize : cs.borderTopLeftRadius) || 0;
   probe.remove();
   return r;
 }
+
+const readRadius = () => readLength('var(--radius)');
 
 /**
  * Whether the board leans its cards at all right now - the question the
@@ -412,12 +427,19 @@ function readLook(detail: Detail, opts: ExportOpts): Look {
   return {
     detail,
     ink: readToken('--ink') || '#222',
+    ink2: readToken('--ink-2') || '#555',
     ink3: readToken('--ink-3') || '#8a8578',
     paper: readToken('--paper') || '#f4f1ea',
-    card: readToken('--paper-2') || '#e9e5db',
+    card: readToken('--paper-card') || readToken('--paper-2') || '#fbfaf6',
+    border: readToken('--item-border') || readToken('--rule') || '#d8d3c6',
+    paper2: readToken('--paper-2') || '#e9e5db',
     rule: readToken('--rule-2') || '#d8d3c6',
     display: fontOf('--font-display', 'system-ui, sans-serif'),
     body: fontOf('--font-body', 'system-ui, sans-serif'),
+    mono: fontOf('--font-mono', 'ui-monospace, Consolas, monospace'),
+    // cards.css's --note-t-title, which is declared on the note itself.
+    noteTitle: readLength('calc(var(--t-title) * 0.76)', 'fontSize') || 17,
+    noteRadius: readLength('var(--note-radius)'),
     lean: full && opts.tilt ? maxLean() : 0,
     shadows: full && opts.shadows ? readShadows() : null,
     radius: readRadius(),
@@ -633,7 +655,31 @@ const PAINTERS: Partial<Record<ItemType, Painter>> = {
   fence: paintFence,
   note: paintNote,
   title: paintTitle,
+  link: paintLink,
+  text: paintText,
 };
+
+/**
+ * A card's own face, as items.css draws one: --paper-card, a hairline of
+ * --item-border inside the edge, and the tier's corner - square at Harsh.
+ */
+function cardFace(ctx: CanvasRenderingContext2D, w: number, h: number, look: Look, scale: number) {
+  const r = Math.min(look.radius * scale, w / 2, h / 2);
+  ctx.fillStyle = look.card;
+  roundRect(ctx, -w / 2, -h / 2, w, h, r);
+  ctx.fill();
+  const hair = Math.max(1, scale);
+  ctx.strokeStyle = look.border;
+  ctx.lineWidth = hair;
+  roundRect(ctx, -w / 2 + hair / 2, -h / 2 + hair / 2, w - hair, h - hair, Math.max(0, r - hair / 2));
+  ctx.stroke();
+}
+
+/** Clip to a card's face, for what is written on it. */
+function clipFace(ctx: CanvasRenderingContext2D, w: number, h: number, look: Look, scale: number) {
+  roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(look.radius * scale, w / 2, h / 2));
+  ctx.clip();
+}
 
 /**
  * The height of the card an item draws, in the units `h` is in. Only the title
@@ -736,14 +782,7 @@ function paintTitle({ ctx, it, w, h, look, scale }: Paint) {
   const ch = cardHeight(it, w, h);
   const r = Math.min(look.radius * scale, w / 2, ch / 2);
   ctx.save();
-  ctx.fillStyle = readToken('--paper-card') || look.card;
-  roundRect(ctx, -w / 2, -ch / 2, w, ch, r);
-  ctx.fill();
-  const hair = Math.max(1, scale);
-  ctx.strokeStyle = readToken('--item-border') || look.rule;
-  ctx.lineWidth = hair;
-  roundRect(ctx, -w / 2 + hair / 2, -ch / 2 + hair / 2, w - hair, ch - hair, Math.max(0, r - hair / 2));
-  ctx.stroke();
+  cardFace(ctx, w, ch, look, scale);
   if (look.detail !== 'full' || !board.title) { ctx.restore(); return; }
 
   roundRect(ctx, -w / 2, -ch / 2, w, ch, r);
@@ -778,10 +817,128 @@ function paintTitle({ ctx, it, w, h, look, scale }: Paint) {
 
 const painterFor = (it: Item): Painter => PAINTERS[it.type] || paintMedia;
 
-function paintSwatch({ ctx, it, w, h }: Paint) {
-  const hex = it.meta?.hex;
-  ctx.fillStyle = (typeof hex === 'string' && hex) || '#888';
-  ctx.fillRect(-w / 2, -h / 2, w, h);
+/**
+ * One card. An export on an engine that can (canCapture() in ui/capture.ts:
+ * Chromium) draws the card from its own DOM; a thumbnail, Safari, Firefox, a
+ * sticker, a model or a card whose capture failed gets its painter.
+ */
+async function drawCard(p: Paint) {
+  if (p.look.detail === 'full' && await drawCaptured(p.ctx, p.it, p.w, p.h)) return;
+  await painterFor(p.it)(p);
+}
+
+/** A swatch: a card holding a rounded chip of the colour, and its hex under it. */
+function paintSwatch({ ctx, it, w, h, look, scale }: Paint) {
+  const hex = typeof it.meta?.hex === 'string' && it.meta.hex ? it.meta.hex : '#888888';
+  ctx.save();
+  cardFace(ctx, w, h, look, scale);
+  const pad = Math.min(w, h) * 0.08;
+  const label = look.detail === 'full' ? Math.min(h * 0.22, 12 * scale * 1.9) : 0;
+  ctx.fillStyle = hex;
+  roundRect(ctx, -w / 2 + pad, -h / 2 + pad, w - pad * 2, h - pad * 2 - label,
+    Math.max(0, Math.min(look.radius * scale, w / 2, h / 2) - pad / 2));
+  ctx.fill();
+  if (label) {
+    ctx.fillStyle = look.ink2;
+    ctx.font = `500 ${label * 0.55}px ${look.mono}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(hex.toUpperCase(), 0, h / 2 - pad / 2 - label / 2, w - pad * 2);
+  }
+  ctx.restore();
+}
+
+/** The site's own name out of an address - www. and the scheme gone. */
+const hostOf = (url: unknown) => {
+  try { return new URL(String(url)).hostname.replace(/^www\./, ''); } catch { return ''; }
+};
+
+/**
+ * A link: its picture when it has one; otherwise the card as cards.css draws
+ * it - the site's name set large and faint across the face, and a pill at
+ * the foot with a globe and the domain.
+ */
+async function paintLink(p: Paint) {
+  if (pixelHash(p.it)) { await paintMedia(p); return; }
+  const { ctx, it, w, h, look, scale } = p;
+  const host = hostOf(it.meta?.url) || (it.name || '').trim();
+  ctx.save();
+  cardFace(ctx, w, h, look, scale);
+  if (look.detail !== 'full' || !host) { ctx.restore(); return; }
+  clipFace(ctx, w, h, look, scale);
+  const word = host.split('.').slice(-2, -1)[0] || host;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  let size = Math.min(h * 0.38, w * 0.9);
+  ctx.font = `700 ${size}px ${look.display}`;
+  const wide = ctx.measureText(word).width;
+  if (wide > w * 0.86) size *= w * 0.86 / wide;
+  ctx.font = `700 ${size}px ${look.display}`;
+  ctx.fillStyle = look.ink;
+  ctx.globalAlpha = 0.1;
+  ctx.fillText(word, 0, -h * 0.06);
+  ctx.globalAlpha = 1;
+  const t = Math.min(12 * scale, h * 0.09);
+  ctx.font = `500 ${t}px ${look.body}`;
+  const label = host.length > 40 ? host.slice(0, 39) + '…' : host;
+  const pillW = Math.min(w * 0.86, ctx.measureText(label).width + t * 3.2);
+  const pillH = t * 2;
+  const py = h / 2 - pillH - t * 0.9;
+  ctx.fillStyle = look.paper2;
+  roundRect(ctx, -pillW / 2, py, pillW, pillH, pillH / 2);
+  ctx.fill();
+  // The globe: a circle, its equator and one meridian.
+  const gx = -pillW / 2 + t * 1.15, gy = py + pillH / 2, gr = t * 0.42;
+  ctx.strokeStyle = look.ink2;
+  ctx.lineWidth = Math.max(0.75, t * 0.09);
+  ctx.beginPath();
+  ctx.arc(gx, gy, gr, 0, Math.PI * 2);
+  ctx.moveTo(gx - gr, gy);
+  ctx.lineTo(gx + gr, gy);
+  ctx.moveTo(gx + gr * 0.45, gy - gr * 0.9);
+  ctx.ellipse(gx, gy, gr * 0.45, gr, 0, -Math.PI / 2, Math.PI * 1.5);
+  ctx.stroke();
+  ctx.fillStyle = look.ink2;
+  ctx.textAlign = 'left';
+  ctx.fillText(label, gx + gr + t * 0.5, gy, pillW - t * 2.4);
+  ctx.restore();
+}
+
+/**
+ * A text file: its name, and then the file's own words in the mono face, as
+ * far down the card as they go. A Markdown or CSV file is rendered on the
+ * board; here it is its source, which says the same and asks no second engine.
+ */
+async function paintText(p: Paint) {
+  const { ctx, it, w, h, look, scale } = p;
+  ctx.save();
+  cardFace(ctx, w, h, look, scale);
+  if (look.detail !== 'full') { ctx.restore(); return; }
+  clipFace(ctx, w, h, look, scale);
+  const pad = Math.min(14 * scale, Math.min(w, h) * 0.1);
+  const name = (it.name || '').trim();
+  let y = -h / 2 + pad;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  if (name) {
+    const size = 13 * scale;
+    ctx.fillStyle = look.ink;
+    ctx.font = `600 ${size}px ${look.display}`;
+    ctx.fillText(name, -w / 2 + pad, y, w - pad * 2);
+    y += size * 1.7;
+  }
+  const blob = it.asset?.hash ? getAsset(it.asset.hash)?.blob : null;
+  let body = '';
+  try { body = blob ? await blob.slice(0, 4096).text() : ''; } catch { body = ''; }
+  if (body) {
+    const size = 10.5 * scale;
+    ctx.fillStyle = look.ink2;
+    ctx.font = `400 ${size}px ${look.mono}`;
+    const lh = size * 1.45;
+    wrapText(ctx, body.replace(/\r/g, '').replace(/\t/g, '  '), w - pad * 2, lh,
+      { x: -w / 2 + pad, y, lines: Math.floor((h / 2 - pad - y) / lh) });
+  }
+  ctx.restore();
 }
 
 /**
@@ -834,7 +991,7 @@ function paintFence({ ctx, it, w, h, look, scale }: Paint) {
  */
 function paintNote({ ctx, it, w, h, look, scale }: Paint) {
   ctx.fillStyle = readToken(`--note-${(Number(it.meta?.tint) || 1)}`) || '#fff7d6';
-  roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(w, h) * 0.06);
+  roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(look.noteRadius * scale, w / 2, h / 2));
   // Low opacity: the paper at 60% and the words solid, as cards.css draws it.
   const alpha = ctx.globalAlpha;
   if (itemFaded(it)) ctx.globalAlpha = alpha * 0.6;
@@ -842,20 +999,58 @@ function paintNote({ ctx, it, w, h, look, scale }: Paint) {
   ctx.globalAlpha = alpha;
   if (look.detail !== 'full') return;
 
-  // noteWords() and not flattenNoteRich() - see the header and note-model.ts.
-  const text = noteWords(it.meta) || it.name || '';
-  if (!text) return;
-  const size = Math.max(9, Math.min(w, h) * 0.09);
+  // The lines as the note sets them (cards.css .note-rich): its face, a title
+  // size and a body size scaled by each line's own step, title lines in ink
+  // and the rest in ink-2, 8px between lines, placed top, middle or bottom.
+  // One style a line - its first run's - rather than a second text engine.
+  const rich = normalizeNoteRich(isRecord(it.meta?.rich) ? it.meta.rich : null, it.meta?.text ?? noteWords(it.meta));
+  const lines = richLines(rich).map(runs => ({
+    text: runs.map(r => r.text).join(''),
+    title: runs.length > 0 && runs.every(r => r.title),
+    font: runs[0]?.font ?? rich.font,
+    size: runs[0]?.size ?? rich.size,
+  })).filter((l, i, all) => l.text.trim() || (i > 0 && i < all.length - 1));
+  if (!lines.some(l => l.text.trim())) return;
+  const faceOf = (f: NoteFont) => (f === 'sheet' ? look.display : NOTE_FONTS[f]);
+  // --note-pad: a sixth of half the shorter side, between 9 and 20.
+  const pad = Math.min(20, Math.max(9, Math.min(it.w, it.h) / 2 * 0.167)) * scale;
+  const maxW = w - pad * 2;
   ctx.save();
   roundRect(ctx, -w / 2, -h / 2, w, h, 0);
   ctx.clip();
-  ctx.fillStyle = look.ink;
-  ctx.font = `400 ${size}px ${look.body}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  const pad = Math.max(6 * scale, size * 0.7);
-  wrapText(ctx, text.slice(0, 600), w - pad * 2, size * 1.35,
-    { x: -w / 2 + pad, y: -h / 2 + pad, lines: Math.floor((h - pad * 2) / (size * 1.35)) });
+  const set = lines.map(l => {
+    const px = (l.title ? look.noteTitle : 13) * l.size * scale;
+    const font = `${l.title ? 700 : 400} ${px}px ${faceOf(l.font)}`;
+    ctx.font = font;
+    const rows: string[] = [];
+    for (const para of l.text.split('\n')) {
+      let row = '';
+      for (const word of para.split(/(\s+)/)) {
+        const trial = row + word;
+        if (row.trim() && ctx.measureText(trial).width > maxW) { rows.push(row.trimEnd()); row = word.trimStart(); }
+        else row = trial;
+      }
+      rows.push(row);
+    }
+    return { ...l, font, px, lh: px * (l.title ? 1.2 : 1.4), rows };
+  });
+  const gap = 8 * scale;
+  const total = set.reduce((n, l) => n + l.rows.length * l.lh, 0) + gap * (set.length - 1);
+  const room = h - pad * 2;
+  let y = -h / 2 + pad + (rich.valign === 'middle' ? Math.max(0, (room - total) / 2)
+    : rich.valign === 'bottom' ? Math.max(0, room - total) : 0);
+  for (const l of set) {
+    ctx.font = l.font;
+    ctx.fillStyle = l.title ? look.ink : look.ink2;
+    for (const row of l.rows) {
+      if (y + l.lh > h / 2 - pad + l.lh * 0.25) break;
+      ctx.fillText(row, -w / 2 + pad, y + (l.lh - l.px) / 2, maxW);
+      y += l.lh;
+    }
+    y += gap;
+  }
   ctx.restore();
 }
 
@@ -884,7 +1079,8 @@ async function paintMedia({ ctx, it, w, h, look, scale }: Paint) {
     // A cut-out is drawn without its rounded clip as well as without its card
     // - the clip is a corner radius on a box a cut-out was told not to have.
     const bare = it.meta?.bare === true;
-    const radius = Math.min(w, h) * 0.03;
+    // The tier's corner, square at Harsh, as every card wears it.
+    const radius = Math.min(look.radius * scale, w / 2, h / 2);
     ctx.save();
     if (!bare) {
       roundRect(ctx, -w / 2, -h / 2, w, h, radius);
@@ -933,24 +1129,19 @@ async function paintMedia({ ctx, it, w, h, look, scale }: Paint) {
     drawFitted(ctx, img, it, bw, bh);
     if (filter) ctx.filter = 'none';
     ctx.restore();
-    if (look.detail === 'full') {
-      if (print) printCaption(ctx, it, w, h, chin, look, scale);
-      else captionBar(ctx, it, w, h, look, scale);
-    }
+    // A print's name is on its chin. Every other picture's plate shows only
+    // under the pointer (media.css), so a still picture of the board has none.
+    if (look.detail === 'full' && print) printCaption(ctx, it, w, h, chin, look, scale);
     return;
   }
 
-  // No picture: a card face with its name, which covers links, text, audio
-  // without art, and any named file card.
-  ctx.fillStyle = look.card;
-  roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(w, h) * 0.06);
-  ctx.fill();
-
-  const label = (it.name || '').slice(0, 120);
-  if (!label) return;
+  // No picture: a card face with its name, which covers audio without art,
+  // archives and any named file card.
   ctx.save();
-  roundRect(ctx, -w / 2, -h / 2, w, h, 0);
-  ctx.clip();
+  cardFace(ctx, w, h, look, scale);
+  const label = (it.name || '').slice(0, 120);
+  if (!label) { ctx.restore(); return; }
+  clipFace(ctx, w, h, look, scale);
   const size = Math.max(11, Math.min(w, h) * 0.11);
   ctx.fillStyle = look.ink;
   ctx.textAlign = 'center';
@@ -979,36 +1170,6 @@ function describeCard(it: Item): string {
   const known = describeExt(ext);
   const what = ext ? ext.toUpperCase() : (known ? known.label : metaStr(it.meta?.mime));
   return [asset && formatBytes(asset.size), what].filter(Boolean).join(' · ');
-}
-
-/**
- * The plate across the foot of a picture card, with its caption on it - every
- * card has one on the board (see bottomBar() in canvas/item-dom.ts). Exporting
- * without it lost the one piece of writing on that card.
- */
-function captionBar(
-  ctx: CanvasRenderingContext2D, it: Item, w: number, h: number, look: Look, scale: number,
-) {
-  const name = (it.name || '').trim();
-  if (!name) return;
-  const size = Math.max(9, Math.min(22 * scale, h * 0.07));
-  const bar = size * 2;
-  // Below a certain drawn size the plate is a smudge on a smudge, worse than
-  // a clean photograph - same judgement canvas/paper.ts makes at its own threshold.
-  if (bar > h * 0.4 || size < 7) return;
-  ctx.save();
-  roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(w, h) * 0.03);
-  ctx.clip();
-  ctx.fillStyle = look.card;
-  ctx.globalAlpha = 0.92;
-  ctx.fillRect(-w / 2, h / 2 - bar, w, bar);
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = look.ink;
-  ctx.font = `500 ${size}px ${look.display}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(name, -w / 2 + size * 0.8, h / 2 - bar / 2, w - size * 1.6);
-  ctx.restore();
 }
 
 /**
@@ -1565,12 +1726,12 @@ async function renderBoardCanvas(detail: Detail, opts: ExportOpts, maxEdge = MAX
     const k = stageIt && w * h * STAGE_OVER * STAGE_OVER <= STAGE_MAX ? STAGE_OVER : 1;
     const sctx = stageIt ? setStage(stage, w * k, h * k) : null;
     if (sctx) {
-      await painterFor(it)({ ctx: sctx, it, w: w * k, h: h * k, look, scale: scale * k });
+      await drawCard({ ctx: sctx, it, w: w * k, h: h * k, look, scale: scale * k });
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(stage, -stage.width / 2 / k, -stage.height / 2 / k, stage.width / k, stage.height / k);
     } else {
-      await painterFor(it)({ ctx, it, w, h, look, scale });
+      await drawCard({ ctx, it, w, h, look, scale });
     }
     ctx.restore();
   }

@@ -1,6 +1,34 @@
 # Export the board's own cards — 21 September 2026
 
-**Status: open.** Nothing built yet.
+**Status: built, 7 October 2026.** `ui/capture.ts` and `ui/capture-css.ts`,
+wired into `renderBoardCanvas()` through `drawCard()`. What the spike and the
+build found, against the plan below:
+
+- Unknowns 1-3 hold on Chromium under the deployed CSP (served by
+  `research/export-trace/spike.mjs`): `data:` fonts inside the image render,
+  `:root[data-whimsy]` rules match the `<svg>` root and its custom properties
+  inherit, and a capture drawn at 300 ppi is sharp. About 100 ms a card.
+- **Unknown 5: Firefox does not taint either.** It exports through the
+  capture. The painters are Safari's path and the thumbnail's.
+- The page's CSP refuses a `style` attribute written from script, even on a
+  detached copy. Every inline style the capture moves goes through the CSSOM.
+- An `<input>`'s value is a property, so a copy shows the default (a swatch's
+  well came out black): `freeze()` writes values back as attributes.
+- Stylesheet pictures (the fence's cork and grain, on `::after`) are inlined
+  only for a card whose computed style reads them, pseudo-elements included.
+- Fonts are inlined per card for the families its computed style names, not
+  the whole of `fonts.css` (2.9 MB a card in the spike).
+- A plain photograph is drawn from its original, scaled to the size the card is
+  drawn at. A cropped, turned or cut-out one is its display copy, about 1024 px
+  on the long edge.
+- Captures are decoded SVGs cached by item, look and resolution, so the export
+  box's preview redraws without capturing again.
+- Painted rather than captured: models (a WebGL frame), and any card whose
+  capture fails. The five common painters (picture, note, link, swatch, text)
+  now follow the stylesheets for Safari.
+- Check by eye with `node research/export-trace/export.mjs
+  [chromium|firefox|painters]` after a build; `painters` is Chromium with the
+  probe failed, which is the path Safari takes.
 
 A plan, not yet started. The image and PDF export (`ui/snapshot.ts`) draws
 every card with a painter of its own, restating the card stylesheets in canvas
