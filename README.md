@@ -1,21 +1,8 @@
 # mbrd
 
-A moodboard for collecting things you like and laying them out on one canvas
-that goes on forever. Drop in pictures, video, music, 3D models, notes and
-links, move them around, group them, and keep the whole board as a single file
-you can save, send or open on another computer.
+## Download
 
-No account, nothing to sign up for. Your boards stay on your own device.
-
-## Use it in your browser
-
-It already works at [mbrd.valjdakosta.com](https://mbrd.valjdakosta.com),
-with nothing to install. It works in Chrome, Edge, Firefox and Safari, on a
-computer or a phone.
-
-## Download the app
-
-From the [latest release](https://github.com/KostaJovanovic/mbrd/releases/latest):
+**[Get the latest release](https://github.com/KostaJovanovic/mbrd/releases/latest)**
 
 | System | File | Updates |
 |---|---|---|
@@ -24,10 +11,23 @@ From the [latest release](https://github.com/KostaJovanovic/mbrd/releases/latest
 | Linux | `mbrd-linux-x64-<version>.AppImage` | by themselves |
 | Android 7 and later | `mbrd-android-<version>.apk` | asks, then installs |
 
+Or use it in your browser at [mbrd.valjdakosta.com](https://mbrd.valjdakosta.com),
+with nothing to install. It works in Chrome, Edge, Firefox and Safari, on a
+computer or a phone.
+
+## What it is
+
+A moodboard for collecting things you like and laying them out on one canvas
+that goes on forever. Drop in pictures, video, music, 3D models, notes and
+links, move them around, group them, and keep the whole board as a single file
+you can save, send or open on another computer.
+
+No account, nothing to sign up for. Your boards stay on your own device.
+
+## The first time you open the app
+
 The Windows installer can also set up a portable copy: one folder you can keep
 on a USB stick, with your boards inside it.
-
-### The first time you open it
 
 The apps are not signed with a paid certificate yet, so each system asks once:
 
