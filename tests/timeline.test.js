@@ -14,7 +14,7 @@ import {
   board, addItems, removeItems, restoreItems, renameItem, undo, redo, byId,
   setBoardMode, snapshotGeom, commitGeom, lastCommand, takeBack, loadBoard,
   historyDepth, historyState, renameBoard, commitHeader, setSetting, commitAppearance,
-  serializeBoard,
+  serializeBoard, snapMove,
 } from '../web/assets/js/state.ts';
 import {
   timelineSteps, timelineAt, timelineStale, timelineHashes, replayTo, goTo,
@@ -375,6 +375,45 @@ test('a whimsy change is a step, and a run of them keeps the last', () => {
   assert.equal(board.settings.appearance.whimsy, first);
   goTo(2);
   assert.equal(board.settings.appearance.whimsy, 0);
+});
+
+test('a whimsy change across Harsh is one step with its snap, and one undo', () => {
+  // The slider's path (ui/appearance.ts): the sweep is made live with
+  // snapMove() and committed inside the whimsy's own step.
+  addItems([photo({ x: 13, y: 29 }), note({ x: 307, y: 41 })]);
+  const first = board.settings.appearance.whimsy;
+  const place = () => board.items.map(i => `${i.x},${i.y},${i.w},${i.h}`).join(' ');
+  const loose = place();
+  const cross = (whimsy, snap) => {
+    const from = structuredClone(board.settings.appearance);
+    commitAppearance({ ...from, whimsy }, from, 'Whimsy', [snapMove(snap)]);
+  };
+
+  cross(2, true);
+  assert.deepEqual(labels(), ['Add', 'Whimsy'], 'not a Snap to grid step beside it');
+  assert.equal(board.settings.snap, true);
+  assert.notEqual(place(), loose, 'the cards went onto the lattice');
+
+  undo();
+  assert.equal(board.settings.snap, false, 'one undo takes back the snap');
+  assert.equal(board.settings.appearance.whimsy, first, 'and the look');
+  assert.equal(place(), loose);
+});
+
+test('whimsy toggled in and out of Harsh folds into one step, not two a crossing', () => {
+  addItems([photo({ x: 13, y: 29 }), note({ x: 307, y: 41 })]);
+  const first = board.settings.appearance.whimsy;
+  const cross = (whimsy, snap) => {
+    const from = structuredClone(board.settings.appearance);
+    commitAppearance({ ...from, whimsy }, from, 'Whimsy', [snapMove(snap)]);
+  };
+  for (let i = 0; i < 4; i++) {
+    cross(2, true);
+    cross(first, false);
+  }
+  cross(2, true);
+  assert.deepEqual(labels(), ['Add', 'Whimsy']);
+  assert.equal(board.settings.snap, true);
 });
 
 test('taking back a command takes back its step', () => {

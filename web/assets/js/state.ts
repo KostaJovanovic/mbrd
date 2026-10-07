@@ -246,10 +246,12 @@ import {
 import { stickerTint } from './stickers/catalogue.ts';
 
 import {
-  activateLayoutSettings, applyGeom, baseStep, commitGeom, completeLayout, fitBoardMode, mobileBoardWidth, placeMobileItems, recheckBoardGeometry, repackMobileBoard, snapAll, snapshotGeom, travelling, unsnapAll, writeLayout,
+  activateLayoutSettings, applyGeom, baseStep, commitGeom, completeLayout, fitBoardMode, mobileBoardWidth, placeMobileItems, recheckBoardGeometry, repackMobileBoard, snapAll, snapMove, snapshotGeom, travelling, unsnapAll, writeLayout,
+  type SnapMove,
 } from './layout.ts';
 
-export { recheckBoardGeometry };
+export { recheckBoardGeometry, snapMove };
+export type { SnapMove };
 
 export { raiseSelection, lowerSelection, stackOrder, visualStackOrder, stackLayerIds, selectionHasStackOverlap } from './stacking.ts';
 
@@ -2057,9 +2059,13 @@ export function renameBoard(title: unknown) {
  * 'board', which is what ui/appearance.ts repaints the look from on an undo.
  */
 export function commitAppearance(next: unknown, from: unknown = structuredClone(board.settings.appearance),
-  label = 'Whimsy') {
+  label = 'Whimsy', moves: readonly SnapMove[] = []) {
   const write = (look: unknown) => () => { setAppearance(look); bus.emit('board'); };
-  commit(label, write(next), write(from), 1, write(from));
+  // `moves` are the snap sweeps the change already made (snapMove()), so the
+  // look and the cards it put on or off the lattice are one step and one undo.
+  const forward = () => { write(next)(); for (const move of moves) move.redo(); };
+  const back = () => { for (const move of [...moves].reverse()) move.undo(); write(from)(); };
+  commit(label, forward, back, 1, back);
 }
 
 /**

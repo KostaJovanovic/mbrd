@@ -1239,6 +1239,31 @@ export function recheckBoardGeometry() {
   if (ids.length) bus.emit('geom', ids);
 }
 
+/** A sweep as the two halves commit() would have taken. */
+export type SnapMove = { redo: () => void, undo: () => void };
+
+/** Set while snapMove() runs a sweep: the sweep hands its command over instead of committing it. */
+let handOver: ((move: SnapMove) => void) | null = null;
+
+/**
+ * Turn snapping on or off now, the flag and the sweep together, and hand the
+ * command back uncommitted - for a caller that makes it part of a command of
+ * its own. The whimsy slider is that caller: Harsh means snapped, and a change
+ * of whimsy that recorded the sweep as a step of its own put two steps on the
+ * Timeline for every crossing into or out of Harsh, and kept them from folding.
+ */
+export function snapMove(on: boolean): SnapMove {
+  let move: SnapMove = { redo() {}, undo() {} };
+  handOver = m => { move = m; };
+  try {
+    if (on) snapAll(on);
+    else unsnapAll(on);
+  } finally {
+    handOver = null;
+  }
+  return move;
+}
+
 /** Put back what snapAll() remembered, for everything still carrying a memo. */
 export function unsnapAll(snapTo?: boolean) {
   const before: SnapState[] = [], after: SnapState[] = [];
@@ -1323,14 +1348,24 @@ function applySnapState(
 ) {
   const moved = after.some((a, i) =>
     SNAP_KEYS.some(k => a[k] !== before[i][k]) || !!a.pre !== !!before[i].pre);
-  if (!moved) {
-    if (snapTo !== undefined) writeSnapSetting(snapTo);
-    return;
-  }
   const apply = (list: SnapState[], flag: boolean | undefined) => {
     if (flag !== undefined) writeSnapSetting(flag);
     writeSnapState(list);
   };
+  if (handOver) {
+    const back = snapTo === undefined ? undefined : !snapTo;
+    const move = {
+      redo: () => apply(moved ? after : [], snapTo),
+      undo: () => apply(moved ? before : [], back),
+    };
+    move.redo();
+    handOver(move);
+    return;
+  }
+  if (!moved) {
+    if (snapTo !== undefined) writeSnapSetting(snapTo);
+    return;
+  }
   // commit() runs its redo half itself, which is what applies `after` here.
   commit(label,
     () => apply(after, snapTo),

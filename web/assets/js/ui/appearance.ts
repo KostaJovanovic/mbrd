@@ -3,7 +3,8 @@
 // vars (per-token overrides). Stored in both localStorage and the board.
 
 import {
-  board, bus, setAppearance, setSetting, commitAppearance, MOBILE_APPEARANCE_VARS,
+  board, bus, setAppearance, setSetting, commitAppearance, snapMove, MOBILE_APPEARANCE_VARS,
+  type SnapMove,
 } from '../state.ts';
 import { whimsyControlsSnap, AXIS_TOKENS } from '../layout-settings.ts';
 import { DEFAULT_PALETTE_SOURCES } from '../board-schema.ts';
@@ -190,6 +191,9 @@ function setDark(on: boolean) {
 /** The look before the whimsy slider in hand moved, or null between drags. */
 let whimsyFrom: Look | null = null;
 
+/** The snap sweeps this drag has made, in order, for settleWhimsy() to commit with the look. */
+let whimsyMoves: SnapMove[] = [];
+
 /** The slider moving: the page takes each level as it passes. settleWhimsy() records where it stops. */
 function previewWhimsy(level: number | string) {
   const n = clampWhimsy(level);
@@ -210,23 +214,28 @@ function previewWhimsy(level: number | string) {
   // And so does the snap, which is what a level *means* on Desktop: Harsh is a
   // board on the lattice, and a slider that changes every other thing about the
   // page as it passes and leaves the cards where they were until it is let go
-  // was showing two halves of one level at two different moments. It waited for
-  // the release because the snap is a step of its own; it still is, and the step
-  // lands where the change did.
+  // was showing two halves of one level at two different moments. The sweep is
+  // made here and committed at the release, inside the whimsy's own step: as a
+  // step of its own it put two on the Timeline for every crossing of Harsh.
   //
-  // Idempotent by way of setSetting(), which returns on a value it already
-  // holds - so this fires only on the crossing into or out of Harsh, however
-  // many levels the slider passes through on the way.
-  if (whimsyControlsSnap(board.layoutMode)) setSetting('snap', n === HARSH);
+  // Only on the crossing into or out of Harsh, however many levels the slider
+  // passes through on the way.
+  const snap = n === HARSH;
+  if (whimsyControlsSnap(board.layoutMode) && !!board.settings.snap !== snap) {
+    whimsyMoves.push(snapMove(snap));
+  }
 }
 
-/** The slider let go: one step from the look before the drag. The snap already happened. */
+/** The slider let go: one step from the look before the drag, the snap inside it. */
 function settleWhimsy() {
   if (!whimsyFrom) return;
   const from = whimsyFrom;
+  const moves = whimsyMoves;
   whimsyFrom = null;
+  whimsyMoves = [];
+  // Back where it started: any sweeps made on the way have undone each other.
   if (sameLook(from, current)) return;
-  commitAppearance(cloneLook(current), from);
+  commitAppearance(cloneLook(current), from, 'Whimsy', moves);
 }
 
 // Re-derive the sheet at the new whimsy level (paper varies by tier).
