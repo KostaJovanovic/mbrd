@@ -222,10 +222,12 @@ from 22.18, which is why `engines` says 22.18 and `erasableSyntaxOnly` is on:
 an `enum`, `namespace` or parameter property would make the whole suite
 unrunnable without a loader. tsc refuses them first.
 
-**`npm test` alone is not the bar.** CI runs five legs in this order — `npm test`
+**`npm test` alone is not the bar.** CI runs six legs in this order — `npm test`
 *before* `npm ci` (the only thing keeping the zero-install claim honest), then
-lint, typecheck, build, and a parse of every committed module and both Python
-tools. The build leg catches what `npm test` cannot: an unresolvable import, or
+lint, typecheck, build, a parse of every committed module and both Python
+tools, and `node tools/smoke.mjs` (headless boot, example board, no console
+error; Playwright from `desktop/` locally). **The deploy is a job after those,**
+on a push to main only, so a red run deploys nothing. The build leg catches what `npm test` cannot: an unresolvable import, or
 a dynamic import naming something that moved. The parse leg catches syntax
 errors in modules no test imports — most of `ui/` and `canvas/` — but only after
 the push, so `node --check` and `python -m py_compile` locally are faster.
@@ -252,9 +254,9 @@ and every `setTimeout` handle stored in a `number` goes red. It reproduces on
 one machine and never in CI. Deleting the line makes the check depend on what is
 installed two directories above the repository.
 
-There is **no browser-driven suite**. Pan and zoom, drag and marquee, save →
-refresh → recover, and a clean boot console are checked by launching the app and
-looking.
+There is **no browser-driven suite** beyond the smoke test, which checks only a
+clean boot console with the example board open. Pan and zoom, drag and marquee,
+and save → refresh → recover are checked by launching the app and looking.
 
 ## Mobile app (`mobile/`)
 

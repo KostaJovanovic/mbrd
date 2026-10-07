@@ -8,22 +8,19 @@
 # (CLAUDE.md's Commands section, CONTRIBUTING.md's), so the three agree - and
 # an edit to the legs below is an edit to those two as well.
 #
-# What this does NOT do, said plainly rather than left to be discovered: the
-# production host runs `npx wrangler deploy` from the repo root on every push
-# to main (see the header of wrangler.jsonc). That deploy is triggered by the
-# push, not by this workflow, so a push that breaks the app still deploys the
-# broken app - these two run alongside each other and neither waits. Turning a
-# red run here into a blocked deploy needs branch protection with this job as a
-# required status check, which lives in GitHub's repository settings and cannot
-# be committed as a file. Until somebody sets that, this is a smoke alarm and
-# not a lock: it tells you the build is broken, roughly as fast as the deploy
-# tells everybody else.
+# The production deploy is the second job, `deploy`, and it runs only after
+# `test` is green on a push to main: a push that breaks the app stops here
+# instead of reaching everybody. It needs two repository secrets,
+# CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, and says so and skips while
+# either is missing. Cloudflare's own git deploy, which ran `npx wrangler
+# deploy` on every push whether this was red or not, has to be switched off in
+# the Cloudflare dashboard once these are set, or both deploy.
 #
-# The whole job is one lane on purpose. There is no matrix, no cache, no
-# artefact, no second runner and nothing handed from one job to the next. The
-# app has no runtime dependency and the browser loads the modules under web/
-# directly, so there is nothing a fan-out would make faster here - only more
-# machinery to keep true.
+# The test job is one lane on purpose. There is no matrix, no cache, no
+# artefact and nothing handed from one job to the next: the deploy checks out
+# the same commit, whose bundle is committed. The app has no runtime
+# dependency and the browser loads the bundle under web/ directly, so there is
+# nothing a fan-out would make faster here - only more machinery to keep true.
 
 name: CI
 
@@ -167,3 +164,47 @@ jobs:
       # there.
       - name: Parse the Python tools
         run: python3 -m py_compile tools/serve.py tools/qr.py
+
+      # The one leg with a browser in it: boot web/ headless, open the example
+      # board, fail on any console error or uncaught exception. Everything above
+      # reads the code; this is the only step that runs it as a page. Playwright
+      # is installed here with --no-save, so package.json keeps its four
+      # devDependencies and npm test above still needs none of them. Pinned to
+      # the version desktop/ already uses, which is what runs it locally.
+      - name: Install a headless browser
+        run: npm install --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
+
+      - name: Smoke test
+        run: node tools/smoke.mjs
+
+  deploy:
+    # After the test job, and only for what landed on main: a pull request is
+    # tested and never deployed.
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # One deploy at a time, and never cancelled halfway: two pushes in a row
+    # deploy in order, the second after the first.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # wrangler is not a devDependency (see wrangler.jsonc), so npx fetches it.
+      # wrangler.jsonc names the site and its folder; nothing is built here,
+      # because the bundle the test job built and checked is the committed one.
+      - name: Deploy to Cloudflare
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
+        run: npx --yes wrangler@4 deploy
+
+      - name: Say why nothing deployed
+        if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
+        run: echo "::notice::No deploy - CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are not both set as repository secrets."
