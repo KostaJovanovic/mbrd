@@ -62,6 +62,12 @@ The changelog source is `patch-notes.md` at the repository root, not in here.
   picked on 2026-10-07, each with the answers it has to match: colour search,
   rolling backups, JSON Canvas, colourblind mode, the pen, boards inside
   boards and the rest. Being built in its order.
+- `pen-2026-10-07.md` — the design for item 17, the pen, highlighter and
+  eraser: a `drawing` card, a `stroke` gesture inside `input.ts`, the dial's
+  three ways of drawing a stroke. Waiting for the maintainer's approval.
+- `boards-in-boards-2026-10-07.md` — the design for item 18: children as
+  `boards/<id>/` inside the parent `.mbrd`, gated by `requires: ["boards"]`,
+  a board card and a breadcrumb. Waiting for the maintainer's approval.
 - `patch-notes-full.md` — **an archive, not open work.** It holds every release
   at the length it was first written, internal work included. Nothing generates
   anything from it.

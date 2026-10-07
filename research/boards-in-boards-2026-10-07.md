@@ -1,0 +1,147 @@
+# Boards inside boards — 7 October 2026
+
+**Status: open.** A design waiting for the maintainer's approval. Nothing built.
+
+Item 18 of `features-2026-10-07.md`. Decided there and not reopened here: a
+child board lives **inside** its parent's `.mbrd`, a board card opens its
+child, and a breadcrumb leads back.
+
+## What somebody sees
+
+- **Make one.** "New board inside" in the board's right-click menu and in the
+  `+` flyout puts a **board card** at the pointer: a card the size of a
+  photograph, showing the child board small, with its name along the foot. It
+  starts empty and titled "Untitled board". "Put in a new board" on a
+  selection does the same and moves the selected cards into it, one undo step.
+- **Go in.** Double-click or `Enter` on the card, or Open in its menu. The
+  child fills the screen with a short zoom out of the card's own frame. The
+  masthead becomes a **breadcrumb**: `Kitchen › Tiles › Grout`, each part a
+  button back to that level. `Alt+↑`, the browser's Back button and Android's
+  Back go up one level.
+- **Inside, a child is a whole board.** Its own title, cards, connections,
+  fences, look settings, tour and view. Its history is its own as well. What it
+  shares with the parent is the file, the shelf entry and the pictures'
+  storage. Its look **follows the parent's by default** ("Same look as the
+  board above", on in the Look panel). An unticked child keeps its own.
+- **Coming back out** zooms back into the card, which now shows the child as
+  it was left.
+- **Moving cards between levels.** Drag a card onto a board card and hold for
+  a moment: it goes inside, to the middle of the child's view. Inside, "Move up
+  a level" in a card's menu sends it out beside the board card. Both are
+  single undo steps, on the board they leave.
+- **One file.** Save, autosave, Save As, share, cloud sync and the shelf all
+  handle the whole tree, from wherever you are in it. Opening the file opens it
+  at the top. The shelf shows the top board's thumbnail and counts nothing
+  inside it. Export (image, PDF, SVG, JSON Canvas) is of the board on screen,
+  whichever level that is.
+- **Deleting a board card** deletes its child with it, into the bin as one
+  entry. Restored, it comes back whole. Emptying the bin is the only thing that
+  ends a child.
+- **Duplicate and copy-paste** copy the child with it, deeply, with new ids.
+  Merging or dropping in another `.mbrd` brings its children as well.
+
+## The file
+
+```
+kitchen.mbrd
+├── manifest.json            "requires": ["boards"] — only while the tree has a child
+├── board.json               the top board; a board card is an item of type "board"
+├── boards/<id>/board.json   one child, the same shape as a top board.json
+├── boards/<id>/timeline/…   its history, as timeline/ is for the top
+├── boards/<id>/notes/…      its sticky notes as Markdown, as notes/ is
+├── boards/<id>/thumbnail.webp   the child small, for the card that opens it
+├── assets/…                 every picture of every level, deduped once
+└── waveforms/…              likewise
+```
+
+- **A board card** is `{ "type": "board", "meta": { "board": "<id>" } }`. The id
+  names a directory under `boards/`. Children nest by the same rule: a
+  grandchild's directory is `boards/<id>/`, flat, never `boards/<a>/boards/<b>/`,
+  so a path never grows with the depth and every child is one hop from the
+  root. Which board holds which is said only by the board cards, so the tree
+  can't disagree with itself.
+- **`assets/` stays one shared directory.** A picture used on three levels is
+  stored once. This is also why a child cannot be a nested `.mbrd`: that would
+  store the photograph again.
+- **The `requires` entry is the point.** An older build would open the top
+  board, draw each board card as a plain named card, and on its next save
+  write the file back **without `boards/`**, dropping every child with no
+  warning. That is the one thing the format says may not degrade, and it is
+  the case `requires` was put in the format to catch, empty, years ahead. So a
+  file with a child says `"requires": ["boards"]`, and every build since that
+  gate shipped refuses it with "this board needs a newer mbrd". A file with no
+  child doesn't say it, and older builds keep opening it.
+- **Limits, written down rather than argued later:** 8 levels deep, 200
+  children a file. Past either, the menu entries are absent. A file claiming
+  more is read up to them and the rest reported. A child whose directory is
+  missing is a board card saying so, never a crash. A board card naming a
+  directory already claimed by another card (two cards, one child) opens the
+  same child from both, and the first save splits it into two copies, so the
+  tree is a tree again.
+- `mbrd-format.md` gets a section for `boards/`, the `board` item type and the
+  `requires` name, in the same commit as the reader.
+
+## How it is built, where
+
+- **State.** `state.ts` keeps the open board as `board`, exactly as now, and
+  gains a stack of where it is: `path: string[]`, the ids from the top. Every
+  module that reads `board` reads the level on screen without knowing there
+  are levels, which is most of the app. The other levels are held as parsed
+  board objects in a map beside it (`children`), not mounted. A child is a
+  board-sized object of its own, never merged into the parent's `items`.
+- **Entering and leaving** is `board:load` with the child, through the same
+  path an open takes, minus the file. The renderer, the spatial index, the
+  web, Find and the timeline all already rebuild on `board:load`. The view
+  each level was left at is kept in the stack, so coming back out lands where
+  you were.
+- **Saving.** `storage/mbrd.ts` packs the top `board.json` and then every child
+  from the map, the one on screen taken from `board`. **`itemHashes()` and
+  `boardAssetHashes()` both walk every level**: the CLAUDE.md rule for a new
+  class of asset reference, and the assertion in `tests/mbrd.test.js` that
+  binds the two walks gets a child in its fixture. Otherwise the cloud sync
+  stops uploading a child's pictures and the board comes back on another
+  machine with holes in it.
+- **The desktop and Android apps** change nothing: a board is still one file,
+  written by `saveDocument()`. The rolling `.autosave` copies are copies of
+  that file and so of the whole tree.
+- **The board card's renderer** is one entry in `RENDERERS`, drawing the
+  child's `thumbnail.webp` (refreshed whenever you leave the child), or a
+  plain card with the child's title before one exists. The painter for Safari
+  draws the same thumbnail. The capture needs nothing new.
+- **Undo** is per level and follows the board, as it already follows `board`.
+  Moving a card up or down is recorded on the level it leaves, together with
+  the edit to the board card's child, as one step.
+- **The breadcrumb** is the masthead's own field (`ui/board-title.ts`) showing
+  the path when it is longer than one. On a phone, the parent's name and a
+  back arrow.
+- **Writers that must ask `notUsersBoard()`** — entering and leaving write
+  the session's position. They go through the same guard as everything else.
+
+## Order of work
+
+1. The format: read and write `boards/`, the `requires` gate, the limits, the
+   asset walks and their assertion, `mbrd-format.md`. Tested with fixtures:
+   round trip, missing child, shared directory, too deep, too many, and an
+   older build's refusal path.
+2. State: the path, the children map, enter and leave through `board:load`,
+   the view per level.
+3. The board card: type, renderer, painter, menu entries, "New board inside".
+4. The breadcrumb, `Alt+↑`, Back on the web and on Android.
+5. Moving cards between levels, delete and restore, duplicate, copy-paste and
+   merge carrying children.
+6. "Same look as the board above".
+
+## Questions for the maintainer
+
+1. **Find across levels.** Find searches the board on screen. Should it also
+   find cards in children and take you there? Recommended: later, as its own
+   item. It changes Find's results from "here" to "somewhere", and that
+   deserves its own design.
+2. **The tour** is per board. Should a tour be able to step into a child?
+   Recommended: no, not in this item.
+3. **A board card's look:** the child's thumbnail (as designed), or a folder-
+   like card with a peek of the thumbnail? Recommended: the thumbnail. It is
+   what makes a child findable by eye.
+4. **"Open as its own board".** Should a child be liftable out into a separate
+   file and shelf entry? Recommended: yes, in a later round, as "Move to its
+   own board".
