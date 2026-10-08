@@ -155,7 +155,16 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
     item({ id: 'f2', type: 'folder', name: 'raw', meta: { files: [{ path: 'a.png', hash: filed, size: 11 }], count: 1 } }),
   ];
 
+  // And a board inside the board, with a picture on it and one in its bin -
+  // the class the cloud sync would otherwise skip whole.
+  const inside = await stubAsset('inside', { body: 'inside-bytes' });
+  const insideBinned = await stubAsset('inside-binned', { body: 'inside-binned-bytes' });
+  const child = boardOf([withAsset(inside, { id: 'c1', name: 'c.png' })], {
+    trash: [{ at: 1, item: withAsset(insideBinned, { id: 'c9', name: 'd.png' }) }],
+  });
+
   const board = boardOf([withAsset(live, { id: 'i1', name: 'a.png', meta: { cover, display, source } }), ...folders], {
+    boards: { kid: child },
     trash: [{ at: 1, item: withAsset(binned, { id: 'i9', name: 'b.png' }) }],
     settings: { fonts: [{ hash: face, family: 'Test Face' }] },
     timeline: {
@@ -184,7 +193,78 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
   );
   // The guard on the guard: two empty sets are deepEqual, so a stubAsset()
   // that stopped registering anything would pass while proving nothing.
-  assert.equal(written.size, 9);
+  assert.equal(written.size, 11);
+});
+
+// ---------------------------------------------------------------------------
+// Boards inside the board: boards/<id>/, gated by requires
+// ---------------------------------------------------------------------------
+
+/** The smallest bytes thumbType() takes for a WebP, as a data URL. */
+const WEBP = 'data:image/webp;base64,' + Buffer.from('RIFF\u0000\u0000\u0000\u0000WEBPVP8 tiny').toString('base64');
+
+test('a board inside the board is written to its own directory, and says so', async () => {
+  clearAssets();
+  const shared = await stubAsset('shared', { body: 'shared-bytes' });
+  const child = boardOf([
+    withAsset(shared, { id: 'c1', name: 'tile.png' }),
+    item({ id: 'c2', type: 'note', meta: { text: 'Grout\nwarm grey' } }),
+  ], { title: 'Tiles', thumb: WEBP, timeline: { marker: 1, steps: [{ label: 'Add' }] } });
+  const top = boardOf([
+    withAsset(shared, { id: 'i1', name: 'kitchen.png' }),
+    item({ id: 'b1', type: 'board', name: 'Tiles', meta: { board: 'tiles1' } }),
+  ], { boards: { tiles1: child } });
+
+  const { blob, manifest } = await packBoard(top);
+  assert.deepEqual(manifest.requires, ['boards'], 'an older build must refuse rather than drop it');
+  const files = await readZip(blob);
+  assert.ok(files.has('boards/tiles1/board.json'));
+  assert.ok(files.has('boards/tiles1/thumbnail.webp'));
+  assert.ok(files.has('boards/tiles1/timeline/base.json'));
+  assert.ok([...files.keys()].some(n => /^boards\/tiles1\/notes\/grout--c2\.md$/.test(n)));
+  // One picture on two levels is stored once, in the one assets/.
+  assert.equal([...files.keys()].filter(n => n.startsWith('assets/')).length, 1);
+  const topJson = JSON.parse(new TextDecoder().decode(files.get('board.json')));
+  assert.equal('boards' in topJson, false, 'board.json itself never carries the tree');
+  const childJson = JSON.parse(new TextDecoder().decode(files.get('boards/tiles1/board.json')));
+  assert.equal('thumb' in childJson, false);
+  assert.equal('timeline' in childJson, false);
+
+  const { board } = await unpackBoard(blob);
+  const back = board.boards.tiles1;
+  assert.equal(back.title, 'Tiles');
+  assert.deepEqual(back.items.map(i => i.id), ['c1', 'c2']);
+  // Read back from its own notes/ - the marker is the sidecar's, as on the top board.
+  assert.equal(back.items[1].meta.text, '# Grout\nwarm grey');
+  assert.equal(back.thumb, WEBP);
+  assert.equal(back.timeline.steps.length, 1);
+});
+
+test('a child whose id cannot be a directory is not written', async () => {
+  clearAssets();
+  const top = boardOf([], { boards: { '../out': boardOf([]), ok: boardOf([]) } });
+  const files = await readZip((await packBoard(top)).blob);
+  const dirs = [...files.keys()].filter(n => n.startsWith('boards/'));
+  assert.deepEqual(dirs, ['boards/ok/board.json']);
+});
+
+test('a board with no child says it needs nothing, and opens anywhere', async () => {
+  clearAssets();
+  const { manifest } = await packBoard(boardOf([], { boards: {} }));
+  assert.deepEqual(manifest.requires, []);
+});
+
+test('a child that will not read is left out and the rest open', async () => {
+  const blob = await writeZip([
+    { name: 'manifest.json', data: enc.encode('{"format":"mbrd","version":1,"requires":["boards"]}'), compress: false },
+    { name: 'board.json', data: enc.encode('{"items":[],"boards":{"sneaky":{"items":[]}}}'), compress: false },
+    { name: 'boards/good/board.json', data: enc.encode('{"title":"Good","items":[]}'), compress: false },
+    { name: 'boards/torn/board.json', data: enc.encode('{"title":'), compress: false },
+    { name: 'boards/flat/board.json', data: enc.encode('{"title":"No items"}'), compress: false },
+  ]);
+  const { board } = await unpackBoard(blob);
+  assert.deepEqual(Object.keys(board.boards), ['good'],
+    'only a real child, and never one board.json claimed for itself');
 });
 
 // ---------------------------------------------------------------------------

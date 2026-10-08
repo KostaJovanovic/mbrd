@@ -66,6 +66,10 @@ myboard.mbrd                    ZIP, renamed
 ├── assets/<slug>--<hash>.<ext> embedded bytes, deduped by content hash
 ├── notes/<slug>--<id>.md       one sticky note, as Markdown
 ├── waveforms/<hash>.json       one audio file's measured readings
+├── boards/<id>/board.json      a board inside the board, the same shape as board.json
+├── boards/<id>/timeline/…      its history, as timeline/ is for the top
+├── boards/<id>/notes/…         its sticky notes, as notes/ is
+├── boards/<id>/thumbnail.webp  it, small, for the card that opens it
 └── thumbnail.webp              the whole board, small, for a list of boards
 ```
 
@@ -154,13 +158,13 @@ of what a `.mbrd` is.
 | ---------- | ------- |
 | `format`   | Always `"mbrd"`. A file whose manifest says otherwise is refused. |
 | `version`  | Format version, currently `1`. A **higher** number loads anyway with a console warning — a board from a newer mbrd is more likely to be readable than not, and refusing it outright would lose work that a slightly lossy open would have kept. |
-| `requires` | Features a reader **must** understand to open this file at all. Empty today, and see below. |
+| `requires` | Features a reader **must** understand to open this file at all. `["boards"]` on a file with a board inside it, empty on every other, and see below. |
 | `app`      | Which build wrote it, as `mbrd <version>`. Mostly informational — the one thing that reads it back is the title repair below, which needs to know whether the writer predates v0.51. |
 | `created`  | Preserved across re-saves, so a board keeps its birthday. |
 | `modified` | Set on every pack. |
 | `title`    | The board's name. Also the filename it was exported under, in practice. |
 
-### `requires`, and why it is empty
+### `requires`, and why it is nearly always empty
 
 A list of feature names. **A reader that does not understand every name in it
 must refuse the file** rather than open it — and this is the one rule in this
@@ -174,8 +178,8 @@ out missing, and reports the save as a success. `version` can say *this is newer
 than you*. Only `requires` can say *this is newer than you **and you will lose
 something***, which is the only version of that sentence anybody can act on.
 
-**It is empty, and it is meant to stay empty for a long time.** Everything in the
-format today degrades honestly: an unknown item `type` draws as a plain named
+**It is empty on almost every file, and meant to stay so.** Everything in the
+format but one feature degrades honestly: an unknown item `type` draws as a plain named
 card, an unknown `meta` key rides along untouched, an unread history is a history
 that simply is not shown. None of that is worth refusing somebody's board over,
 and a `requires` that cried wolf would be the first thing an implementer
@@ -194,6 +198,15 @@ afterwards. So it is here now, doing nothing, being checked by everything.
 If you are implementing a reader: check this list, and fail loudly on a name you
 do not know. It will cost you nothing for years and then save somebody's work
 once.
+
+**The first name: `boards`** (v0.672, October 2026). A file with a board inside it
+says `"requires": ["boards"]`, and only such a file: one whose tree is only its
+top board writes `[]` as before and opens in every build. This is the field the
+gate was waiting for. An older build would open the top board, draw each board
+card as a plain named card, and write the file back on its next save *without*
+`boards/` - every child gone, the save reported as a success. Every build since
+the gate shipped refuses the file instead, with "update mbrd". See
+`boards/<id>/` below.
 
 **The title repair.** A board's name and its filename are not the same string:
 `fileNameFor()` turns spaces into underscores so the name is safe in a file
@@ -816,7 +829,7 @@ item type and not a new top-level key like `connections`.
 | field  | meaning |
 | ------ | ------- |
 | `id`   | Unique within the board. `[A-Za-z0-9_-]{1,64}`. |
-| `type` | `image`, `video`, `audio`, `text`, `note`, `link`, `swatch`, `sticker`, `drawing`, `model`, `fence`, `gone`, `archive`, `folder`, `card`, `generic`. |
+| `type` | `image`, `video`, `audio`, `text`, `note`, `link`, `swatch`, `sticker`, `drawing`, `board`, `model`, `fence`, `gone`, `archive`, `folder`, `card`, `generic`. |
 | `x`, `y` | The item's **centre**, in world units. **`y` points up** — this is the one convention that surprises people, and it is why the renderer lays items out at `-y`. |
 | `w`, `h` | Size in world units. Bounded to 48…20000 (`geometry.ts`). |
 | `rot`  | Degrees, anticlockwise-positive. Only stickers set it so far — ±8° rolled fresh every time one is pressed down — but every geometry helper has always respected it, and a hand-rotated card of any type round-trips. |
@@ -858,6 +871,7 @@ promise 1 above,** and that is the open question at the bottom of this document.
 | `gone`   | `gone` | `{ type, ext, bytes }` — what a file was before the bin was emptied on it. `type` is the item type it had, carried as the string it was rather than checked against this list, for the same reason an unknown `type` is carried. `ext` is its extension and `bytes` what it weighed. This is the **whole** of what such an item keeps: `asset` is `null`, the rest of `meta` is dropped, and the geometry and `name` stay so that the card is drawn where and as large as the thing it replaces. There is nothing here that could ever resolve to a file again, which is the point — emptying the bin is the one action in the app that destroys rather than files, and this is the record it leaves in place of what it destroyed. |
 | `hex`    | `swatch` | The colour, as `#rrggbb`. The item's `name` carries the same value uppercased — a swatch has no other name it could have, which is what makes one findable and what a copy of one puts on the system clipboard. Held to six hex digits on the way in and on the way out to the card (`swatchHex`); `#rgb` is folded out to the long form, and anything else falls back to the default grey rather than being stored. The item carries no asset. |
 | `strokes`, `space` | `drawing` | What the pen drew (`canvas/strokes.ts`). `space` is `[w, h]`, the size of the drawing's own coordinate space when its strokes were laid down; the card draws that space centred in its box at one scale (an SVG `viewBox` with `meet`), so a resized card scales the sketch rather than reflowing it and never squashes it. `strokes` is `[{ tool, ink, width, pts }]`, highlighters drawn under pens: `tool` is `pen` or `highlighter`; `ink` a token *name* — `ink`, `accent`, `warm`, `leaf` or `danger` — never a colour, so a drawing follows the board's palette, its scheme and colourblind mode; `width` in the space's units; `pts` one string of points `x,y,p` in base 36, x and y in tenths of a unit with y running **down** (the SVG's way, unlike the item's own `y`), p the pressure in hundredths, points separated by spaces. Simplified when the stroke ends and capped at 2000 points a stroke and 400 strokes a drawing. How a stroke is *drawn* — tapered, smooth or plain — is the whimsy tier's at render time and is not stored. Read back through `readDrawing()`, which drops a stroke with no points, clamps the width, falls back to `pen` and `ink`, and skips a point it cannot read. The item carries no asset. Additive, no `version` bump: an older build draws a plain card where the drawing was and writes the item back out untouched. |
+| `board`  | `board` | The id of the board this card opens: a directory `boards/<id>/` in the same file (see above). A string matching `[A-Za-z0-9_-]{1,64}`; anything else names nothing, and a card whose child is missing shows itself missing. The item carries no asset - its picture is the child's own `boards/<id>/thumbnail.webp`. |
 | `before`, `cards`, `by` | `card` | A card with a before-and-after drawing of the board on it (`canvas/spotless.ts`). `before` is where each cleaned card sat in a 104×78 frame and the colour of its grime, `[[x, y, w, h, colour], …]`; `cards` is how many; `by` is `"robot"` when the robot vacuum finished the board and absent otherwise. Read back through `spotlessRects()`, which keeps only four finite numbers inside the frame and an `rgb()` or hex colour, and at most 400 of them. The item carries no asset. An older build draws it as a plain named card. |
 | `archive`, `archiveName`, `path` | `folder` | A folder inside an archive: the asset hash of the archive it points into, that archive's filename (whose extension says how to read it), and the folder's path inside it, ending in `/`. The archive itself is not otherwise on the board once it is unzipped; this reference is what keeps its bytes in the file, until nothing points into it. An `archive` item carries the archive as its ordinary `asset`, and Unzip replaces it with what is inside. |
 | `files`  | `folder` | A folder dropped from the disk: `[{ path, hash, size }]`, every file under it by its path below the folder and its asset hash. Each hash is an ordinary asset, packed and synced like any other (`itemHashes`). An entry without a string `path` and a valid `hash` is dropped on the way in. A folder card carries `files` or `archive`, never both; Open replaces it with the files at its top level and one folder card per folder inside. |
@@ -931,6 +945,44 @@ except the one about being able to read it.
 - **A referenced hash with no bytes fails the export.** It used to warn and
   carry on, which produced a `.mbrd` with a hole in it while telling the user
   their work was safe.
+
+---
+
+## `boards/<id>/` — boards inside the board
+
+A board can hold boards: a **board card** on it opens a whole board of its own
+(research/boards-in-boards-2026-10-07.md). Each child lives in the parent's file,
+in a directory of its own:
+
+- **`boards/<id>/board.json`** is exactly a `board.json`: title, view, settings,
+  items, bin, connections, tour - everything above applies to it unchanged. It
+  never carries `boards` itself.
+- **`boards/<id>/timeline/…`** and **`boards/<id>/notes/…`** are its history and
+  its notes' sidecars, read as `timeline/` and `notes/` are for the top.
+- **`boards/<id>/thumbnail.webp`** (or `.jpg`) is the child, small, drawn when it
+  was last left; the card that opens it shows this. Optional, read by its bytes,
+  as the top's is.
+- **`assets/` and `waveforms/` stay one shared directory.** A picture on three
+  levels is stored once. This is why a child is a directory and not a nested
+  `.mbrd`, which would store the photograph again.
+
+**Flat, never nested.** A grandchild is `boards/<its id>/` like any other child,
+so a path never grows with the depth and every child is one hop from the root.
+Which board holds which is said only by the board cards - an item of type
+`board` whose `meta.board` is the id - so the tree cannot disagree with itself.
+`<id>` is `[A-Za-z0-9_-]{1,64}`; any other directory name is not read.
+
+**Limits**, written down rather than argued later: **200 children** a file and
+**8 levels** deep. Past either the app offers no way to make more; a file
+claiming more is read up to 200 and the rest are reported. A child whose
+`board.json` will not parse, or has no `items` list, is left out and reported -
+and a board card naming a child that is not there shows itself missing rather
+than failing the file. A `boards` key inside a `board.json` is ignored: only the
+directories are the tree.
+
+**Gated by `requires: ["boards"]`**, written whenever the file holds a child -
+see `requires` above for why this is the one feature that refuses rather than
+degrades.
 
 ---
 

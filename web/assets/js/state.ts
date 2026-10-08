@@ -64,6 +64,7 @@ import {
   clearHistory, dropStacks, lastCommand, takeBack, undoAction,
 } from './history.ts';
 import type { Command } from './history.ts';
+import { setChildren } from './board-tree.ts';
 import {
   adoptTimeline, timelineSteps, timelineAt, timelineStale, timelineHashes, goTo,
   nameStep, declareOp, registerOp, editStep, rebuildFrom, stepEditable,
@@ -2132,6 +2133,14 @@ export function commitHeader(next: unknown, from: MobileHeader = board.mobileHea
  * outcome an open must not have.
  */
 export function loadBoard(data: unknown) {
+  // A file's tree comes with it, and the board it opens at is the top.
+  const dropped = setChildren(isRecord(data) ? data.boards : null);
+  if (dropped) console.warn(`[mbrd] ${dropped} board${dropped === 1 ? '' : 's'} inside this one could not be read`);
+  loadLevel(data);
+}
+
+/** One level of the tree onto the screen: the whole of a load but the tree. */
+function loadLevel(data: unknown) {
   const layoutMode = board.layoutMode;
   const next = normalizeBoard(data);
   board.title = next.title;

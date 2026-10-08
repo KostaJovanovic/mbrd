@@ -19,6 +19,7 @@ import { itemHashes, isRecord, extOf } from './util.ts';
 // emptyTrash() rewrites the ledger's copies via this.
 import { rewriteRecorded } from './timeline.ts';
 import { clippedItems } from './clipboard.ts';
+import { otherLevels } from './board-tree.ts';
 
 /**
  * **The two things the drawer keeps for good.** A cleaning card (type `card`,
@@ -441,6 +442,14 @@ export function emptyTrash() {
   for (const entry of keeping) for (const hash of allHashes(entry.item)) kept.add(hash);
   // A cut card waits here to be pasted, and would paste with no bytes.
   for (const it of clippedItems()) for (const hash of allHashes(it)) kept.add(hash);
+  // Every other board in the file: the store is one for the whole tree, so a
+  // picture this bin let go of may still be on a card a level up or down.
+  for (const doc of otherLevels()) {
+    for (const it of Array.isArray(doc.items) ? doc.items : []) for (const hash of allHashes(it)) kept.add(hash);
+    for (const t of Array.isArray(doc.trash) ? doc.trash : []) {
+      for (const hash of allHashes(isRecord(t) ? t.item : null)) kept.add(hash);
+    }
+  }
   const doomed = new Set<string>();
   for (const entry of going) {
     for (const hash of allHashes(entry.item)) if (!kept.has(hash)) doomed.add(hash);

@@ -16,6 +16,7 @@ import { VERSION } from '../version.js';
 // Pure functions of the format's Markdown flavour — needed for sidecar reconciliation.
 import { parseNoteText, flattenNoteRich } from '../canvas/note-model.ts';
 import type { Item, TrashEntry, FontSpec } from '../board-model.ts';
+import { MAX_CHILD_BOARDS } from '../board-tree.ts';
 
 const FORMAT = 'mbrd';
 const FORMAT_VERSION = 1;
@@ -23,10 +24,19 @@ export const MIME = 'application/vnd.mbrd+zip';
 
 /** Features a reader must support to open the file safely. Unlike `version`
  *  (which no reader actually refuses), an unsupported `requires` entry makes
- *  the reader refuse rather than silently drop unknown fields. Empty today —
- *  nothing in the current format degrades destructively. Exists now so every
- *  reader already checks the gate before a breaking field is ever added. */
-const SUPPORTED_FEATURES: ReadonlySet<string> = new Set<string>();
+ *  the reader refuse rather than silently drop unknown fields. A file names
+ *  only what it uses, so one that uses nothing still says `[]`.
+ *
+ *  `boards`: boards inside the board, under boards/<id>/. A reader without it
+ *  would open the top board and, on its next save, write the file back without
+ *  the children - the one loss the format may not allow, and what this gate
+ *  was put in for. A file with no child does not say it, and opens anywhere. */
+const SUPPORTED_FEATURES: ReadonlySet<string> = new Set<string>(['boards']);
+
+/** Where each board inside the board lives, by id. Flat: a grandchild is
+ *  `boards/<id>/` too, so a path never grows with the depth. */
+const BOARDS_DIR = 'boards/';
+const CHILD_DOC = /^boards\/([A-Za-z0-9_-]{1,64})\/board\.json$/;
 
 const ASSETS_DIR = 'assets/';
 
@@ -59,7 +69,29 @@ export type PackedBoard = {
    * only thing that reads its shape.
    */
   timeline?: unknown;
+  /** The boards inside this one, by id, each in this same shape plus its own
+   *  picture as a data URL. Only ever on the top board. */
+  boards?: Record<string, unknown>;
 };
+
+/** A board inside the board, as the packer takes it. */
+type PackedChild = PackedBoard & { thumb?: string | null };
+
+/** The children worth writing: an id that can name a directory, a document
+ *  with a list of items, and no more than MAX_CHILD_BOARDS of them. */
+function childrenOf(boardData: PackedBoard): [string, PackedChild][] {
+  if (!isRecord(boardData.boards)) return [];
+  const out: [string, PackedChild][] = [];
+  for (const [id, doc] of Object.entries(boardData.boards)) {
+    if (!SAFE_ID.test(id) || !isRecord(doc) || !Array.isArray(doc.items)) continue;
+    // SAFETY: a child is serializeLevel()'s document, as the top board is, or
+    // a cloud copy of one - the same shape packBoard() has always trusted the
+    // top's to be. The two checks above are what the loops below lean on.
+    out.push([id, doc as PackedChild]);
+    if (out.length >= MAX_CHILD_BOARDS) break;
+  }
+  return out;
+}
 
 /** One item out of a file, before anything has held it to a shape. */
 type FileItem = Record<string, unknown>;
@@ -75,6 +107,7 @@ type FileBoard = {
   title?: unknown,
   items?: unknown[],
   trash?: unknown[],
+  boards?: Record<string, FileBoard & { thumb?: string | null, timeline?: unknown }>,
 };
 
 const enc = new TextEncoder();
@@ -89,13 +122,18 @@ const json = (obj: unknown) => enc.encode(JSON.stringify(obj, null, 2));
  *  one bad id would strand it. */
 export function boardAssetHashes(boardData: PackedBoard): Set<string> {
   const out = new Set<string>();
-  for (const item of [...boardData.items, ...(boardData.trash || []).map(t => t.item)]) {
-    for (const hash of itemHashes(item)) if (isHash(hash)) out.add(hash);
+  // Every level of the tree, as the packer walks it: a child's pictures are in
+  // the one shared assets/, and a sync that skipped them would bring the board
+  // back on another machine with holes in it.
+  for (const level of [boardData, ...childrenOf(boardData).map(([, doc]) => doc)]) {
+    for (const item of [...level.items, ...(level.trash || []).map(t => t.item)]) {
+      for (const hash of itemHashes(item)) if (isHash(hash)) out.add(hash);
+    }
+    for (const font of level.settings?.fonts || []) {
+      if (isHash(font?.hash)) out.add(font.hash);
+    }
+    for (const hash of timelineHashes(level.timeline)) if (isHash(hash)) out.add(hash);
   }
-  for (const font of boardData.settings?.fonts || []) {
-    if (isHash(font?.hash)) out.add(font.hash);
-  }
-  for (const hash of timelineHashes(boardData.timeline)) if (isHash(hash)) out.add(hash);
   return out;
 }
 
@@ -182,6 +220,7 @@ async function boardEntries(
   { created = null, allowMissing = false, thumb = null }: PackOptions = {},
 ) {
   const now = new Date();
+  const children = childrenOf(boardData);
   const manifest = {
     format: FORMAT,
     version: FORMAT_VERSION,
@@ -189,26 +228,27 @@ async function boardEntries(
     created: created || now.toISOString(),
     modified: now.toISOString(),
     title: boardData.title || 'Untitled board',
-    // Always present (even empty) so every implementer sees it exists.
-    // See SUPPORTED_FEATURES.
-    requires: [...SUPPORTED_FEATURES],
+    // Always present (even empty) so every implementer sees it exists, and
+    // naming only what this file uses. See SUPPORTED_FEATURES.
+    requires: children.length ? ['boards'] : [],
   };
 
-  // Binned items count — without their bytes the bin lists things that
-  // can no longer be restored.
-  const referenced = [
-    ...boardData.items,
-    ...(boardData.trash || []).map(t => t.item),
+  // Every level of the tree, the top first. Binned items count — without their
+  // bytes the bin lists things that can no longer be restored.
+  const { boards: _children, ...topData } = boardData;
+  const levels: { prefix: string, data: PackedBoard, thumb: string | null }[] = [
+    { prefix: '', data: topData, thumb: null },
+    ...children.map(([id, { thumb: picture = null, ...data }]) =>
+      ({ prefix: `${BOARDS_DIR}${id}/`, data, thumb: picture })),
   ];
+  const referenced = levels.flatMap(({ data }) => [
+    ...data.items,
+    ...(data.trash || []).map(t => t.item),
+  ]);
 
   // Before serialisation — waveform peaks are stripped from board.json when
-  // they get their own sidecar file.
+  // they get their own sidecar file. One waveforms/ for the whole tree, like assets/.
   const waveforms = collectWaveforms(referenced);
-
-  // The history goes in its own two files, so board.json stays the board.
-  const ledger = timelineFiles(boardData.timeline);
-  const doc = withoutPeaks(boardData, waveforms);
-  if (ledger) delete doc.timeline;
 
   const entries: ZipEntry[] = [
     // First entry, stored, no extra field — MIME at fixed offset (ODF/EPUB
@@ -216,11 +256,17 @@ async function boardEntries(
     // this reader trusts manifest.format, not this entry.
     { name: 'mimetype', data: enc.encode(MIME), compress: false },
     { name: 'manifest.json', data: json(manifest), compress: true },
-    { name: 'board.json', data: json(doc), compress: true },
   ];
-  if (ledger) {
-    entries.push({ name: TIMELINE_BASE, data: ledger.base, compress: true });
-    for (const [name, data] of ledger.pieces) entries.push({ name, data, compress: true });
+  for (const { prefix, data } of levels) {
+    // The history goes in its own files, so board.json stays the board.
+    const ledger = timelineFiles(data.timeline);
+    const doc = withoutPeaks(data, waveforms);
+    if (ledger) delete doc.timeline;
+    entries.push({ name: `${prefix}board.json`, data: json(doc), compress: true });
+    if (ledger) {
+      entries.push({ name: prefix + TIMELINE_BASE, data: ledger.base, compress: true });
+      for (const [name, bytes] of ledger.pieces) entries.push({ name: prefix + name, data: bytes, compress: true });
+    }
   }
 
   // Gather all referenced assets before writing. Fatal on missing — a board
@@ -250,7 +296,7 @@ async function boardEntries(
 
   // Fonts — missing is non-fatal (degrades to fallback stack, same as any
   // machine that never had the face).
-  for (const font of boardData.settings?.fonts || []) {
+  for (const font of levels.flatMap(({ data }) => data.settings?.fonts || [])) {
     if (!isHash(font?.hash) || seen.has(font.hash)) continue;
     seen.add(font.hash);
     const asset = getAsset(font.hash);
@@ -261,7 +307,7 @@ async function boardEntries(
   // Timeline assets — a step that deleted a photo is the only thing naming it.
   // Missing is non-fatal: a step can reference bytes the optimiser discarded,
   // and refusing to export the board over a history entry would be backwards.
-  for (const hash of timelineHashes(boardData.timeline)) {
+  for (const hash of levels.flatMap(({ data }) => [...timelineHashes(data.timeline)])) {
     if (!isHash(hash) || seen.has(hash)) continue;
     seen.add(hash);
     const asset = getAsset(hash);
@@ -296,16 +342,24 @@ async function boardEntries(
     });
   }
 
-  // Sticky notes as readable .md sidecars. Unsafe ids skip the sidecar —
-  // board.json always has the text.
-  for (const item of referenced) {
-    if (item.type !== 'note' || !SAFE_ID.test(item.id)) continue;
-    entries.push({ name: noteFile(item), data: enc.encode(noteMarkdown(item)), compress: true });
+  // Sticky notes as readable .md sidecars, each in its own board's notes/.
+  // Unsafe ids skip the sidecar — board.json always has the text.
+  for (const { prefix, data } of levels) {
+    for (const item of [...data.items, ...(data.trash || []).map(t => t.item)]) {
+      if (item.type !== 'note' || !SAFE_ID.test(item.id)) continue;
+      entries.push({ name: prefix + noteFile(item), data: enc.encode(noteMarkdown(item)), compress: true });
+    }
   }
 
   // ...and every waveform that has been measured, one per audio file.
   for (const [hash, peaks] of waveforms) {
     entries.push({ name: waveformFile(hash), data: enc.encode(waveformJSON(peaks)), compress: true });
+  }
+
+  // Each child's picture of itself, for the card that opens it.
+  for (const { prefix, thumb: picture } of levels) {
+    const entry = prefix ? thumbnailEntry(picture, prefix) : null;
+    if (entry) entries.push(entry);
   }
 
   // The picture last, so a whole write puts it beside the directory and a list
@@ -330,14 +384,14 @@ const THUMB_NAMES: Record<string, string> = {
 /** A 360px picture is tens of KB. Past this it is not one, and is not read. */
 const THUMB_MAX = 512 * 1024;
 
-function thumbnailEntry(url: string | null): ZipEntry | null {
+function thumbnailEntry(url: string | null, prefix = ''): ZipEntry | null {
   const m = /^data:(image\/(?:webp|jpeg));base64,([A-Za-z0-9+/]+={0,2})$/.exec(url || '');
   if (!m) return null;
   const bytes = fromBase64(m[2]);
   if (bytes.length > THUMB_MAX || thumbType(bytes) !== m[1]) return null;
   // Stored: a WebP or a JPEG does not deflate, and a stored entry is what
   // thumbnailFromTail() can lift straight out of the bytes.
-  return { name: THUMB_NAMES[m[1]], data: bytes, compress: false };
+  return { name: prefix + THUMB_NAMES[m[1]], data: bytes, compress: false };
 }
 
 /** The picture's type from its own first bytes, never from its name: the
@@ -356,9 +410,9 @@ function thumbnailUrl(bytes: Uint8Array): string | null {
   return type ? `data:${type};base64,${toBase64(bytes)}` : null;
 }
 
-function thumbnailIn(files: Map<string, Uint8Array>): string | null {
+function thumbnailIn(files: Map<string, Uint8Array>, prefix = ''): string | null {
   for (const name of Object.values(THUMB_NAMES)) {
-    const bytes = files.get(name);
+    const bytes = files.get(prefix + name);
     if (bytes) return thumbnailUrl(bytes);
   }
   return null;
@@ -477,10 +531,12 @@ function parseNote(text: string) {
   return [title, ...lines].join('\n').replace(/\n+$/, '');
 }
 
-/** The id a note file was written for, or null if this is not one of ours. */
-function noteId(name: string) {
-  if (!name.startsWith(NOTES_DIR) || !name.endsWith('.md')) return null;
-  const stem = name.slice(NOTES_DIR.length, -'.md'.length);
+/** The id a note file was written for, or null if this is not one of ours.
+ *  `prefix` is the board's directory, empty for the top board. */
+function noteId(name: string, prefix = '') {
+  const dir = prefix + NOTES_DIR;
+  if (!name.startsWith(dir) || !name.endsWith('.md')) return null;
+  const stem = name.slice(dir.length, -'.md'.length);
   const cut = stem.lastIndexOf('--');
   return cut === -1 ? null : stem.slice(cut + 2) || null;
 }
@@ -633,8 +689,8 @@ function timelineFiles(timeline: unknown) {
  * one, so the ledger is shorter than it says. adoptTimeline() marks such a
  * history stale rather than replaying steps that are not all there.
  */
-function readTimelineFiles(files: Map<string, Uint8Array>) {
-  const head = files.get(TIMELINE_BASE);
+function readTimelineFiles(files: Map<string, Uint8Array>, prefix = '') {
+  const head = files.get(prefix + TIMELINE_BASE);
   if (!head) return null;
   let parsed: unknown;
   try { parsed = JSON.parse(dec.decode(head)); } catch { return null; }
@@ -644,11 +700,12 @@ function readTimelineFiles(files: Map<string, Uint8Array>) {
   // The pieces in their order, or the one file an older save wrote. A piece
   // missing from the middle leaves fewer steps than `count`, which is stale.
   const pieces = [...files.keys()]
-    .map(name => [name, TIMELINE_PIECE.exec(name)?.[1]] as const)
+    .filter(name => name.startsWith(prefix))
+    .map(name => [name, TIMELINE_PIECE.exec(name.slice(prefix.length))?.[1]] as const)
     .filter((p): p is readonly [string, string] => p[1] !== undefined)
     .sort((a, b) => Number(a[1]) - Number(b[1]))
     .map(([name]) => files.get(name));
-  const bodies = pieces.length ? pieces : [files.get(TIMELINE_STEPS)];
+  const bodies = pieces.length ? pieces : [files.get(prefix + TIMELINE_STEPS)];
   for (const body of bodies) {
     for (const line of body ? dec.decode(body).split('\n') : []) {
       if (!line.trim()) continue;
@@ -670,6 +727,28 @@ function* allItems(board: FileBoard): Generator<FileItem> {
   // string or a number in the items array answers none of them either way.
   for (const item of board.items || []) if (isRecord(item)) yield item;
   for (const t of board.trash || []) if (isRecord(t) && isRecord(t.item)) yield t.item;
+}
+
+/** Note sidecars outrank board.json. Keyed by item id from the filename, in
+ *  the board's own notes/ - `prefix` is its directory, empty for the top. */
+function readNotes(board: FileBoard, files: Map<string, Uint8Array>, prefix: string) {
+  const notes = new Map<unknown, FileItem>();
+  for (const item of allItems(board)) if (item.type === 'note') notes.set(item.id, item);
+  for (const [name, bytes] of files) {
+    const id = noteId(name, prefix);
+    const item = id && notes.get(id);
+    if (!item) continue;
+    const text = parseNote(dec.decode(bytes));
+    const meta: Record<string, unknown> = { ...(isRecord(item.meta) ? item.meta : null), text };
+    item.meta = meta;
+    // Rebuild rich blocks from sidecar text when they disagree — stale rich
+    // used to show old words on screen while Find matched the new ones.
+    // Re-derived (not dropped) so the note keeps formatting metadata.
+    const rich = meta.rich;
+    if (isRecord(rich) && flattenNoteRich(rich) !== text) {
+      meta.rich = { ...rich, blocks: parseNoteText(text) };
+    }
+  }
 }
 
 /** The type a stored asset entry is kept as, or null for any other entry. */
@@ -760,30 +839,44 @@ export async function unpackBoard(blob: Blob, { owned = false }: { owned?: boole
   // The timeline's own files outrank board.json, as the sidecars below do.
   const timeline = readTimelineFiles(files);
   if (timeline) parsed.timeline = timeline;
+  readNotes(board, files, '');
+  // Never from board.json: a `boards` key there is not this format's.
+  delete board.boards;
 
-  // Note sidecars outrank board.json. Keyed by item id from the filename.
-  const notes = new Map<unknown, FileItem>();
-  for (const item of allItems(board)) if (item.type === 'note') notes.set(item.id, item);
-  for (const [name, bytes] of files) {
-    const id = noteId(name);
-    const item = id && notes.get(id);
-    if (!item) continue;
-    const text = parseNote(dec.decode(bytes));
-    const meta: Record<string, unknown> = { ...(isRecord(item.meta) ? item.meta : null), text };
-    item.meta = meta;
-    // Rebuild rich blocks from sidecar text when they disagree — stale rich
-    // used to show old words on screen while Find matched the new ones.
-    // Re-derived (not dropped) so the note keeps formatting metadata.
-    const rich = meta.rich;
-    if (isRecord(rich) && flattenNoteRich(rich) !== text) {
-      meta.rich = { ...rich, blocks: parseNoteText(text) };
-    }
+  // The boards inside this one, each read as the top is, from its directory.
+  // A child whose board.json will not parse is left out and said so; the board
+  // card that names it then shows it missing rather than the file failing.
+  const children: NonNullable<FileBoard['boards']> = {};
+  let unread = 0;
+  let count = 0;
+  for (const name of files.keys()) {
+    const id = CHILD_DOC.exec(name)?.[1];
+    if (!id) continue;
+    if (++count > MAX_CHILD_BOARDS) { unread++; continue; }
+    const prefix = `${BOARDS_DIR}${id}/`;
+    const bytes = files.get(name);
+    let doc: unknown = null;
+    try { if (bytes) doc = JSON.parse(dec.decode(bytes)); } catch { doc = null; }
+    if (!isRecord(doc) || !Array.isArray(doc.items)) { unread++; continue; }
+    // SAFETY: isRecord() and Array.isArray() above; every reader below
+    // isRecord-filters what it takes out of items and trash, as for the top.
+    const child = doc as NonNullable<FileBoard['boards']>[string];
+    const history = readTimelineFiles(files, prefix);
+    if (history) child.timeline = history;
+    readNotes(child, files, prefix);
+    child.thumb = thumbnailIn(files, prefix);
+    delete child.boards;
+    children[id] = child;
   }
+  if (unread) console.warn(`[mbrd] ${unread} board${unread === 1 ? '' : 's'} inside this file could not be read`);
+  const levels: FileBoard[] = [board, ...Object.values(children)];
+  if (Object.keys(children).length) board.boards = children;
 
   // Waveforms the same, but one file can answer for several cards: the sidecar
-  // is named after the audio, and every card holding that audio wants it.
+  // is named after the audio, and every card holding that audio wants it - on
+  // any level, since waveforms/ is shared as assets/ is.
   const waves = new Map<unknown, FileItem[]>();
-  for (const item of allItems(board)) {
+  for (const item of levels.flatMap(level => [...allItems(level)])) {
     const asset = item.asset;
     const hash = isRecord(asset) ? asset.hash : undefined;
     if (!hash) continue;

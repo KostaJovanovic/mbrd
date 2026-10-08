@@ -175,6 +175,9 @@ const BASE = new Set([
   // is a pure transform and only the swap-in is a mutation - the reader must
   // be reachable without the mutation door.
   'board-schema.ts',
+  // The boards inside the board, as documents by id, and the path to the one
+  // on screen. Data only: board-schema.ts writes the tree out, state.ts walks it.
+  'board-tree.ts',
   // The cards an empty board puts on itself - hydration, no commit, no
   // history, so the wrong tenant for the mutation door.
   'onboarding.ts',

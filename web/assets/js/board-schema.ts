@@ -24,6 +24,8 @@ import {
 } from './layout.ts';
 import { isSticky, stuckTo } from './sticky.ts';
 import { fenceOf } from './fences.ts';
+import { atTop, childDocs, topDoc } from './board-tree.ts';
+import type { BoardDoc } from './board-tree.ts';
 
 // ---------------------------------------------------------------------------
 // Reading a board
@@ -114,6 +116,9 @@ const KNOWN_KEYS = new Set([
   'title', 'view', 'mobileHeader', 'titleHidden', 'mediaFit', 'paletteSources',
   'settings', 'arrangement', 'items', 'layouts', 'trash', 'connections',
   'audioOrder', 'tour', 'timeline', 'hadMusic', 'versions',
+  // The boards inside this one, and a child's picture of itself: the tree's
+  // (board-tree.ts), never carried as an unknown key.
+  'boards', 'thumb',
 ]);
 
 /**
@@ -416,8 +421,24 @@ const MAX_FONT_AXES = 32;
 // Writing a board
 // ---------------------------------------------------------------------------
 
-/** The serialisable board, exactly as it lands in board.json. */
-export function serializeBoard() {
+/**
+ * The whole file's board: the top board, with every board inside it under
+ * `boards` by id, from wherever in the tree the board on screen is. What every
+ * save, autosave and sync writes. The packer (storage/mbrd.ts) takes `boards`
+ * out to `boards/<id>/`; board.json itself never carries the key.
+ */
+export function serializeBoard(): ReturnType<typeof serializeLevel> & { boards?: Record<string, BoardDoc> } {
+  const live = serializeLevel();
+  const docs = childDocs(live);
+  if (atTop()) return docs ? { ...live, boards: docs } : live;
+  // SAFETY: topDoc() is non-null exactly while a child is on screen (board-tree.ts),
+  // and is a document serializeLevel() wrote when the top board was left.
+  const above = topDoc() as ReturnType<typeof serializeLevel>;
+  return docs ? { ...above, boards: docs } : above;
+}
+
+/** The board on screen alone, exactly as it lands in its board.json. */
+export function serializeLevel() {
   captureLayout();
   captureLayoutSettings();
   // Ghost cards never reach a file. They are onboarding hints the app puts on a

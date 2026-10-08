@@ -75,7 +75,7 @@ export function initSession(deps: SessionDeps) {
 /** Loose board shape for referencedHashes() — asked of both serializeBoard()
  *  output and raw IndexedDB data (`unknown` until inspected). */
 type BoardLike = {
-  items?: unknown, trash?: unknown, settings?: unknown, timeline?: unknown,
+  items?: unknown, trash?: unknown, settings?: unknown, timeline?: unknown, boards?: unknown,
 };
 
 /** The list at a key, or none. What `data.items || []` said before it had a type. */
@@ -258,18 +258,24 @@ function referencedHashes(data: BoardLike) {
     if (was) out.add(was);
     if (wasCover) out.add(wasCover);
   };
-  for (const it of listOf(data.items)) add(it);
-  for (const t of listOf(data.trash)) add(isRecord(t) ? t.item : null);
-  // Timeline — the one class whose purpose is naming things the board no longer
-  // has (a delete step carries the photo on its before side). Unlike undo, the
-  // timeline survives reloads, so its hashes must be kept.
-  for (const hash of timelineHashes(data.timeline)) out.add(hash);
-  // Fonts — not on any item, so the sweep would delete them without this.
-  const settings = isRecord(data.settings) ? data.settings : null;
-  for (const f of listOf(settings?.fonts)) {
-    const hash = isRecord(f) ? str(f.hash) : undefined;
-    if (hash) out.add(hash);
-  }
+  const level = (doc: BoardLike) => {
+    for (const it of listOf(doc.items)) add(it);
+    for (const t of listOf(doc.trash)) add(isRecord(t) ? t.item : null);
+    // Timeline — the one class whose purpose is naming things the board no longer
+    // has (a delete step carries the photo on its before side). Unlike undo, the
+    // timeline survives reloads, so its hashes must be kept.
+    for (const hash of timelineHashes(doc.timeline)) out.add(hash);
+    // Fonts — not on any item, so the sweep would delete them without this.
+    const settings = isRecord(doc.settings) ? doc.settings : null;
+    for (const f of listOf(settings?.fonts)) {
+      const hash = isRecord(f) ? str(f.hash) : undefined;
+      if (hash) out.add(hash);
+    }
+  };
+  level(data);
+  // Every board inside this one. Their pictures share the one store, and a
+  // sweep that read only the top would delete a child's out from under it.
+  if (isRecord(data.boards)) for (const doc of Object.values(data.boards)) if (isRecord(doc)) level(doc);
   return out;
 }
 
