@@ -4,7 +4,7 @@
 // board state but one: a finished board is left one card, added on the way out,
 // whose button deals the music as a second (dealSong()). See ./mess.ts for the arithmetic and ./art.ts for the drawing.
 
-import { bus, board, timelinePlaying, addItems, byId, select } from '../../state.ts';
+import { bus, board, timelinePlaying, addItems, byId, isRider, select } from '../../state.ts';
 import { importFiles } from '../../import/drop.ts';
 import { addFile } from '../../storage/assets.ts';
 import { toast } from '../../notify.ts';
@@ -480,9 +480,12 @@ let pending: LiveField[] = [];
  */
 let messHidden = false;
 /** Which cards the game is playing with, when it is not playing with all of
- *  them - the rest go out of sight, behind the black. Null when every playable
- *  card is in. See showMess(). */
+ *  them - the rest go out of sight, behind the black. Null when every card on
+ *  the board is in. See showMess(). */
 let cull: Set<string> | null = null;
+/** Whether the board was too big for the game, which hides the lines as well.
+ *  Only drawings and stuck pieces left out keeps them: those were never ends. */
+let cullLines = false;
 let drawing = false;
 let panning = false;
 /** Every pointer on the glass, at where it was last seen. `pointers` is this
@@ -735,11 +738,13 @@ export function startClean(): boolean {
   // stopClean(), which refuses while the mode is not yet officially up.
   on = true;
   document.documentElement.classList.add('is-cleaning');
-  // A board bigger than the game: the cards left out go out of sight, and the
-  // connection lines with them, since a line to a hidden card points at nothing.
+  // What the game leaves out goes out of sight (see playable()). A board bigger
+  // than the game takes the connection lines with it, since a line to a hidden
+  // card points at nothing.
   // Decided here and done behind the black (showMess()) - cards vanishing is the
   // most visible thing the mode does on its way in, and nobody should see it.
-  cull = picked.length < playable().length ? new Set(picked.map(i => i.id)) : null;
+  cull = picked.length < shown().length ? new Set(picked.map(i => i.id)) : null;
+  cullLines = picked.length < playable().length;
   pauseMedia();
   paintCount();
   raf = requestAnimationFrame(tick);
@@ -863,6 +868,7 @@ export function stopClean(): boolean {
   pending = [];
   messHidden = false;
   cull = null;
+  cullLines = false;
   document.documentElement.classList.remove('is-cleaning', 'is-clean-done', 'is-clean-holding', 'is-clean-culled', 'is-clean-asking');
   setCleanPlay(null);
   // The lock as it was found. Only ever true here if startClean() saw it on, and
@@ -893,9 +899,14 @@ function pickCards(): Item[] {
     .slice(0, TUNING.maxCards);
 }
 
-// A drawing is left out: its box is mostly empty board, and grime caked on air
-// around a few strokes reads as a mess laid on nothing.
-const playable = () => board.items.filter(i => i.type !== 'ghost' && i.type !== 'drawing' && i.w > 0 && i.h > 0);
+/** Everything on the board with a body. */
+const shown = () => board.items.filter(i => i.type !== 'ghost' && i.w > 0 && i.h > 0);
+
+// Left out of the game, and out of sight for its length: a drawing, whose box
+// is mostly empty board, so grime caked on it reads as a mess laid on air; and
+// a sticker or note stuck to a card, which would be dealt a mess of its own on
+// top of its host's. A loose one plays as any card does.
+const playable = () => shown().filter(i => i.type !== 'drawing' && !isRider(i));
 
 /** The item as the dealer needs it. `type` rides along so a note can be dealt
  *  coffee and a video a film of dust - see GRIME_FOR in mess.ts. */
@@ -1084,10 +1095,8 @@ function showMess() {
   if (!messHidden) return;
   messHidden = false;
   layer?.classList.remove('is-waiting');
-  if (cull) {
-    setCleanPlay(cull);
-    document.documentElement.classList.add('is-clean-culled');
-  }
+  if (cull) setCleanPlay(cull);
+  if (cullLines) document.documentElement.classList.add('is-clean-culled');
 }
 
 /** A card's debris box is 0..100 stretched over the card, so a piece is sized
