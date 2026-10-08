@@ -1,7 +1,10 @@
 /* =========================================================
    mbrd - the privacy page
 
-   External (CSP hash). Loads tokens.css only. pv- prefix, whimsy 1 always.
+   After fonts.css and tokens.css only. pv- prefix. The page wears the reader's
+   look (privacy.html carries the pre-paint restore), so the tokens do most of
+   the work at every level and in the dark; the two tier blocks at the bottom
+   add what tokens cannot say, and are patch.css's own, read against it.
    ========================================================= */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -32,6 +35,12 @@ body::before {
   background-size: 512px 512px;
   mix-blend-mode: multiply;
   opacity: calc(0.8 * var(--grain));
+}
+/* In the dark, turned over as base.css turns #grain. */
+:root[data-scheme="dark"] body::before {
+  filter: invert(1);
+  mix-blend-mode: screen;
+  opacity: calc(0.6 * var(--grain));
 }
 
 /* Stacking context above the grain. */
@@ -205,6 +214,8 @@ body::before {
 }
 
 .pv-plate p { margin: 0; }
+/* A paragraph break you can see - one line's worth would be a gap in the prose. */
+.pv-plate p + p { margin-top: 0.75em; }
 
 /* Prevents the spine from dangling below the last plate. */
 .pv-sec:last-child .pv-plate { margin-bottom: 0; }
@@ -256,6 +267,110 @@ body::before {
   color: var(--ink-3);
 }
 
+/* =========================================================
+   0: Softish - the scrapbook
+
+   patch.css's, section for section: the plate is the hint cards' notepaper
+   (ghosts.css), square and taped at the corner; the tape hangs off the row because the plate's punched-edge mask
+   would perforate anything inside it.
+   ========================================================= */
+
+:root[data-whimsy="0"] .pv-plate {
+  position: relative;
+  border: 0;
+  box-shadow: var(--shadow-2);
+  background:
+    repeating-linear-gradient(180deg,
+      transparent 0 21px,
+      color-mix(in srgb, #6f86a8 17%, transparent) 21px 22px),
+    linear-gradient(90deg,
+      transparent 0 26px,
+      color-mix(in srgb, #b4544a 42%, transparent) 26px 27px,
+      transparent 27px),
+    var(--paper-card);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding-left: 44px;
+  -webkit-mask-image: radial-gradient(circle 6px at 0 11px, transparent 6px, #000 6.5px);
+  mask-image: radial-gradient(circle 6px at 0 11px, transparent 6px, #000 6.5px);
+  -webkit-mask-size: 100% 22px;
+  mask-size: 100% 22px;
+  -webkit-mask-repeat: repeat-y;
+  mask-repeat: repeat-y;
+}
+
+:root[data-whimsy="0"] .pv-sec { position: relative; }
+:root[data-whimsy="0"] .pv-sec::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: -10px;
+  right: 46px;
+  width: 92px;
+  height: 26px;
+  rotate: -3.5deg;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg,
+      color-mix(in srgb, #a8814a 7%, transparent) 0 2px, transparent 2px 6px),
+    linear-gradient(180deg,
+      color-mix(in srgb, #e8cf9c 78%, transparent),
+      color-mix(in srgb, #dcc08a 72%, transparent));
+  clip-path: polygon(
+    3% 0, 97% 4%, 100% 22%, 96% 41%, 100% 62%, 97% 82%, 99% 100%,
+    2% 96%, 0 78%, 4% 58%, 0 38%, 3% 19%
+  );
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--shade) 18%, transparent);
+}
+/* Past the wider margin here (116px against the changelog's 74). */
+:root[data-whimsy="0"] .pv-sec:nth-child(even)::after {
+  right: auto;
+  left: 160px;
+  rotate: 3deg;
+}
+
+/* The title marked up in the scrapbook's highlighter, as the changelog marks
+   each release's name. */
+:root[data-whimsy="0"] .pv-title {
+  display: inline;
+  background-image: linear-gradient(to bottom,
+    transparent 62%, var(--highlight) 62%, var(--highlight) 92%, transparent 92%);
+  box-decoration-break: clone;
+}
+
+:root[data-whimsy="0"] .pv-mark {
+  width: 9px;
+  height: 9px;
+  right: -5px;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--shade) 34%, transparent);
+}
+
+/* =========================================================
+   2: Harsh - the spec sheet
+
+   The plates stop being objects: a rule above and nothing else, the margin
+   labels set as data, and the spine a scale with a tick across it.
+   ========================================================= */
+
+:root[data-whimsy="2"] .pv-plate {
+  padding: 22px 0 0;
+  border: 0;
+  border-top: var(--hairline) solid var(--rule-2);
+  background: none;
+  box-shadow: none;
+}
+:root[data-whimsy="2"] .pv-count {
+  font-family: var(--font-mono);
+  font-style: normal;
+  letter-spacing: 0;
+}
+:root[data-whimsy="2"] .pv-margin { border-right-color: var(--ink); }
+:root[data-whimsy="2"] .pv-mark {
+  top: 0.85em;
+  right: -5px;
+  width: 11px;
+  height: 2px;
+}
+
 /* ---------------------------------------------------------
    Narrow — margin and label hidden on phones
    --------------------------------------------------------- */
@@ -264,6 +379,9 @@ body::before {
   .pv-sec { grid-template-columns: minmax(0, 1fr); }
   .pv-margin { display: none; }
   .pv-plate { padding: 20px; }
+  :root[data-whimsy="0"] .pv-plate { padding-left: 44px; }
+  :root[data-whimsy="0"] .pv-sec:nth-child(even)::after { left: 40px; }
+  :root[data-whimsy="2"] .pv-plate { padding: 22px 0 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -274,7 +392,32 @@ body::before {
   }
 }
 
-/* Fallback for WebKit below 16.2, which lacks color-mix(). */
+/* Fallback for WebKit below 16.2, which lacks color-mix() - patch.css's block
+   for the same plate and tape, and the two should be changed together. */
 @supports not (color: color-mix(in srgb, red, blue)) {
   .pv-plate a, .pv-foot a { text-decoration-color: rgb(var(--accent-c) / 45%); }
+
+  :root[data-whimsy="0"] .pv-plate {
+    background:
+      repeating-linear-gradient(180deg,
+        transparent 0 21px,
+        rgb(111 134 168 / 17%) 21px 22px),
+      linear-gradient(90deg,
+        transparent 0 26px,
+        rgb(180 84 74 / 42%) 26px 27px,
+        transparent 27px),
+      var(--paper-card);
+  }
+  :root[data-whimsy="0"] .pv-sec::after {
+    background:
+      repeating-linear-gradient(90deg,
+        rgb(168 129 74 / 7%) 0 2px, transparent 2px 6px),
+      linear-gradient(180deg,
+        rgb(232 207 156 / 78%),
+        rgb(220 192 138 / 72%));
+    box-shadow: 0 1px 2px rgb(var(--ink-c) / 18%);
+  }
+  :root[data-whimsy="0"] .pv-mark {
+    box-shadow: 0 1px 3px rgb(var(--ink-c) / 34%);
+  }
 }

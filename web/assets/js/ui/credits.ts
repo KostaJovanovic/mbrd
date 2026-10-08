@@ -37,13 +37,6 @@ export function openCredits(): void {
       // In motion, a press turns it round; at rest, it flips.
       const now = moving.get(fold);
       const opening = now ? !now.opening : !fold.open;
-      // The blocks are one at a time - done here rather than with <details name>,
-      // which would shut the other in a single frame.
-      if (opening && fold.classList.contains('credits-dep')) {
-        for (const other of dlg.querySelectorAll<HTMLDetailsElement>('.credits-dep')) {
-          if (other !== fold && (other.open || moving.get(other)?.opening)) swing(other, false);
-        }
-      }
       swing(fold, opening);
     });
     wired = true;

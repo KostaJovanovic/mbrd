@@ -615,7 +615,9 @@ textarea.lp-url {
   list-style: none;
   cursor: pointer;
   padding: 7px 9px;
-  border-radius: inherit;
+  /* The block's radius less its border, or the hover's corners stand out past
+     the curve of the edge round them. */
+  border-radius: calc(var(--leaf) - var(--hairline));
   font-family: var(--font-display);
   font-size: var(--t-small);
   line-height: 1.25;
@@ -629,7 +631,11 @@ textarea.lp-url {
 @media (hover: hover) {
   .credits-dep > summary:hover { background: var(--paper-2); color: var(--accent-deep); }
 }
-.credits-dep[open] > summary { color: var(--accent-deep); }
+.credits-dep[open] > summary {
+  color: var(--accent-deep);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
 .credits-dep > summary:focus { outline: none; }
 .credits-dep > summary:focus-visible {
   outline: var(--sel-line) solid var(--select);
@@ -659,12 +665,13 @@ textarea.lp-url {
   border-radius: var(--radius-xs);
 }
 /* A chip, not a word — reads as metadata rather than part of the sentence.
-   Allowed to wrap: "Pixabay Content License" is wider than a column. */
+   Allowed to wrap: "Pixabay Content License" is wider than a column. So a
+   rounded box rather than a pill, whose ends would crowd a second line. */
 .credits-lic {
   display: inline-block;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: var(--t-tiny);
   letter-spacing: calc(0.04em * var(--ls-scale));

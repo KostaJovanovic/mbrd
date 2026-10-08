@@ -198,13 +198,144 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>49 releases</span>
-      <span>687 commits</span>
+      <span>52 releases</span>
+      <span>688 commits</span>
       <span>since 24 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
+<li class="pn-rel" id="r-boards-within">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">40</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.648 - 0.687</p>
+      <h2 class="pn-name">Boards Within</h2>
+      <p class="pn-date">7 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>A board can hold boards of its own,</strong> and the files of other tools come in: Obsidian's canvases, PureRef's scenes, and an export that looks like the board.</li>
+    </ul>
+    <h3 class="pn-part">Boards inside boards</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong><code>New board inside</code> makes a board within this one.</strong> It sits on the board as a card showing it small, and opens on a double-click or <code>Enter</code>. <code>Up a level</code> (<code>Alt+Shift+Up</code>) comes back out, and each level keeps its own view and its own undo.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A trail of the boards above the one on screen,</strong> each a button. On a phone the one above sits behind an arrow, and <code>Back</code> in the browser, on a phone and in the apps comes up a level.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Cards move between boards.</strong> Hold a dragged card over a board card to send it inside, or use <code>Put in a new board</code>, <code>Move into</code> and <code>Move up a level</code> from its menu, each one undo. A duplicated, pasted or merged board card copies the boards inside it.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A board inside another wears the look of the one holding it</strong> until a choice in its own Look panel makes the look its own. A box puts it back.</li>
+      <li class="is-plain"><strong>The board file can now carry boards inside it.</strong> A copy of the app from before today refuses such a file rather than opening it with pieces missing.</li>
+    </ul>
+    <h3 class="pn-part">Bringing work in and out</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>JSON Canvas, the format Obsidian's canvases use, both ways.</strong> A dropped <code>.canvas</code> comes in as notes, pictures, links, fences and connections, finding its files among those dropped with it, and <code>Save as JSON Canvas</code> writes the board out with its files in a zip.</li>
+      <li><span class="pn-tag is-new">New</span><strong>PureRef files come in.</strong> A dropped <code>.pur</code> lands as its pictures where PureRef had them, sized, turned, cropped and mirrored, with its text as notes.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Save SVG</code>:</strong> the board as a file whose cards stay text, and sharp at any size, when a browser opens it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Save image</code> and <code>Save PDF</code> look like the board</strong> at every whimsy level, in every browser and both apps.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Starter boards beside the example board:</strong> a moodboard, a character sheet, a project brief and a reference grid, each a board of titled fences to fill.</li>
+    </ul>
+    <h3 class="pn-part">Finding and getting around</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Find takes colour words</strong> - red, blue, grey, a hex code, and dark, light, pastel, muted, warm and cool, alone or together - and finds the swatches and pictures with that colour in them.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Alt</code> and an arrow move to the next card that way</strong> and say which it is. The plain arrows still nudge.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Earlier versions</code> on the shelf opens an older copy of a board</strong> as a board of its own. The apps keep ten a board, and the web keeps five while it is edited, one every fifteen minutes.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Rearrange</code> with the title card kept on top</strong> hangs the cards in a centred block under it, rather than bending round it with a gap above.</li>
+    </ul>
+    <h3 class="pn-part">Everything else</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Colourblind mode, under System,</strong> redraws the interface's colours for deuteranopia, protanopia or tritanopia, names the colour of every swatch, and can show the board as each kind of vision sees it.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Serbian and Macedonian Cyrillic set in the app's own type,</strong> with their own italic letters in notes, names, the board title and the masthead.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A mouse wheel on Linux zooms however slowly it is turned.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Changing the whimsy into or out of Harsh is one undo,</strong> and toggling it back and forth no longer piles up steps on the Timeline.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A YouTube or Spotify card asks for its title and cover only once you press play,</strong> never just because it was drawn.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Check for updates automatically</code> in the apps,</strong> on by default, with Help's check working either way.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>The Android app is smaller,</strong> and its backup leaves out a downloaded update.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Credits says why the app exists,</strong> and lists what it is made with as a block each that opens on its source, licence and maker.</li>
+      <li class="is-plain"><strong>Drawing is held back for now.</strong> A pen, a highlighter and an eraser were built today, behind <code>Enable drawing</code> in the Debug fold until they are ready.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-front-door">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">2</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.646 - 0.647</p>
+      <h2 class="pn-name">Front Door</h2>
+      <p class="pn-date">6 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Nothing in the app changed.</strong> The project's page on GitHub now speaks to people using <span class="wm">mbrd</span>, with where to download the apps at the top.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-open-book">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">46</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.600 - 0.645</p>
+      <h2 class="pn-name">Open Book</h2>
+      <p class="pn-date">5 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>A long evening of menus that offer the next step,</strong> a LaTeX editor, a search over every command, and a board that explains the app.</li>
+    </ul>
+    <h3 class="pn-part">The board</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong><code>S</code> opens a search over every command</strong> at the pointer, the selection's own first. <code>Move to a point</code> puts the view on an x and y.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Nudge, Fit to contents and Fence from the menus:</strong> nudge just the selected cards or one fence, fit a fence to what it holds, fence a single card, and <code>Gather and fence</code> cards too far apart.</li>
+      <li><span class="pn-tag is-new">New</span><strong>More ways to select:</strong> by the same tags, by any one tag, more like these, and <code>Invert selection</code>.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The Join tool has a flyout</strong> to join the selected, join everything, or remove connections.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Alt</code>+drag leaves the original and carries a copy,</strong> and on a stuck note it takes the note off its card.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Align, Distribute and Same size bring the notes stuck to the cards,</strong> measure from an anchored card, and grow the fence a card would leave.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A fence that moves carries the anchored cards inside it.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Dropped and pasted files and links land clear of the cards already there,</strong> and so do cards put back from the bin.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A tap on a binned card puts it back,</strong> and <code>Restore all</code> empties the bin onto the board.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A merged board's cards come in selected,</strong> and dropping several board files offers to merge each.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Your boards have a right-click menu</strong> with <code>Duplicate board</code>, and a web board offers to save a copy before it is deleted.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Delete says what it deleted, with an <code>Undo</code>.</strong></li>
+      <li><span class="pn-tag is-new">New</span><strong>A timeline step's menu can select what it changed,</strong> and zoom to it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A card's caption keeps its extension in view</strong> however long the name.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A scroll-wheel notch zooms at once again</strong> rather than gliding.</li>
+    </ul>
+    <h3 class="pn-part">Motion</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Selection rings lift with their cards,</strong> the viewer closes back into its card, and the note composer flies from and to its note.</li>
+      <li><span class="pn-tag is-new">New</span><strong>With reduced motion on, things fade</strong> rather than slide.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>On Softish a dragged card is put straight down</strong> rather than sinking past its place and bouncing back.</li>
+    </ul>
+    <h3 class="pn-part">Viewer and darkroom</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>The viewer has a <code>⋯</code> menu,</strong> or a press and hold, with <code>Edit picture</code> and a delete that shows the next.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Open these</code> looks through just the selection.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A zoomed picture in the viewer pans in Firefox again.</strong></li>
+      <li><span class="pn-tag is-new">New</span><strong>Darkroom crop shapes</strong> Original, 1:1, 4:5 and 16:9 hold while you drag, and <code>Shift</code> keeps the frame's shape. Closing with edits not applied asks first.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>One darkroom <code>Apply</code> is one undo step,</strong> however much it changed.</li>
+    </ul>
+    <h3 class="pn-part">Text and documents</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>A LaTeX editor:</strong> a <code>.tex</code> opens beside a live preview, with an Insert menu of snippets and <code>New LaTeX document</code> under More tools. Maths is typeset there and in Markdown.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Markdown reads Obsidian's:</strong> wikilinks, embeds, highlights, callouts, tags, footnotes, properties and more, and the editor keeps them all.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The text editor zooms its page,</strong> from the status bar or with <code>Ctrl</code>+wheel, and remembers it.</li>
+    </ul>
+    <h3 class="pn-part">Keeping your work</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>An example board explains the app with a tour of its own.</strong> Help &gt; Take the Tour plays it.</li>
+      <li><span class="pn-tag is-new">New</span><strong>On the web a new version loads itself at a quiet moment,</strong> the board stored first.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The apps keep rolling backups of every board,</strong> the newest ten, and a board whose page crashes reloads itself and says so.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A second tab on the same board says its changes are not kept</strong> until the first closes, then takes over. A failed save is tried again.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Report a problem</code></strong> copies the version, browser and last errors, sends nothing, and opens the issues page to paste them into.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The board is one Tab stop:</strong> <code>Tab</code> and <code>Shift+Tab</code> step through the cards in reading order and say what each is.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The About sheet says which <span class="wm">mbrd</span> this is,</strong> its licence and where its source is, and the privacy page names every place the app connects to.</li>
+    </ul>
+  </article>
+</li>
 <li class="pn-rel" id="r-second-try">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>
@@ -1519,7 +1650,7 @@
   </ol>
 
   <footer class="pn-foot">
-    <span><span class="wm">mbrd</span> 0.687 by valjdakosta</span>
+    <span><span class="wm">mbrd</span> 0.688 by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>

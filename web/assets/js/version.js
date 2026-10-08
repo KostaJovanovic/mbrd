@@ -1,6 +1,6 @@
 ﻿// Stamped by save.bat on every commit - do not edit these two lines by hand.
-export const COMMIT_COUNT = 687;
-export const VERSION = '0.687';
+export const COMMIT_COUNT = 688;
+export const VERSION = '0.688';
 
 // Commits crowned as major releases, ascending. `save.bat crown "message"`
 // appends the commit it makes; save.bat reads the list from here, so there is

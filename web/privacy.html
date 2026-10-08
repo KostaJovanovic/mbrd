@@ -15,10 +15,13 @@
   is a new sentence here, in the same commit. The tally at the top says "no
   server of ours", which is the claim that is true and does the work.
 
-  A plain document, not the app. It loads tokens.css so it belongs to the site,
-  and assets/css/privacy.css for the rest - no bundle, no service worker
-  registration, no inline script and no inline style, which is what keeps it
-  outside the CSP hash list entirely. See the head of privacy.css.
+  A plain document, not the app. It loads fonts.css and tokens.css so it
+  belongs to the site, and assets/css/privacy.css for the rest - no bundle, no
+  service worker registration and no inline style. Its one inline script is
+  index.html's pre-paint look restore, copied byte for byte, so the page wears
+  the reader's whimsy level, palette and dark sheet the way /patch does and
+  needs no hash of its own: the same bytes are the same hash. Change one copy
+  and not the other and tests/csp.test.js fails on the one left behind.
 
   It wears the changelog's clothes: the sticky pill back to the board, the
   display title over a lede and a tracked line of facts, and the prose on plates
@@ -63,8 +66,63 @@
 <meta name="twitter:description" content="mbrd keeps your boards on your own computer. No account, no server of ours, no tracking.">
 <meta name="twitter:image" content="https://mbrd.valjdakosta.com/assets/img/og.png">
 <meta name="twitter:image:alt" content="The mbrd wordmark on a card in the middle of a board of photos, a video, a note, a sound clip and colour swatches, joined by threads.">
+<meta name="color-scheme" content="light">
+<link rel="stylesheet" href="assets/css/fonts.css">
 <link rel="stylesheet" href="assets/css/tokens.css">
 <link rel="stylesheet" href="assets/css/privacy.css">
+<script>
+  /* Before first paint: apply the saved look - whimsy level, palette, and any
+     per-token overrides - so an installed PWA never flashes the default
+     pigment on launch. An unset whimsy is the middle, which is what the bare
+     stylesheet already renders, so the common case sets nothing at all. */
+  try {
+    var s = JSON.parse(localStorage.getItem('mbrd.appearance') || '{}');
+    /* != null, not truthiness: 0 is Softish, a real level with its own rules.
+       Both are held to their shape for the reason the quality dial below is
+       and the vars loop further down is: this runs before ui/look.js can
+       filter anything, all three reach the page as attribute selectors, and
+       until now only one of the three said so. Same rules as readLook() -
+       whimsy is a stop on a three-point axis, a palette id is a short slug. */
+    if (s.whimsy != null && /^[0-2]$/.test(String(s.whimsy))) {
+      document.documentElement.dataset.whimsy = s.whimsy;
+    }
+    if (typeof s.palette === 'string' && /^[a-z0-9-]{1,24}$/i.test(s.palette)) {
+      document.documentElement.dataset.palette = s.palette;
+    }
+    /* Quality dial: restore before first paint so no blurred frame shows.
+       Validated against known stops — reaches the page as an attribute selector. */
+    var q = JSON.parse(localStorage.getItem('mbrd.quality') || '{}');
+    if (q && /^(light|balanced|full)$/.test(q.level)) document.documentElement.dataset.quality = q.level;
+    /* Per-token look overrides, inline-guarded before ui/look.js loads. Key must
+       be a custom property, value must match the token grammar, functions must be
+       arithmetic/colour only. Blocks url() injection from a poisoned store.
+       Kept in sync with look.js by tests/appearance.test.js. AUD-15. */
+    var SAFE_VALUE = /^[-a-z0-9#%.,()/+*_'" ]{1,160}$/i;
+    var SAFE_FN = /^(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|calc|min|max|clamp|var|cubic-bezier|steps|linear)$/;
+    var put = function (vars) {
+      for (var k in vars) {
+        if (!/^--[a-z0-9-]+$/i.test(k)) continue;
+        var v = vars[k];
+        if (typeof v !== 'string' || !SAFE_VALUE.test(v)) continue;
+        var fns = v.match(/[a-z][a-z0-9-]*\s*\(/gi) || [], ok = true;
+        for (var i = 0; i < fns.length; i++) {
+          if (!SAFE_FN.test(fns[i].replace(/\s*\($/, '').toLowerCase())) { ok = false; break; }
+        }
+        if (ok) document.documentElement.style.setProperty(k, v);
+      }
+    };
+    put(s.vars || {});
+    /* Dark or light: the board's look says, `dark` present only as true, and
+       only where color-mix() is - the two questions ui/scheme.ts asks once it
+       is up. In the dark the pigments above are painted over by their dark
+       twins, which ui/appearance.ts stores beside the look because working
+       them out takes ui/pigments.ts. */
+    if (s.dark === true && CSS.supports('color', 'color-mix(in srgb, red, blue)')) {
+      document.documentElement.dataset.scheme = 'dark';
+      put(JSON.parse(localStorage.getItem('mbrd.appearance.dark') || '{}') || {});
+    }
+  } catch (e) {}
+</script>
 </head>
 <body>
 

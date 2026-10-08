@@ -162,6 +162,162 @@ back to the board.
 
 ## Releases
 
+## Boards Within
+version: 0.648 - 0.687
+date: 7 October 2026
+
+- **A board can hold boards of its own,** and the files of other tools come in:
+  Obsidian's canvases, PureRef's scenes, and an export that looks like the
+  board.
+
+### Boards inside boards
+- [new] **`New board inside` makes a board within this one.** It sits on the
+  board as a card showing it small, and opens on a double-click or `Enter`.
+  `Up a level` (`Alt+Shift+Up`) comes back out, and each level keeps its own
+  view and its own undo.
+- [new] **A trail of the boards above the one on screen,** each a button. On a
+  phone the one above sits behind an arrow, and `Back` in the browser, on a
+  phone and in the apps comes up a level.
+- [new] **Cards move between boards.** Hold a dragged card over a board card to
+  send it inside, or use `Put in a new board`, `Move into` and `Move up a
+  level` from its menu, each one undo. A duplicated, pasted or merged board card
+  copies the boards inside it.
+- [new] **A board inside another wears the look of the one holding it** until a
+  choice in its own Look panel makes the look its own. A box puts it back.
+- **The board file can now carry boards inside it.** A copy of the app from
+  before today refuses such a file rather than opening it with pieces missing.
+
+### Bringing work in and out
+- [new] **JSON Canvas, the format Obsidian's canvases use, both ways.** A
+  dropped `.canvas` comes in as notes, pictures, links, fences and connections,
+  finding its files among those dropped with it, and `Save as JSON Canvas`
+  writes the board out with its files in a zip.
+- [new] **PureRef files come in.** A dropped `.pur` lands as its pictures where
+  PureRef had them, sized, turned, cropped and mirrored, with its text as notes.
+- [new] **`Save SVG`:** the board as a file whose cards stay text, and sharp at
+  any size, when a browser opens it.
+- [fix] **`Save image` and `Save PDF` look like the board** at every whimsy
+  level, in every browser and both apps.
+- [new] **Starter boards beside the example board:** a moodboard, a character
+  sheet, a project brief and a reference grid, each a board of titled fences to
+  fill.
+
+### Finding and getting around
+- [new] **Find takes colour words** - red, blue, grey, a hex code, and dark,
+  light, pastel, muted, warm and cool, alone or together - and finds the
+  swatches and pictures with that colour in them.
+- [new] **`Alt` and an arrow move to the next card that way** and say which it
+  is. The plain arrows still nudge.
+- [new] **`Earlier versions` on the shelf opens an older copy of a board** as a
+  board of its own. The apps keep ten a board, and the web keeps five while it
+  is edited, one every fifteen minutes.
+- [fix] **`Rearrange` with the title card kept on top** hangs the cards in a
+  centred block under it, rather than bending round it with a gap above.
+
+### Everything else
+- [new] **Colourblind mode, under System,** redraws the interface's colours for
+  deuteranopia, protanopia or tritanopia, names the colour of every swatch, and
+  can show the board as each kind of vision sees it.
+- [new] **Serbian and Macedonian Cyrillic set in the app's own type,** with
+  their own italic letters in notes, names, the board title and the masthead.
+- [fix] **A mouse wheel on Linux zooms however slowly it is turned.**
+- [fix] **Changing the whimsy into or out of Harsh is one undo,** and toggling
+  it back and forth no longer piles up steps on the Timeline.
+- [new] **A YouTube or Spotify card asks for its title and cover only once you
+  press play,** never just because it was drawn.
+- [new] **`Check for updates automatically` in the apps,** on by default, with
+  Help's check working either way.
+- [faster] **The Android app is smaller,** and its backup leaves out a
+  downloaded update.
+- [new] **Credits says why the app exists,** and lists what it is made with as a
+  block each that opens on its source, licence and maker.
+- **Drawing is held back for now.** A pen, a highlighter and an eraser were
+  built today, behind `Enable drawing` in the Debug fold until they are ready.
+
+## Front Door
+version: 0.646 - 0.647
+date: 6 October 2026
+
+- **Nothing in the app changed.** The project's page on GitHub now speaks to
+  people using mbrd, with where to download the apps at the top.
+
+## Open Book
+version: 0.600 - 0.645
+date: 5 October 2026
+
+- **A long evening of menus that offer the next step,** a LaTeX editor, a
+  search over every command, and a board that explains the app.
+
+### The board
+- [new] **`S` opens a search over every command** at the pointer, the
+  selection's own first. `Move to a point` puts the view on an x and y.
+- [new] **Nudge, Fit to contents and Fence from the menus:** nudge just the
+  selected cards or one fence, fit a fence to what it holds, fence a single
+  card, and `Gather and fence` cards too far apart.
+- [new] **More ways to select:** by the same tags, by any one tag, more like
+  these, and `Invert selection`.
+- [new] **The Join tool has a flyout** to join the selected, join everything,
+  or remove connections.
+- [new] **`Alt`+drag leaves the original and carries a copy,** and on a stuck
+  note it takes the note off its card.
+- [new] **Align, Distribute and Same size bring the notes stuck to the cards,**
+  measure from an anchored card, and grow the fence a card would leave.
+- [new] **A fence that moves carries the anchored cards inside it.**
+- [fix] **Dropped and pasted files and links land clear of the cards already
+  there,** and so do cards put back from the bin.
+- [new] **A tap on a binned card puts it back,** and `Restore all` empties the
+  bin onto the board.
+- [new] **A merged board's cards come in selected,** and dropping several board
+  files offers to merge each.
+- [new] **Your boards have a right-click menu** with `Duplicate board`, and a
+  web board offers to save a copy before it is deleted.
+- [new] **Delete says what it deleted, with an `Undo`.**
+- [new] **A timeline step's menu can select what it changed,** and zoom to it.
+- [fix] **A card's caption keeps its extension in view** however long the name.
+- [fix] **A scroll-wheel notch zooms at once again** rather than gliding.
+
+### Motion
+- [new] **Selection rings lift with their cards,** the viewer closes back into
+  its card, and the note composer flies from and to its note.
+- [new] **With reduced motion on, things fade** rather than slide.
+- [fix] **On Softish a dragged card is put straight down** rather than sinking
+  past its place and bouncing back.
+
+### Viewer and darkroom
+- [new] **The viewer has a `⋯` menu,** or a press and hold, with `Edit picture`
+  and a delete that shows the next.
+- [new] **`Open these` looks through just the selection.**
+- [fix] **A zoomed picture in the viewer pans in Firefox again.**
+- [new] **Darkroom crop shapes** Original, 1:1, 4:5 and 16:9 hold while you
+  drag, and `Shift` keeps the frame's shape. Closing with edits not applied asks
+  first.
+- [fix] **One darkroom `Apply` is one undo step,** however much it changed.
+
+### Text and documents
+- [new] **A LaTeX editor:** a `.tex` opens beside a live preview, with an
+  Insert menu of snippets and `New LaTeX document` under More tools. Maths is
+  typeset there and in Markdown.
+- [new] **Markdown reads Obsidian's:** wikilinks, embeds, highlights, callouts,
+  tags, footnotes, properties and more, and the editor keeps them all.
+- [new] **The text editor zooms its page,** from the status bar or with
+  `Ctrl`+wheel, and remembers it.
+
+### Keeping your work
+- [new] **An example board explains the app with a tour of its own.** Help >
+  Take the Tour plays it.
+- [new] **On the web a new version loads itself at a quiet moment,** the board
+  stored first.
+- [new] **The apps keep rolling backups of every board,** the newest ten, and
+  a board whose page crashes reloads itself and says so.
+- [new] **A second tab on the same board says its changes are not kept** until
+  the first closes, then takes over. A failed save is tried again.
+- [new] **`Report a problem`** copies the version, browser and last errors,
+  sends nothing, and opens the issues page to paste them into.
+- [new] **The board is one Tab stop:** `Tab` and `Shift+Tab` step through the
+  cards in reading order and say what each is.
+- [new] **The About sheet says which mbrd this is,** its licence and where its
+  source is, and the privacy page names every place the app connects to.
+
 ## Second Try
 version: 0.597 - 0.599
 date: 5 October 2026

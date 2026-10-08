@@ -1,6 +1,6 @@
 /* Changelog page. Loaded only by web/patch.html after the app's full cascade.
    Whimsy tokens do most of the work — the two tier blocks at the bottom add
-   only what tokens cannot say (tape, marker swipe, tilt, tag column).
+   only what tokens cannot say (tape, marker swipe, tag column).
    No ids — tests/element-ids.test.js checks every id in this directory.
    IS in SHELL in sw.js. */
 
@@ -8,7 +8,7 @@
 
 html, body {
   height: auto;
-  /* clip-x prevents horizontal scroll from Softish plate tilt */
+  /* clip-x prevents horizontal scroll from Softish's tape, which overhangs */
   overflow-x: clip;
   overflow-y: visible;
 }
@@ -184,8 +184,7 @@ body.is-patch::before {
   background: var(--paper-card);
   box-shadow: var(--shadow-1);
   transition: box-shadow var(--dur-base) var(--ease),
-              translate var(--dur-base) var(--ease-back),
-              rotate var(--dur-base) var(--ease-back);
+              translate var(--dur-base) var(--ease-back);
 }
 
 /* The lift every control on the board answers a pointer with, through the same
@@ -398,12 +397,11 @@ body.is-patch::before {
 /* =========================================================
    0: Softish - the scrapbook
 
-   What a token cannot say. The plates are pinned up rather than laid out: a
-   fraction of --tilt-max off square, alternating, with a strip of tape at the
-   corner and the codename marked up in the palette's own highlighter. The
-   angle is small on purpose - this is a changelog somebody has to read, and a
-   page of prose set at three degrees is a joke that stops being funny on the
-   second release.
+   What a token cannot say. The plates are taped up rather than laid out: a
+   strip of tape at the corner and the codename marked up in the palette's own
+   highlighter. Square, not tilted - this is a changelog somebody has to read,
+   and prose set at an angle is a joke that stops being funny on the second
+   release.
    ========================================================= */
 
 /* The sheet itself, and this is the app's own recipe rather than an idea of
@@ -431,15 +429,8 @@ body.is-patch::before {
   border-radius: 0 var(--radius) var(--radius) 0;
   /* Clear of the red margin, so the version number does not sit on the rule. */
   padding-left: 44px;
-  rotate: calc(var(--tilt-max) * 0.18);
-}
-:root[data-whimsy="0"] .pn-rel:nth-child(even) .pn-plate {
-  rotate: calc(var(--tilt-max) * -0.18);
-}
-/* Straight under the pointer, which is what every card on the board does when
-   you pick it up. */
-@media (hover: hover) {
-  :root[data-whimsy="0"] .pn-plate:hover { rotate: 0deg; }
+  /* Square, not pinned off true: a column of prose set at an angle is harder
+     to read, and the tape already says scrapbook. */
 }
 
 /* The punch holes. A mask applies to an element *and its descendants* - which
@@ -482,8 +473,8 @@ body.is-patch::before {
   );
   box-shadow: 0 1px 2px color-mix(in srgb, var(--shade) 18%, transparent);
 }
-/* Pressed down at the other end on alternate rows, since the plate under it
-   leans the other way. */
+/* Pressed down at the other end on alternate rows, so the tape does not
+   stack in one place down the page. */
 :root[data-whimsy="0"] .pn-rel:nth-child(even)::after {
   right: auto;
   left: 118px;
@@ -585,7 +576,6 @@ body.is-patch::before {
   .pn-rel { grid-template-columns: minmax(0, 1fr); }
   .pn-margin { display: none; }
   .pn-plate { padding: 20px; }
-  :root[data-whimsy="0"] .pn-plate { rotate: 0deg; }
   :root[data-whimsy="0"] .pn-plate::before { display: none; }
   /* The hanging column needs room the phone does not have. */
   :root[data-whimsy="2"] .pn-notes li,
@@ -600,7 +590,6 @@ body.is-patch::before {
   .pn-plate { transition: none; }
   @media (hover: hover) {
     .pn-plate:hover { translate: none; }
-    :root[data-whimsy="0"] .pn-plate:hover { rotate: calc(var(--tilt-max) * 0.18); }
   }
 }
 
