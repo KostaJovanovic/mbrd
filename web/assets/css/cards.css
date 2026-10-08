@@ -591,6 +591,20 @@
   box-shadow: none;
 }
 .item[data-type="drawing"] .item-bar { display: none; }
+/* No lift and no grow under the pointer: a drawing is ink on the board, and
+   ink that jumps when pointed at reads as a card it is not, its lines moving
+   off whatever they were drawn over. It says it is there with a faint wash
+   and a dashed edge, which change nothing about where the strokes are. The
+   lift of a drag stays - that one is the drawing picked up. */
+.item[data-type="drawing"].is-hover:not(.is-dragging) {
+  --lift: 0px;
+  --grow: 1;
+}
+.item[data-type="drawing"]:is(:hover, .is-hover) {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  outline: var(--board-hairline) dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 0;
+}
 .item[data-type="drawing"] .item-body { overflow: visible; }
 
 /* Inks are names, coloured here from the board's own tokens, so a drawing

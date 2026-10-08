@@ -96,6 +96,8 @@ export interface MenuCommands {
   canLeaveBoard: () => boolean;
   leaveBoard: () => void;
   boardCardsBesides: (id: string) => { id: string, name: string }[];
+  canCombineDrawings: () => boolean;
+  combineDrawings: () => void;
   putInNewBoard: (id: string) => void;
   moveIntoBoard: (id: string, cardId: string) => void;
   moveUpLevel: (id: string) => void;
@@ -926,6 +928,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: many ? `Fence these ${count}` : 'Fence it', icon: 'i-fence', accel: 'Ctrl G',
       hidden: mobile || (!many && cmds!.isFenceItem(id)),
       action: () => cmds!.fenceSelection() },
+    // Two or more drawings picked: one card of them, every stroke where it was.
+    { label: 'Combine drawings', icon: 'i-draw', hidden: mobile || !many || !cmds!.canCombineDrawings(),
+      action: () => cmds!.combineDrawings() },
     // Group only — the spanning tree over these, as the Join flyout's first row.
     { label: `Join these ${count}`, icon: 'i-connect', hidden: mobile || !many,
       action: () => cmds!.connectSelection() },

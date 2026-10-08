@@ -229,6 +229,43 @@ export function newDrawing(world: readonly Pt[], width: number, tool: StrokeTool
 }
 
 /**
+ * Several drawings as one: every stroke taken out to the world through its
+ * own card's frame - turn and scale included - and laid into one space round
+ * all of them, unturned. Pens over highlighters stay so, as each pass draws
+ * in stored order. Past MAX_STROKES the rest are left out, which the caller
+ * refuses before it comes to that.
+ */
+export function joinDrawings(parts: readonly { frame: Frame, drawing: Drawing }[]) {
+  const world: { s: Stroke, pts: Pt[], width: number }[] = [];
+  for (const { frame, drawing } of parts) {
+    const k = scaleOf(frame);
+    for (const s of drawing.strokes) {
+      const pts = decodePts(s.pts).map(q => ({ ...toWorldPt(frame, q), p: q.p }));
+      if (pts.length) world.push({ s, pts, width: s.width * k });
+    }
+  }
+  if (!world.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const { pts, width } of world) {
+    const r = padFor(width);
+    for (const q of pts) {
+      x0 = Math.min(x0, q.x - r); x1 = Math.max(x1, q.x + r);
+      y0 = Math.min(y0, q.y - r); y1 = Math.max(y1, q.y + r);
+    }
+  }
+  const left = tenth(x0), top = Math.ceil(y1 * 10) / 10;
+  const sw = Math.max(MIN_SIZE, x1 - left), sh = Math.max(MIN_SIZE, top - y0);
+  const strokes: Stroke[] = world.slice(0, MAX_STROKES).map(({ s, pts, width }) => ({
+    tool: s.tool, ink: s.ink, width: round2(width),
+    pts: encodePts(settle(pts.map(q => ({ x: q.x - left, y: top - q.y, p: q.p })))),
+  }));
+  return {
+    box: { x: left + sw / 2, y: top - sh / 2, w: sw, h: sh },
+    drawing: { strokes, space: [round2(sw), round2(sh)] } satisfies Drawing,
+  };
+}
+
+/**
  * One stroke drawn in world units, added to a drawing that already exists.
  * The space grows to take it - every stroke already there shifts by the same
  * amount - and the card's box grows round the same sketch, so nothing on the
@@ -326,13 +363,13 @@ export function outline(s: Stroke, tier: Tier): Outline {
 export function outlinePts(pts: readonly Pt[], width: number, tool: StrokeTool, tier: Tier): Outline {
   if (!pts.length) return { kind: 'fill', d: '' };
   if (tool === 'highlighter') {
-    const line = tier === 0 ? wobble(pts, width * 0.06, seedOf(pts)) : pts;
+    const line = tier === 0 ? wobble(steady(pts, width), width * 0.06, seedOf(pts)) : steady(pts, width);
     return {
       kind: 'line', d: polyline(line), width,
       cap: tier === 2 ? 'butt' : 'round', join: tier === 2 ? 'miter' : 'round',
     };
   }
-  if (tier === 2) return { kind: 'line', d: polyline(pts), width, cap: 'square', join: 'miter' };
+  if (tier === 2) return { kind: 'line', d: polyline(steady(pts, width)), width, cap: 'square', join: 'miter' };
   // Softish works along the line, so it wants points along it: a straight run
   // is stored as its two ends, and tapered as two ends it would be a hairline.
   const line = tier === 0 ? wobble(densify(pts, Math.max(2, width)), width * 0.12, seedOf(pts)) : pts;
@@ -409,6 +446,28 @@ function densify(pts: readonly Pt[], step: number): Pt[] {
     out.push(b);
   }
   return out;
+}
+
+/**
+ * The pointer's staircase taken out of a line drawn as straight segments.
+ * A mouse reports whole pixels, so a slow diagonal arrives as a run of one-
+ * pixel steps, which the simplifier keeps (each is further than its tolerance
+ * from the chord) and a stroked polyline then draws as a stair - plainly at
+ * Harsh, and on a highlighter, whose width shows every corner. Done at draw
+ * time, so drawings made before are mended too: resampled along the line,
+ * averaged three times with its neighbours, simplified again. The ends lean
+ * on their one neighbour, or the last step of the stair stays as a hook.
+ */
+function steady(pts: readonly Pt[], width: number): Pt[] {
+  if (pts.length < 3) return pts.slice();
+  let line = densify(pts, Math.max(0.75, width * 0.35));
+  for (let pass = 0; pass < 3; pass++) {
+    line = line.map((q, i) => {
+      const a = line[Math.max(0, i - 1)], b = line[Math.min(line.length - 1, i + 1)];
+      return { x: (a.x + 2 * q.x + b.x) / 4, y: (a.y + 2 * q.y + b.y) / 4, p: q.p };
+    });
+  }
+  return simplify(line, 0.05);
 }
 
 /** The outline of a line whose half-width at each point is `radii[i]`, with

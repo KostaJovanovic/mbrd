@@ -1,15 +1,16 @@
 // The pen's doing: drawing mode and its tool, ink and size; the stroke being
 // drawn, as one SVG path over the viewport; and where a finished stroke lands -
-// a drawing already there, or a new card. canvas/input.ts owns the gesture and
+// a drawing already there, or a new card - and drawings combined into one card
+// afterwards. canvas/input.ts owns the gesture and
 // calls in, so there is still one pointer pipeline. strokes.ts is the arithmetic.
 
-import { addItems, board, byId, isLocked, removeItems, setDrawings } from '../state.ts';
+import { addItems, board, byId, isLocked, removeItems, replaceItems, setDrawings } from '../state.ts';
 import type { Item } from '../board-model.ts';
 import { readPref, writePref } from '../prefs.ts';
 import { rotatedExtents } from '../geometry.ts';
 import type { Viewport } from './viewport.ts';
 import {
-  isInk, MAX_STROKES, addStroke, frameScale, joinsDrawing, newDrawing, outlinePts, readDrawing,
+  isInk, MAX_STROKES, addStroke, frameScale, joinDrawings, joinsDrawing, newDrawing, outlinePts, readDrawing,
   toLocal, touches, type Burst, type Frame, type Ink, type PenTool, type Pt,
 } from './strokes.ts';
 import { currentTier } from './drawing.ts';
@@ -204,6 +205,34 @@ export function endStroke(now: number) {
   if (!it) return;
   const { hw, hh } = rotatedExtents(it);
   burst = { id, at: now, box: { x0: it.x - hw, y0: it.y - hh, x1: it.x + hw, y1: it.y + hh } };
+}
+
+/** Which of these are drawings that may be combined: unanchored ones. */
+export const combinable = (ids: Iterable<string>) => [...ids]
+  .map(id => byId(id))
+  .filter((it): it is Item => !!it && it.type === 'drawing' && !isLocked(it));
+
+/**
+ * Two or more drawings as one card, one undo step: every stroke where it was
+ * on screen, the turn of each card taken into its strokes. Null when there are
+ * fewer than two, or the strokes together pass MAX_STROKES.
+ */
+export function combineDrawings(ids: Iterable<string>): Item | null {
+  const cards = combinable(ids);
+  if (cards.length < 2) return null;
+  const parts = cards.map(it => {
+    const drawing = readDrawing(it.meta);
+    const frame: Frame = { x: it.x, y: it.y, w: it.w, h: it.h, rot: it.rot, space: drawing.space };
+    return { frame, drawing };
+  });
+  if (parts.reduce((n, p) => n + p.drawing.strokes.length, 0) > MAX_STROKES) return null;
+  const joined = joinDrawings(parts);
+  if (!joined) return null;
+  burst = null;
+  return replaceItems(cards.map(c => c.id), {
+    type: 'drawing', name: '', rot: 0, ...joined.box,
+    meta: { strokes: joined.drawing.strokes, space: joined.drawing.space },
+  }, 'Combine drawings');
 }
 
 /** Let the stroke go without landing it: a second finger, Escape, the mode off. */

@@ -7,10 +7,49 @@ import assert from 'node:assert/strict';
 
 import {
   encodePts, decodePts, readDrawing, simplify, settle, joinsDrawing, newDrawing, addStroke,
-  toLocal, toWorldPt, touches, outline, outlinePts, drawingSvg, MAX_POINTS, MAX_STROKES, BURST_MS, REACH_MIN,
+  toLocal, toWorldPt, touches, outline, outlinePts, drawingSvg, joinDrawings,
+  MAX_POINTS, MAX_STROKES, BURST_MS, REACH_MIN,
 } from '../web/assets/js/canvas/strokes.ts';
 
 const line = (n, step = 1) => Array.from({ length: n }, (_, i) => ({ x: i * step, y: 0, p: 0.5 }));
+
+test('a whole-pixel staircase is drawn as the slope it was, not as steps', () => {
+  // A slow mouse diagonal: right one, up one, right one, up one...
+  const stair = [];
+  for (let i = 0; i < 40; i++) stair.push({ x: Math.ceil(i / 2), y: Math.floor(i / 2), p: 0.5 });
+  for (const [tool, tier] of [['pen', 2], ['highlighter', 1], ['highlighter', 2]]) {
+    const o = outlinePts(stair, 3, tool, tier);
+    const pts = o.d.slice(1).split('L').map(s => s.split(' ').map(Number));
+    // Every corner the line turns is a gentle one: no right angles left.
+    for (let i = 1; i < pts.length - 1; i++) {
+      const [a, b, c] = [pts[i - 1], pts[i], pts[i + 1]];
+      const t1 = Math.atan2(b[1] - a[1], b[0] - a[0]), t2 = Math.atan2(c[1] - b[1], c[0] - b[0]);
+      const turn = Math.abs(((t2 - t1 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+      assert.ok(turn < Math.PI / 4, `${tool} at tier ${tier} turns ${turn.toFixed(2)} at ${i}`);
+    }
+  }
+});
+
+test('drawings combined keep every stroke where it was in the world', () => {
+  const a = newDrawing(line(10, 5), 4, 'pen', 'ink');
+  const b = newDrawing(line(10, 5).map(q => ({ ...q, y: 200 })), 20, 'highlighter', 'warm');
+  const frameOf = (m, rot = 0) => ({ ...m.box, rot, space: m.drawing.space });
+  const at = (m, rot = 0) => decodePts(m.drawing.strokes[0].pts).map(q => toWorldPt(frameOf(m, rot), q));
+  const joined = joinDrawings([
+    { frame: frameOf(a), drawing: a.drawing },
+    { frame: frameOf(b, 30), drawing: b.drawing },
+  ]);
+  assert.equal(joined.drawing.strokes.length, 2);
+  const f = { ...joined.box, rot: 0, space: joined.drawing.space };
+  const want = [...at(a), ...at(b, 30)];
+  const got = joined.drawing.strokes.flatMap(s => decodePts(s.pts).map(q => toWorldPt(f, q)));
+  assert.equal(got.length, want.length);
+  got.forEach((p, i) => {
+    assert.ok(Math.abs(p.x - want[i].x) < 0.2 && Math.abs(p.y - want[i].y) < 0.2, `point ${i}`);
+  });
+  assert.equal(joined.drawing.strokes[1].ink, 'warm');
+  assert.equal(joined.drawing.strokes[1].tool, 'highlighter');
+});
 
 test('points survive the stored form at a tenth of a unit', () => {
   const pts = [{ x: 12.34, y: -5.06, p: 0.731 }, { x: 0, y: 0, p: 1 }, { x: -800.5, y: 3, p: 0 }];

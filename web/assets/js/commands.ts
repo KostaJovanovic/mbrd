@@ -42,7 +42,7 @@ import { getAsset, assetURL } from './storage/assets.ts';
 import { close as closeSidebar, open as openSidebar, isOpen as isSidebarOpen } from './ui/sidebar.ts';
 import { revealFold } from './ui/panel.ts';
 import { closeToolbar, isOpen as isToolbarOpen, isArmed as isConnectorArmed, MORE_TOOLS, setArmed } from './ui/toolbar.ts';
-import { penState, setPen } from './canvas/pen.ts';
+import { penState, setPen, combinable, combineDrawings } from './canvas/pen.ts';
 import { openPalette } from './ui/palette.ts';
 import { openContextMenu, openAnchored, justDismissed, close as closeMenu } from './ui/menu.ts';
 import { tourEditing } from './ui/tour-edit.ts';
@@ -678,6 +678,14 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       const on = !penState().on;
       if (on) setArmed(false);
       setPen({ on });
+    },
+    /** The picked drawings, two or more, as one card (canvas/pen.ts). */
+    canCombineDrawings: () => combinable(selection).length >= 2,
+    combineDrawings: () => {
+      const n = combinable(selection).length;
+      const made = combineDrawings(selection);
+      if (made) select([made.id]);
+      else if (n >= 2) toast('Too many strokes to make one drawing of these');
     },
     /** Mobile "More" menu — the creation tools that don't fit the bar. */
     moreTools: () => {

@@ -1240,6 +1240,56 @@ export function setDrawings(changes: { id: string, next: DrawingState }[], label
 }
 
 /**
+ * Several cards out and one in their place, as one undo step: Combine
+ * drawings (canvas/pen.ts), which makes the card. Not through the bin - what
+ * they were is in the new one. It takes the highest of their places in the
+ * stack, every line that met one of them meets it, and a tour stop on one of
+ * them is a stop on it.
+ */
+export function replaceItems(ids: readonly string[], partial: Record<string, unknown>, label: string): Item | null {
+  const src = ids.map(id => byId(id)).filter((it): it is Item => !!it);
+  if (!src.length) return null;
+  const gone = new Set(src.map(i => i.id));
+  const made = fitBoardMode(makeItem({ ...partial, z: Math.max(...src.map(i => i.z || 0)) }));
+  const places = src.map(it => ({ it, at: board.items.indexOf(it) })).sort((a, b) => a.at - b.at);
+  const was = { connections: board.connections, tour: board.tour };
+  const to = (id: string) => (gone.has(id) ? made.id : id);
+  const seen = new Set<string>();
+  const connections = board.connections.flatMap((c): Connection[] => {
+    const a = to(c[0]), b = to(c[1]);
+    if (a === b || seen.has(pairKey(a, b))) return [];
+    seen.add(pairKey(a, b));
+    return [c[2] ? [a, b, c[2]] : [a, b]];
+  });
+  const tour = board.tour.map(stop => ({ ...stop, cards: [...new Set(stop.cards.map(to))] }));
+  const write = () => {
+    board.items = board.items.filter(i => !gone.has(i.id));
+    if (!byId(made.id)) board.items.push(made);
+    board.connections = connections;
+    board.tour = tour;
+    refenceArrivals([made]);
+    gone.forEach(id => selection.delete(id));
+    bus.emit('items', { added: [made.id], removed: [...gone] });
+    bus.emit('selection');
+    bus.emit('connections');
+    bus.emit('tour', board.tour);
+  };
+  const undo = () => {
+    board.items = board.items.filter(i => i.id !== made.id);
+    for (const { it, at } of places) board.items.splice(Math.min(at, board.items.length), 0, it);
+    board.connections = was.connections;
+    board.tour = was.tour;
+    selection.delete(made.id);
+    bus.emit('items', { added: [...gone], removed: [made.id] });
+    bus.emit('selection');
+    bus.emit('connections');
+    bus.emit('tour', board.tour);
+  };
+  commit(label, write, undo, src.length);
+  return made;
+}
+
+/**
  * A new fence anchoring itself (the fresh-fence clock in sticky.ts). Not an
  * undo step: nobody did it, so Ctrl+Z must not be spent taking it back.
  */
