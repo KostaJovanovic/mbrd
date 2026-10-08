@@ -13,6 +13,7 @@ import {
   board, loadBoard, serializeBoard, enterBoard, leaveBoard, fileTitle, setFileTitle,
   isDirty, markDirty, renameBoard, undo, newChildBoard, childOf, childFace,
   duplicateItems, copyItems, pasteItems, moveIntoBoard, moveUpLevel, putInNewBoard,
+  setAppearance, followsLook, setFollowsLook, claimLook,
 } from '../web/assets/js/state.ts';
 
 const doc = (title, items = []) => ({ title, items, trash: [] });
@@ -198,6 +199,27 @@ test('cards move into a board, up a level, and into a new one, each one undo', (
   leaveBoard();
   undo();
   assert.deepEqual(names(), ['Tiles', 't1'], 'one undo puts the card back and takes the board card away');
+});
+
+test('a board inside wears the look above it until it is given its own', () => {
+  loadBoard({ title: 'Kitchen', items: [card('tiles', 'Tiles')], boards: { tiles: doc('Tiles') } });
+  setAppearance({ whimsy: 2, palette: 'orca', vars: {} });
+  enterBoard('tiles');
+  assert.ok(followsLook());
+  assert.equal(board.settings.appearance.whimsy, 2);
+  assert.equal(board.settings.appearance.palette, 'orca');
+  claimLook();
+  setAppearance({ whimsy: 0, palette: '', vars: {} });
+  assert.equal(followsLook(), false, 'a choice in the panel makes it its own');
+  leaveBoard();
+  assert.equal(board.settings.appearance.whimsy, 2, 'the top keeps its own');
+  enterBoard('tiles');
+  assert.equal(board.settings.appearance.whimsy, 0, 'and so does the board inside, next time');
+  assert.equal(serializeBoard().boards.tiles.ownLook, true);
+  setFollowsLook(true);
+  assert.equal(board.settings.appearance.whimsy, 2, 'ticked again, the look above is back');
+  leaveBoard();
+  assert.equal('ownLook' in serializeBoard().boards.tiles, false);
 });
 
 test('a name picked for the file from inside a child renames the top', () => {

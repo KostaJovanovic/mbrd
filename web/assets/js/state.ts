@@ -2168,6 +2168,7 @@ export function commitHeader(next: unknown, from: MobileHeader = board.mobileHea
 export function loadBoard(data: unknown) {
   // A file's tree comes with it, and the board it opens at is the top.
   const dropped = setChildren(isRecord(data) ? data.boards : null);
+  looksAbove.length = 0;
   if (dropped) console.warn(`[mbrd] ${dropped} board${dropped === 1 ? '' : 's'} inside this one could not be read`);
   loadLevel(data);
 }
@@ -2195,9 +2196,52 @@ export function enterBoard(id: string): boolean {
   // The card's name is the child's title: a rename made on the card from
   // above is the child's rename. See leaveBoard() for the other half.
   const named = board.items.find(i => childOf(i) === id)?.name;
+  looksAbove.push(structuredClone(board.settings.appearance));
   pushLevel(id, serializeLevel());
-  swapping('in', () => loadLevel(named ? { ...doc, title: named } : doc, true));
+  swapping('in', () => {
+    loadLevel(named ? { ...doc, title: named } : doc, true);
+    // After the load, which announces itself, as one more 'settings' that the
+    // panel and the stylesheet already answer.
+    if (followsLook()) wearLook(looksAbove[looksAbove.length - 1]);
+  });
   return true;
+}
+
+/** The look of each board above the one on screen, top first: what a child
+ *  that follows wears, and what ticking the box again goes back to. */
+const looksAbove: unknown[] = [];
+
+/** Whether the board on screen takes its look from the board above it, which
+ *  a board inside another does until it is given one of its own. */
+export const followsLook = () => !atTop() && !board.ownLook;
+
+/** The look, written without a step or a dirty mark: following is not an edit. */
+function wearLook(look: unknown) {
+  const { shared, local } = splitAppearance(isRecord(look) ? look : {});
+  board.sharedAppearance = cloneSettings({ ...board.settings, appearance: shared }).appearance;
+  board.settings.appearance = mergeAppearance(board.sharedAppearance, local);
+  board.layoutSettings[board.layoutMode] = layoutSettingsOf(board.settings);
+  bus.emit('settings', 'appearance');
+  // 'board' is what ui/appearance.ts takes the look off the board on.
+  bus.emit('board');
+}
+
+/** "Same look as the board above", from the Look panel: on, the look above
+ *  is put on again; off, the one being worn becomes this board's own. */
+export function setFollowsLook(on: boolean) {
+  if (atTop() || followsLook() === on) return;
+  board.ownLook = !on;
+  if (on) wearLook(looksAbove[looksAbove.length - 1]);
+  markDirty();
+  bus.emit('settings', 'ownLook');
+}
+
+/** A choice made in the Look panel: from here the look is this board's own,
+ *  and the next visit does not put the one above back over it. */
+export function claimLook() {
+  if (!followsLook()) return;
+  board.ownLook = true;
+  bus.emit('settings', 'ownLook');
 }
 
 /**
@@ -2213,6 +2257,7 @@ export function leaveBoard(thumb: string | null = null): boolean {
   const title = board.title;
   const above = popLevel({ ...serializeLevel(), thumb: picture });
   if (!above) return false;
+  looksAbove.pop();
   swapping('out', () => loadLevel(above, true));
   // After the load, not in the document before it: the card is renamed by its
   // child, which is not an edit of this level and must not make the history
@@ -2431,6 +2476,7 @@ function loadLevel(data: unknown, level = false) {
   board.audioOrder = next.audioOrder;
   board.tour = next.tour;
   board.hadMusic = next.hadMusic;
+  board.ownLook = next.ownLook;
   board.extra = next.extra;
   // A filter is about the tags of the board that set it, and the board leaving
   // took those with it. Left standing, opening a second board would fade most

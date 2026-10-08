@@ -4,7 +4,7 @@
 // `advanced` → inside the section fold. `external` → another module wires it.
 
 import {
-  board, setSetting, setArrangement, selection,
+  board, setSetting, setArrangement, selection, atTop, followsLook, setFollowsLook,
 } from '../state.ts';
 
 const selectionSize = () => selection.size;
@@ -832,6 +832,11 @@ export const SECTIONS: Section[] = [
   {
     id: 'appearance', tab: 'look', title: 'Appearance', foldId: 'appearance-advanced',
     controls: [
+      // Inside a board within another only, and first: it says whose look the
+      // dials below are showing. Turning a dial is what unticks it - the look
+      // is this board's own from then on (claimLook() in state.ts).
+      { id: 'opt-same-look', type: 'check', label: 'Same look as the board above',
+        when: () => !atTop(), get: () => followsLook(), set: v => setFollowsLook(v) },
       // The whimsy axis. One dial from scrapbook to spec sheet - it moves shape,
       // type, motion, elevation, ornament and contrast together. Wired by
       // ui/appearance.ts; the three names below are the stops, and they are

@@ -476,6 +476,16 @@ than written `false`, so a board with no music saves as it did before the key
 existed. A board saved before the key, with music on it, gets it on load without
 the window opening (`ui/playlist.ts`). Added 2026-09-14.
 
+### `ownLook`
+
+Only in a board inside another (`boards/<id>/board.json`): `true` when it keeps
+a look of its own. Absent, it wears the look of the board above it, which the
+app puts on it each time it is opened, so the look its own `settings` hold is
+only the last one it was seen in. A choice made in its Look panel sets it;
+"Same look as the board above" clears it. Omitted rather than written `false`.
+Meaningless in a top `board.json`, which has nothing above it. Added 2026-10-08
+(v0.677).
+
 ### `audioOrder`
 
 The order the Playlist plays the board's audio in, as a flat list of item ids.

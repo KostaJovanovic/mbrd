@@ -103,6 +103,8 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
     // Only a literal true counts: a file that omits it is a board with no music
     // yet, and ui/playlist.ts sets it quietly when an older board holds some.
     hadMusic: src.hadMusic === true,
+    // Same rule: absent is a child that follows the look above it.
+    ownLook: src.ownLook === true,
     extra: unknownKeys(src),
   };
 }
@@ -115,7 +117,7 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
 const KNOWN_KEYS = new Set([
   'title', 'view', 'mobileHeader', 'titleHidden', 'mediaFit', 'paletteSources',
   'settings', 'arrangement', 'items', 'layouts', 'trash', 'connections',
-  'audioOrder', 'tour', 'timeline', 'hadMusic', 'versions',
+  'audioOrder', 'tour', 'timeline', 'hadMusic', 'ownLook', 'versions',
   // The boards inside this one, and a child's picture of itself: the tree's
   // (board-tree.ts), never carried as an unknown key.
   'boards', 'thumb',
@@ -584,11 +586,12 @@ export function serializeLevel() {
   // conditionally, so that readers of a filed board - storage.ts asks for
   // `doc.timeline` twice - still see one type with an optional key rather than
   // a union of two shapes.
-  const doc: typeof base & { timeline?: typeof timeline, hadMusic?: true } = base;
+  const doc: typeof base & { timeline?: typeof timeline, hadMusic?: true, ownLook?: true } = base;
   if (timeline) doc.timeline = timeline;
   // Omitted rather than written false, for the timeline's reason: a board with
   // no music saves exactly as it did before the key existed.
   if (board.hadMusic) doc.hadMusic = true;
+  if (board.ownLook) doc.ownLook = true;
   // What a newer build wrote and this one does not know, written back after
   // everything this build owns - see unknownKeys(). A key this build writes
   // itself always wins.

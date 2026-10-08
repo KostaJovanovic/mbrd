@@ -121,6 +121,9 @@ export type Board = {
   /** Music has been on this board at some point. Never cleared: it is what
    *  shows the sidebar's Playlist button. See ui/playlist.ts. */
   hadMusic: boolean;
+  /** A board inside another that keeps a look of its own rather than the one
+   *  above it. Meaningless at the top. See followsLook() in state.ts. */
+  ownLook: boolean;
   /** Top-level board.json keys this build does not know, carried untouched
    *  so a newer build's fields survive this one's save. Never read here. */
   extra: Record<string, unknown>;
@@ -327,6 +330,7 @@ export const board: Board = {
   // SAFETY: assertion prevents never[] inference.
   trash: [] as TrashEntry[],
   hadMusic: false,
+  ownLook: false,
   // SAFETY: an empty object is a valid Record<string, unknown>; the assertion only stops {} being inferred.
   extra: {} as Record<string, unknown>,
 };

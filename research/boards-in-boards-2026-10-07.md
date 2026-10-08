@@ -1,7 +1,10 @@
 # Boards inside boards — 7 October 2026
 
-**Status: open.** Approved by the maintainer on 2026-10-08 with every
-recommendation below taken. Nothing built yet; it follows the pen.
+**Status: done, 2026-10-08.** Approved by the maintainer on 2026-10-08 with
+every recommendation below taken, and built the same day in v0.672 to v0.677.
+Each step under "Order of work" says what was built and where it differs.
+Not built: the zoom in and out of the card's frame. Not checked on a phone or
+in the apps: Android's Back, the phone's trail, touch drags onto a board card.
 
 Item 18 of `features-2026-10-07.md`. Decided there and not reopened here: a
 child board lives **inside** its parent's `.mbrd`, a board card opens its
@@ -171,6 +174,12 @@ kitchen.mbrd
    its stored steps never saw the card arrive and would replay a board
    without it.
 6. "Same look as the board above".
+   *Built (v0.677):* first row of the Look panel, inside a child only. A child
+   that follows is dressed in the look of the board above each time it is
+   opened, without a step or a dirty mark. Any choice made in its Look panel
+   makes the look its own, which is a new `ownLook` key in its `board.json`
+   (`mbrd-format.md`). Pigments read off the pictures by Dynamic do not count
+   as a choice.
 
 ## Questions for the maintainer
 

@@ -4,7 +4,7 @@
 
 import {
   board, bus, setAppearance, setSetting, commitAppearance, snapMove, MOBILE_APPEARANCE_VARS,
-  type SnapMove,
+  claimLook, type SnapMove,
 } from '../state.ts';
 import { whimsyControlsSnap, AXIS_TOKENS } from '../layout-settings.ts';
 import { DEFAULT_PALETTE_SOURCES } from '../board-schema.ts';
@@ -258,7 +258,7 @@ function reshade() {
   }
   paintScheme();
   paintThemeColour();
-  persist();
+  persist({ chosen: false });
   followFade();
 }
 
@@ -281,7 +281,7 @@ export function setPigments(vars: Record<string, string>) {
   if (Object.keys(clean).length) current.derived = true;
   paintScheme();
   paintThemeColour();
-  persist();
+  persist({ chosen: false });
   syncControls();
   followFade();
 }
@@ -477,7 +477,7 @@ export function resetAppearance() {
     vars: board.layoutMode === 'mobile' ? { ...MOBILE_APPEARANCE_VARS } : {},
   };
   apply(current);
-  persist();
+  persist({ chosen: false });
   syncControls();
   if (was !== DEFAULT_WHIMSY) axisMoved(DEFAULT_WHIMSY);
   forgetSources();
@@ -589,8 +589,12 @@ function flushLook() {
   if (prefTimer) storeLook(false);
 }
 
-function persist({ soon = false } = {}) {
+/** `chosen` is false for the writes the machine makes - pigments read off the
+ *  pictures, a reset for a new board - and true for a choice in the panel,
+ *  which makes the look this board's own (claimLook() in state.ts). */
+function persist({ soon = false, chosen = true } = {}) {
   storeLook(soon);
+  if (chosen) claimLook();
   setAppearance(cloneLook(current));
   fromPrefs = false;
   onChange();
