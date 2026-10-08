@@ -6,7 +6,7 @@
 import { isHash, isRecord, itemHashes, uid } from './util.ts';
 import { toast } from './notify.ts';
 import { cue } from './cuelume/engine.ts';
-import { latticeBox } from './geometry.ts';
+import { latticeBox, itemBounds } from './geometry.ts';
 import { splitAppearance, mergeAppearance } from './layout-settings.ts';
 import {
   normalizeBoard, normalizeFonts, normalizeMediaFit, normalizeMobileHeader,
@@ -29,7 +29,7 @@ export {
 
 import {
   clipboardBounds, clipboardHasOurs, clipboardOnBoardLoad, clipboardSize,
-  copyItems as copyExactly, itemCount, itemsIn, linksAmong, pasteCopies, relink,
+  copyItems as copyExactly, itemCount, itemsIn, linksAmong, pasteCopies, relink, clippedBoards,
   setClipboardCarry, takeItems,
 } from './clipboard.ts';
 
@@ -66,8 +66,9 @@ import {
 import type { Command } from './history.ts';
 import {
   setChildren, childDoc, childCount, putChild, pushLevel, popLevel, boardPath, atTop, topDoc,
-  swapping, levelSwap, MAX_DEPTH, MAX_CHILD_BOARDS, CHILD_ID,
+  swapping, levelSwap, MAX_DEPTH, MAX_CHILD_BOARDS, CHILD_ID, cloneChild, docsOf,
 } from './board-tree.ts';
+import type { BoardDoc, Docs } from './board-tree.ts';
 export { boardPath, atTop, levelSwap };
 import {
   adoptTimeline, timelineSteps, timelineAt, timelineStale, timelineHashes, goTo,
@@ -471,8 +472,25 @@ export function duplicateItems(ids: Iterable<string>, offset = { x: 28, y: -28 }
   if (!src.length) return [];
   const from = src.map(i => i.id);
   const { items, links } = relink(src, from, linksAmong(from), offset.x, offset.y);
-  return addItems(items, items.length > 1 ? `Duplicate ${items.length} items` : 'Duplicate',
+  return addItems(carryChildren(items), items.length > 1 ? `Duplicate ${items.length} items` : 'Duplicate',
     { links });
+}
+
+/**
+ * A board card copied is a board copied: each card among these gets a copy of
+ * the board inside it, every level down, under new ids - two cards opening
+ * one board would be one board edited from two places. `from` is where the
+ * documents come from when they are not this file's: a clipboard, a dropped
+ * file. Done before the step commits, so a redo puts back the same copy.
+ */
+function carryChildren<T extends { type: string, meta: ItemMeta }>(items: T[], from: Docs | null = null): T[] {
+  for (const it of items) {
+    const old = childOf(it);
+    if (!old) continue;
+    const fresh = cloneChild(old, from);
+    if (fresh) it.meta.board = fresh;
+  }
+  return items;
 }
 
 /**
@@ -511,7 +529,7 @@ export function cutItems(ids: Iterable<string>) {
 export function pasteItems(at: { x: number, y: number } | null = null) {
   const { items: copies, links } = pasteCopies(at);
   if (!copies.length) return [];
-  const added = addItems(copies, copies.length > 1 ? `Paste ${copies.length} items` : 'Paste',
+  const added = addItems(carryChildren(copies, clippedBoards()), copies.length > 1 ? `Paste ${copies.length} items` : 'Paste',
     { links });
   // Said even though the copies are visible: a paste fanned out from an
   // original off the edge of the screen can put every copy somewhere you are
@@ -2036,11 +2054,13 @@ function dropFromTour(tour: TourStop[], ids: Set<string>): TourStop[] {
  * Nothing here validates: planMerge() in merge.ts has already remapped every id
  * and dropped every relation that named something it is not bringing.
  */
-export function mergeBoard(plan: MergePlan, label = 'Merge board') {
+export function mergeBoard(plan: MergePlan, label = 'Merge board', boards: unknown = null) {
   const { connections, audioOrder, tour } = plan;
   // planMerge() places the block beside the host in Canvas terms, which on the
   // Feed is outside the column: there the arrivals are packed below, as a drop is.
-  const items = board.layoutMode === 'mobile' ? placeMobileItems(plan.items) : plan.items;
+  const placed = board.layoutMode === 'mobile' ? placeMobileItems(plan.items) : plan.items;
+  // A board folded in brings the boards inside it, from its own file's `boards`.
+  const items = carryChildren(placed, isRecord(boards) ? docsOf(boards) : null);
   if (!items.length) return 0;
   const ids = new Set(items.map(i => i.id));
   const keys = new Set(connections.map(c => pairKey(c[0], c[1])));
@@ -2240,6 +2260,137 @@ export const canMakeChild = () => childCount() < MAX_CHILD_BOARDS && boardPath()
 
 /** Size of a new board card: a photograph's, landscape. */
 const BOARD_CARD = { w: 320, h: 240 };
+
+/** Cards move between levels on the canvas only: on the Feed a card's place
+ *  is the column's, and there is no beside to put it. */
+export const canMoveAcross = () => board.layoutMode !== 'mobile';
+
+/** A raw document's list under `key`, made if it has none. Written in place,
+ *  so an undo takes back exactly what went in. */
+function docList(doc: BoardDoc, key: 'items' | 'connections'): unknown[] {
+  const list = doc[key];
+  if (Array.isArray(list)) return list;
+  const made: unknown[] = [];
+  doc[key] = made;
+  return made;
+}
+
+/** Where a group lands in a document it was sent to: to the right of what is
+ *  there already, so nothing arrives on top of anything; the origin when the
+ *  board is empty. */
+function besideContent(doc: BoardDoc, w: number) {
+  let x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const raw of docList(doc, 'items')) {
+    if (!isRecord(raw) || raw.type === 'title') continue;
+    const x = Number(raw.x), y = Number(raw.y), hw = Number(raw.w) / 2, hh = Number(raw.h) / 2;
+    if (![x, y, hw, hh].every(Number.isFinite)) continue;
+    x1 = Math.max(x1, x + hw);
+    y0 = Math.min(y0, y - hh);
+    y1 = Math.max(y1, y + hh);
+  }
+  return x1 === -Infinity ? { x: 0, y: 0 } : { x: x1 + 60 + w / 2, y: (y0 + y1) / 2 };
+}
+
+/**
+ * Cards from the board on screen to another level of the file, as one step on
+ * this one. The originals go - not to the bin, since nothing was deleted - and
+ * copies under new ids land in `doc`, the group centred on what `at` answers
+ * for its width. `card` is a board card put down in the same step, for "Put in
+ * a new board". Lines among the group go with it; lines out of it end.
+ */
+function sendAcross(src: Item[], doc: BoardDoc, at: (w: number) => { x: number, y: number },
+  label: string, card: Item | null = null): number {
+  const box = itemBounds(src);
+  if (!box || !canMoveAcross()) return 0;
+  const from = src.map(i => i.id);
+  const to = at(box.x1 - box.x0);
+  const { items: copies, links } = relink(src, from, linksAmong(from),
+    to.x - (box.x0 + box.x1) / 2, to.y - (box.y0 + box.y1) / 2);
+  const gone = new Set(from);
+  const ended = board.connections.filter(c => gone.has(c[0]) || gone.has(c[1]));
+  const places = src.map(it => ({ it, at: board.items.indexOf(it) })).sort((a, b) => a.at - b.at);
+  const into = docList(doc, 'items');
+  const lines = docList(doc, 'connections');
+  // The board they land on has a history that never saw them come, and its
+  // steps would replay a board without them: it starts afresh, from the board
+  // with them on it, the next time it is open. Not given back by an undo here,
+  // which is this board's; the cards are taken back out and the ledger stays
+  // fresh, which describes that board truly.
+  const write = () => {
+    delete doc.timeline;
+    board.items = board.items.filter(i => !gone.has(i.id));
+    if (card && !byId(card.id)) board.items.push(card);
+    board.connections = board.connections.filter(c => !gone.has(c[0]) && !gone.has(c[1]));
+    into.push(...copies);
+    lines.push(...links);
+    gone.forEach(id => selection.delete(id));
+    bus.emit('items', { added: card ? [card.id] : [], removed: from });
+    bus.emit('selection');
+    bus.emit('connections');
+  };
+  const undo = () => {
+    const made = new Set<unknown>([...copies, ...links]);
+    for (const list of [into, lines]) {
+      for (let i = list.length - 1; i >= 0; i--) if (made.has(list[i])) list.splice(i, 1);
+    }
+    if (card) board.items = board.items.filter(i => i.id !== card.id);
+    for (const { it, at: index } of places) board.items.splice(Math.min(index, board.items.length), 0, it);
+    board.connections = [...board.connections, ...ended];
+    bus.emit('items', { added: from, removed: card ? [card.id] : [] });
+    bus.emit('selection');
+    bus.emit('connections');
+  };
+  commit(label, write, undo, src.length);
+  return src.length;
+}
+
+/** What may move between levels: what a copy may take, and no hint card. */
+const movable = (ids: Iterable<string>) => itemsIn(travelling(ids)).filter(i => i.type !== 'ghost');
+
+/** Into the board a board card on this one opens, beside what it holds. Not
+ *  the card itself, which cannot go inside its own board. */
+export function moveIntoBoard(ids: Iterable<string>, cardId: string): number {
+  const card = byId(cardId);
+  const child = childOf(card);
+  const doc = child ? childDoc(child) : undefined;
+  if (!card || !child || !doc) return 0;
+  const src = movable(ids).filter(i => i.id !== cardId);
+  return sendAcross(src, doc, w => besideContent(doc, w), `Move into ${card.name || 'a board'}`);
+}
+
+/** Out to the board holding this one, beside the card that opens this one. */
+export function moveUpLevel(ids: Iterable<string>): number {
+  const path = boardPath();
+  const here = path[path.length - 1];
+  const doc = path.length > 1 ? childDoc(path[path.length - 2]) : topDoc();
+  if (!here || !doc) return 0;
+  const raw = docList(doc, 'items').find(it => childOf(isRecord(it) ? it : null) === here);
+  const card = isRecord(raw) ? { x: Number(raw.x), y: Number(raw.y), w: Number(raw.w) } : null;
+  const beside = (w: number) => (card && [card.x, card.y, card.w].every(Number.isFinite)
+    ? { x: card.x + card.w / 2 + 60 + w / 2, y: card.y }
+    : besideContent(doc, w));
+  return sendAcross(movable(ids), doc, beside, 'Move up a level');
+}
+
+/**
+ * "Put in a new board": the cards into a new board inside this one, and its
+ * card where they were, as one step. Undone, the cards come back and the card
+ * goes; the child is left in the tree and a save leaves it out (reachable()).
+ */
+export function putInNewBoard(ids: Iterable<string>): Item | null {
+  const src = movable(ids);
+  const box = itemBounds(src);
+  if (!box || !canMakeChild() || !canMoveAcross()) return null;
+  const id = uid('b');
+  const title = 'Untitled board';
+  const doc: BoardDoc = { title, items: [], trash: [] };
+  putChild(id, doc);
+  const card = fitBoardMode(onLattice(makeItem({
+    type: 'board', name: title, rot: 0, z: topZ() + 1, meta: { board: id },
+    x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2, ...BOARD_CARD,
+  })));
+  return sendAcross(src, doc, () => ({ x: 0, y: 0 }), 'Put in a new board', card) ? card : null;
+}
 
 /**
  * "New board inside": an empty child, and the card that opens it centred on

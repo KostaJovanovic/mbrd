@@ -95,6 +95,10 @@ export interface MenuCommands {
   openBoard: (id: string) => void;
   canLeaveBoard: () => boolean;
   leaveBoard: () => void;
+  boardCardsBesides: (id: string) => { id: string, name: string }[];
+  putInNewBoard: (id: string) => void;
+  moveIntoBoard: (id: string, cardId: string) => void;
+  moveUpLevel: (id: string) => void;
   selectAll: () => void;
   rearrange: () => void;
   nudgeBoard: () => void;
@@ -928,6 +932,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Every line touching the selection, gone in one step. Canvas only, where
     // lines are drawn; hidden when there are none to take.
     ...lineRemoval(mobile),
+    // Between the boards inside boards: each a move, one undo, on this board.
+    ...levelEntries(id, mobile),
     // ── The board, from here ──
     { sep: true, hidden: mobile },
     // Feed has no "here" — the packer decides placement.
@@ -1185,6 +1191,26 @@ function tourEntries(): MenuEntry[] {
     { label: 'Show the whole board', icon: 'i-fit', action: () => cmds!.fit() },
     { sep: true },
     { label: 'End the tour', icon: 'i-close', accel: 'Esc', action: () => cmds!.tourStop() },
+  ];
+}
+
+/**
+ * A card, or the selection it is in, to another board of the file: into a new
+ * one, into one whose card is on this board, or up to the board holding this
+ * one. Canvas only, where a card has a place to land beside.
+ */
+function levelEntries(id: string, mobile: boolean): MenuEntry[] {
+  if (mobile) return [];
+  const into = cmds!.boardCardsBesides(id);
+  return [
+    { label: 'Put in a new board', icon: 'i-board', hidden: !cmds!.canNewBoard(),
+      action: () => cmds!.putInNewBoard(id) },
+    { label: 'Move into', icon: 'i-board', hidden: !into.length,
+      sub: into.length ? into.map(card => ({
+        label: card.name, icon: 'i-board', action: () => cmds!.moveIntoBoard(id, card.id),
+      })) : undefined },
+    { label: 'Move up a level', icon: 'i-arrow-up', hidden: !cmds!.canLeaveBoard(),
+      action: () => cmds!.moveUpLevel(id) },
   ];
 }
 

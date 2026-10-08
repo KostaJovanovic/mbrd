@@ -156,6 +156,20 @@ kitchen.mbrd
    left open to close. A tap on a board card in the Feed opens it.
 5. Moving cards between levels, delete and restore, duplicate, copy-paste and
    merge carrying children.
+   *Built (v0.676):* a drag held 0.7 s over a board card rings it, and a
+   release there sends the cards inside; "Put in a new board", "Move into ›"
+   and "Move up a level" in a card's menu. Each is one step on the board left,
+   and none goes through the bin. Lines among the cards go with them; lines
+   out of the group end. Duplicate, paste (the clipboard holds the boards
+   under a copied card, and their pictures' bytes) and merging a dropped
+   `.mbrd` copy every board under a board card, under new ids. Delete and
+   restore needed nothing new: a card in the bin still reaches its board.
+   Departures: cards sent into a board land to the right of what it holds,
+   not in the middle of its last view, which a document does not know the
+   size of; moves are canvas only, as a card's place on the Feed is the
+   column's; and the board a card lands on starts its history afresh, since
+   its stored steps never saw the card arrive and would replay a board
+   without it.
 6. "Same look as the board above".
 
 ## Questions for the maintainer

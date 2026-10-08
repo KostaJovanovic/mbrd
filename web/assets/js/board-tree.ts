@@ -4,7 +4,7 @@
 // (research/boards-in-boards-2026-10-07.md). Below board-schema.ts, which
 // writes the whole tree out wherever in it the board on screen is.
 
-import { isRecord } from './util.ts';
+import { isRecord, itemHashes, uid } from './util.ts';
 
 /** One board's document, as serializeBoard() writes it and a file holds it. */
 export type BoardDoc = Record<string, unknown>;
@@ -135,6 +135,70 @@ export function reachable(root: BoardDoc, docs: Record<string, BoardDoc>): Recor
     queue.push(...childIdsOf(doc));
   }
   return out;
+}
+
+/** Documents by id, as a copy or a dropped file carries them. */
+export type Docs = Record<string, BoardDoc>;
+
+/** A file's `boards` as documents: the entries a child could be, nothing else. */
+export function docsOf(raw: Record<string, unknown>): Docs {
+  const out: Docs = {};
+  for (const [id, doc] of Object.entries(raw)) if (CHILD_ID.test(id) && isRecord(doc)) out[id] = doc;
+  return out;
+}
+
+/** The documents under these board cards, every level down: what a copy of
+ *  the cards has to carry to outlive the file it was made in. */
+export function subtreeOf(items: readonly unknown[]): Docs {
+  const out: Docs = {};
+  const queue = childIdsOf({ items });
+  for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+    const doc = children.get(id);
+    if (!doc || id in out) continue;
+    out[id] = structuredClone(doc);
+    queue.push(...childIdsOf(doc));
+  }
+  return out;
+}
+
+/** Every content hash the cards of these documents name, bin included. */
+export function docsHashes(docs: Docs): string[] {
+  const out: string[] = [];
+  for (const doc of Object.values(docs)) {
+    const items: unknown[] = Array.isArray(doc.items) ? doc.items : [];
+    const trash: unknown[] = Array.isArray(doc.trash) ? doc.trash : [];
+    for (const raw of [...items, ...trash.map(t => (isRecord(t) ? t.item : null))]) {
+      if (!isRecord(raw)) continue;
+      const hash = isRecord(raw.asset) && typeof raw.asset.hash === 'string' ? raw.asset.hash : undefined;
+      out.push(...itemHashes({ asset: { hash }, meta: isRecord(raw.meta) ? raw.meta : null }));
+    }
+  }
+  return out;
+}
+
+/**
+ * A copy of the child `id` and everything under it, put in the tree under new
+ * ids, its own board cards re-pointed at their copies. `from` is where the
+ * documents come from - a clipboard, a dropped file - and the tree is asked
+ * when it has no answer. Null when there is no such child or the file is full:
+ * the card then says its board is missing, which is the truth.
+ */
+export function cloneChild(id: string, from: Docs | null = null, seen = new Set<string>()): string | null {
+  const doc = from?.[id] ?? children.get(id);
+  if (!doc || seen.has(id) || children.size >= MAX_CHILD_BOARDS) return null;
+  seen.add(id);
+  const copy = structuredClone(doc);
+  const items: unknown[] = Array.isArray(copy.items) ? copy.items : [];
+  const trash: unknown[] = Array.isArray(copy.trash) ? copy.trash : [];
+  for (const raw of [...items, ...trash.map(t => (isRecord(t) ? t.item : null))]) {
+    if (!isRecord(raw) || raw.type !== 'board' || !isRecord(raw.meta)) continue;
+    const under = raw.meta.board;
+    if (typeof under !== 'string') continue;
+    raw.meta.board = cloneChild(under, from, seen) ?? under;
+  }
+  const fresh = uid('b');
+  children.set(fresh, copy);
+  return fresh;
 }
 
 /** Every document in the tree other than the level on screen - what a sweep

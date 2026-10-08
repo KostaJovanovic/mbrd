@@ -752,7 +752,8 @@ async function mergeFile(file: File) {
       ...board.trash.map(t => t.item.id),
     ]);
     const plan = planMerge(incoming, taken, board.items);
-    const n = mergeBoard(plan, 'Merge ' + file.name);
+    // With its boards inside, which its board cards are copied with.
+    const n = mergeBoard(plan, 'Merge ' + file.name, data.boards);
     if (!n) { toast('There was nothing on that board to merge'); return false; }
     // Picked, so whatever is done next is done to them, and a Show that flies
     // there - the block is beside the whole board, off screen as a rule.

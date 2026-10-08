@@ -10,6 +10,8 @@ import { itemBounds } from './geometry.ts';
 import { board } from './board-model.ts';
 import type { Connection, Item } from './board-model.ts';
 import { uid } from './util.ts';
+import { subtreeOf, docsHashes } from './board-tree.ts';
+import type { Docs } from './board-tree.ts';
 
 /** A colour to the system clipboard, said in a toast when it lands. */
 export function copyHex(hex: string) {
@@ -117,7 +119,9 @@ export function relink(
  * deleted one, and released at the next Ctrl+C.
  */
 export type ByteCarry = {
-  hold: (items: readonly ItemDraft[]) => HeldBytes,
+  /** `more` is hashes past the cards' own: the pictures of a copied board's
+   *  boards inside it. */
+  hold: (items: readonly ItemDraft[], more?: readonly string[]) => HeldBytes,
   restore: (held: HeldBytes) => void,
 };
 
@@ -133,15 +137,19 @@ export function setClipboardCarry(c: ByteCarry | null) { carry = c; }
 
 /** Last copied items. `from` is the id each was copied from and `links` the
  *  lines between them, in those ids; `pastes` offsets each successive paste to
- *  fan them out; `held` is the carry's answer for them, their bytes. */
+ *  fan them out; `held` is the carry's answer for them, their bytes; `boards`
+ *  the boards inside any board card among them, as they were at the copy. */
 type Clipboard = {
   items: ItemDraft[], from: string[], links: Connection[],
-  text: string, pastes: number, held: HeldBytes | null,
+  text: string, pastes: number, held: HeldBytes | null, boards: Docs,
 };
 
-const clipboard: Clipboard = { items: [], from: [], links: [], text: '', pastes: 0, held: null };
+const clipboard: Clipboard = { items: [], from: [], links: [], text: '', pastes: 0, held: null, boards: {} };
 
 export const clipboardSize = () => clipboard.items.length;
+
+/** The boards inside the copied board cards, for a paste to copy again. */
+export const clippedBoards = (): Docs => clipboard.boards;
 
 /** What is held, read-only. emptyTrash() keeps the bytes these name. */
 export const clippedItems = (): readonly ItemDraft[] => clipboard.items;
@@ -157,6 +165,7 @@ export function clearClipboard() {
   clipboard.text = '';
   clipboard.pastes = 0;
   clipboard.held = null;
+  clipboard.boards = {};
 }
 
 /**
@@ -193,7 +202,8 @@ export function takeItems(src: Item[]) {
   clipboard.links = structuredClone(linksAmong(clipboard.from));
   clipboard.pastes = 0;
   clipboard.text = summarise(src);
-  clipboard.held = carry ? carry.hold(clipboard.items) : null;
+  clipboard.boards = subtreeOf(clipboard.items);
+  clipboard.held = carry ? carry.hold(clipboard.items, docsHashes(clipboard.boards)) : null;
   return clipboard.text;
 }
 

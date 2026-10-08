@@ -12,6 +12,7 @@ import {
 import {
   board, loadBoard, serializeBoard, enterBoard, leaveBoard, fileTitle, setFileTitle,
   isDirty, markDirty, renameBoard, undo, newChildBoard, childOf, childFace,
+  duplicateItems, copyItems, pasteItems, moveIntoBoard, moveUpLevel, putInNewBoard,
 } from '../web/assets/js/state.ts';
 
 const doc = (title, items = []) => ({ title, items, trash: [] });
@@ -140,6 +141,63 @@ test('a new board inside is one step, and a save leaves out a child whose card w
   assert.equal(board.items.some(i => i.type === 'board'), false);
   assert.equal('boards' in serializeBoard(), false);
   assert.equal(childOf({ type: 'image', meta: { board: id } }), null, 'only a board card opens a board');
+});
+
+const note = (id, x = 0, y = 0) => ({
+  id, type: 'note', name: id, x, y, w: 120, h: 100, meta: { text: id },
+});
+const names = () => board.items.filter(i => i.type !== 'title').map(i => i.name).sort();
+
+test('a board card copied is a board copied, every level down', () => {
+  loadBoard({
+    title: 'Kitchen', items: [card('tiles', 'Tiles')],
+    boards: { tiles: doc('Tiles', [card('grout', 'Grout'), note('t1')]), grout: doc('Grout', [note('g1')]) },
+  });
+  const [copy] = duplicateItems(['card-tiles']);
+  const fresh = childOf(copy);
+  assert.ok(fresh && fresh !== 'tiles', 'the copy opens a board of its own');
+  const saved = serializeBoard().boards;
+  assert.equal(Object.keys(saved).length, 4, 'tiles and grout, and a copy of each');
+  const inner = childOf(saved[fresh].items.find(i => i.type === 'board'));
+  assert.ok(inner && inner !== 'grout', 'the copy\'s own board card opens a copy too');
+  assert.equal(saved[inner].items[0].name, 'g1');
+  copyItems(['card-tiles']);
+  const [pasted] = pasteItems({ x: 500, y: 0 });
+  assert.notEqual(childOf(pasted), 'tiles');
+  assert.equal(Object.keys(serializeBoard().boards).length, 6);
+});
+
+test('cards move into a board, up a level, and into a new one, each one undo', () => {
+  loadBoard({
+    title: 'Kitchen', items: [card('tiles', 'Tiles'), note('a', 400, 0), note('b', 600, 0)],
+    connections: [['a', 'b']], boards: { tiles: doc('Tiles', [note('t1')]) },
+  });
+  assert.equal(moveIntoBoard(['a', 'b'], 'card-tiles'), 2);
+  assert.deepEqual(names(), ['Tiles']);
+  undo();
+  assert.deepEqual(names(), ['Tiles', 'a', 'b']);
+  assert.equal(board.connections.length, 1, 'the line between them is back');
+  moveIntoBoard(['a', 'b'], 'card-tiles');
+  enterBoard('tiles');
+  assert.deepEqual(names(), ['a', 'b', 't1']);
+  assert.equal(board.connections.length, 1, 'and went in with them');
+  const t1 = board.items.find(i => i.name === 't1');
+  const a = board.items.find(i => i.name === 'a');
+  assert.ok(a.x > t1.x, 'beside what was there, not on it');
+  assert.equal(moveUpLevel([t1.id]), 1);
+  leaveBoard();
+  assert.deepEqual(names(), ['Tiles', 't1']);
+  const up = board.items.find(i => i.name === 't1');
+  const tiles = board.items.find(i => i.type === 'board');
+  assert.ok(up.x > tiles.x + tiles.w / 2, 'out beside the card that opens it');
+  const made = putInNewBoard([up.id]);
+  assert.ok(made);
+  assert.deepEqual(names(), ['Tiles', 'Untitled board']);
+  enterBoard(childOf(made));
+  assert.deepEqual(names(), ['t1']);
+  leaveBoard();
+  undo();
+  assert.deepEqual(names(), ['Tiles', 't1'], 'one undo puts the card back and takes the board card away');
 });
 
 test('a name picked for the file from inside a child renames the top', () => {

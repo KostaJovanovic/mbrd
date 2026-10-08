@@ -212,13 +212,11 @@ setAssetNameLookup((hash: string) => getAsset(hash)?.name);
 // paste on the next board brings its pictures (clipboard.ts). itemHashes() is
 // the walk the packer uses, so no class of reference is left behind.
 setClipboardCarry({
-  hold: items => {
+  hold: (items, more = []) => {
     const held = new Map<string, Asset>();
-    for (const it of items) {
-      for (const hash of itemHashes(it)) {
-        const asset = getAsset(hash);
-        if (asset) held.set(hash, asset);
-      }
+    for (const hash of [...items.flatMap(it => itemHashes(it)), ...more]) {
+      const asset = getAsset(hash);
+      if (asset) held.set(hash, asset);
     }
     return held;
   },

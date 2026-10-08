@@ -1361,6 +1361,8 @@ type InputCommands = {
   draw?(): void,
   /** Double-click or Enter on a board card: into the board it holds. */
   openBoard?(id: string): void,
+  /** A drag held over a board card and let go: these cards inside it. */
+  dropIntoBoard?(ids: readonly string[], cardId: string): void,
   /** Alt+Shift+Up: back out to the board holding this one. */
   canLeaveBoard?(): boolean,
   leaveBoard?(): Promise<void>,
@@ -2938,7 +2940,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         ? { x: lead.x + dx, y: lead.y + dy, w: leadItem.w, h: leadItem.h }
         : null;
       const host = at ? wouldStick(at, drag.lead, leadItem, queryAround(at)) : null;
-      showStickTarget(host);
+      // Not a copy: an Alt+drag's copy is its own step, and into is another.
+      holdInto(host || drag.alt ? null : boardCardAt(p, drag.moving));
+      showStickTarget(host ?? (into?.armed ? byId(into.id) : null));
       if (drag.snap && host) {
         sx = 0;
         sy = 0;
@@ -3168,6 +3172,38 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // way back to idle.
   let lastDrag: { x: number, y: number, shift: boolean, alt: boolean } | null = null;
   let stopEdge: (() => void) | null = null;
+
+  // A drag held over a board card: after HOLD_INTO_MS still over it the card
+  // wears the target ring, and a release there sends what is carried inside
+  // (cmds.dropIntoBoard) instead of moving it. `armed` is the ring being up.
+  let into: { id: string, armed: boolean } | null = null;
+  let intoTimer = 0;
+  const HOLD_INTO_MS = 700;
+  const forgetInto = () => {
+    clearTimeout(intoTimer);
+    into = null;
+  };
+  /** The board card under the pointer, not one of those being carried. */
+  const boardCardAt = (p: Point, carried: readonly string[]) => {
+    if (!cmds.dropIntoBoard) return null;
+    for (const id of queryAround({ x: p.x, y: p.y, w: 1, h: 1 })) {
+      const it = byId(id);
+      if (it?.type !== 'board' || carried.includes(id)) continue;
+      if (Math.abs(p.x - it.x) <= it.w / 2 && Math.abs(p.y - it.y) <= it.h / 2) return it;
+    }
+    return null;
+  };
+  const holdInto = (card: Item | null) => {
+    if (card?.id === into?.id) return;
+    forgetInto();
+    if (!card) return;
+    const held = { id: card.id, armed: false };
+    into = held;
+    intoTimer = window.setTimeout(() => {
+      held.armed = true;
+      showStickTarget(byId(held.id));
+    }, HOLD_INTO_MS);
+  };
   function followEdge(e: PointerEvent) {
     lastDrag = { x: e.clientX, y: e.clientY, shift: e.shiftKey, alt: e.altKey };
     if (stopEdge || pointers.size !== 1) return;
@@ -3407,6 +3443,20 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // inside it, so undo restores the flag instead of re-deriving it; resettle()
     // in state.ts argues the whole of it. Only on a gesture that moved, so a
     // plain click on a loose note cannot quietly re-pin it.
+    // Let go over a board card held long enough: inside it, as one step, and
+    // not a move on this board first - the cards go back where they were
+    // picked up from, unrecorded, and leave from there.
+    const intoCard = into?.armed ? into.id : null;
+    forgetInto();
+    if (commit && intoCard && gesture.mode === 'move' && gesture.moved && !gesture.copied) {
+      applyGeom(gesture.before);
+      setDragging(gesture.moving, false);
+      cmds.dropIntoBoard?.(gesture.moving, intoCard);
+      el.classList.remove('is-panning', 'is-moving');
+      showStickTarget(null);
+      enter('idle');
+      return;
+    }
     if (commit) {
       if (gesture.mode === 'move' && gesture.moved) {
         resettle(gesture.driven);
