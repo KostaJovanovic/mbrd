@@ -11,10 +11,14 @@ import {
 } from '../web/assets/js/board-tree.ts';
 import {
   board, loadBoard, serializeBoard, enterBoard, leaveBoard, fileTitle, setFileTitle,
-  isDirty, markDirty, renameBoard, undo,
+  isDirty, markDirty, renameBoard, undo, newChildBoard, childOf, childFace,
 } from '../web/assets/js/state.ts';
 
 const doc = (title, items = []) => ({ title, items, trash: [] });
+/** The card that opens child `id`. */
+const card = (id, name = '') => ({
+  id: `card-${id}`, type: 'board', name, x: 0, y: 0, w: 320, h: 240, meta: { board: id },
+});
 
 test('a tree takes real children only, and no more than the limit', () => {
   const raw = { a: doc('A'), '../b': doc('B'), c: 'not a board' };
@@ -64,17 +68,23 @@ test('every other level is what a bin being emptied must leave alone', () => {
 });
 
 test('a board opened with children saves them back', () => {
-  loadBoard({ title: 'Kitchen', items: [], boards: { tiles: doc('Tiles'), bad: 7 } });
+  loadBoard({
+    title: 'Kitchen', items: [card('tiles', 'Tiles')],
+    boards: { tiles: doc('Tiles'), bad: 7, orphan: doc('No card opens me') },
+  });
   const saved = serializeBoard();
   assert.equal(saved.title, 'Kitchen');
-  assert.deepEqual(Object.keys(saved.boards), ['tiles']);
+  assert.deepEqual(Object.keys(saved.boards), ['tiles'], 'not the unreadable one, nor the one no card reaches');
   assert.equal(saved.boards.tiles.title, 'Tiles');
   loadBoard({ title: 'Plain', items: [] });
   assert.equal('boards' in serializeBoard(), false, 'a board with none writes no key');
 });
 
 test('going into a child puts it on screen, and the file stays the top board', () => {
-  loadBoard({ title: 'Kitchen', items: [], boards: { tiles: doc('Tiles'), grout: doc('Grout') } });
+  loadBoard({
+    title: 'Kitchen', items: [card('tiles', 'Tiles')],
+    boards: { tiles: doc('Tiles', [card('grout', 'Grout')]), grout: doc('Grout') },
+  });
   board.view = { pan: { x: 40, y: -12 }, zoom: 0.5 };
   assert.ok(enterBoard('tiles'));
   assert.equal(board.title, 'Tiles');
@@ -96,7 +106,7 @@ test('going into a child puts it on screen, and the file stays the top board', (
 });
 
 test('a level change keeps the dirty flag and each level its own history', () => {
-  loadBoard({ title: 'Kitchen', items: [], boards: { tiles: doc('Tiles') } });
+  loadBoard({ title: 'Kitchen', items: [card('tiles', 'Tiles')], boards: { tiles: doc('Tiles') } });
   assert.equal(isDirty(), false);
   markDirty();
   enterBoard('tiles');
@@ -104,6 +114,7 @@ test('a level change keeps the dirty flag and each level its own history', () =>
   renameBoard('Wall tiles');
   leaveBoard();
   assert.equal(board.title, 'Kitchen');
+  assert.equal(board.items.find(i => i.type === 'board').name, 'Wall tiles', 'the card takes its child\'s name');
   undo();
   assert.equal(board.title, 'Kitchen', "the child's rename is not the top's to undo");
   enterBoard('tiles');
@@ -111,6 +122,24 @@ test('a level change keeps the dirty flag and each level its own history', () =>
   undo();
   assert.equal(board.title, 'Tiles', 'and is still the child\'s');
   leaveBoard();
+});
+
+test('a new board inside is one step, and a save leaves out a child whose card was undone', () => {
+  loadBoard({ title: 'Kitchen', items: [] });
+  const made = newChildBoard({ x: 10, y: 20 });
+  assert.equal(made.type, 'board');
+  assert.equal(made.name, 'Untitled board');
+  const id = childOf(made);
+  assert.ok(id);
+  assert.deepEqual(childFace(id), { thumb: null, count: 0 });
+  assert.deepEqual(Object.keys(serializeBoard().boards), [id]);
+  assert.ok(enterBoard(id));
+  assert.equal(board.title, 'Untitled board');
+  leaveBoard();
+  undo();
+  assert.equal(board.items.some(i => i.type === 'board'), false);
+  assert.equal('boards' in serializeBoard(), false);
+  assert.equal(childOf({ type: 'image', meta: { board: id } }), null, 'only a board card opens a board');
 });
 
 test('a name picked for the file from inside a child renames the top', () => {

@@ -52,7 +52,7 @@ const TYPE_LABEL: Record<string, string> = {
   note: 'note', model: 'model', link: 'link', embed: 'embed',
   // Matches the visible default a new fence is given (nextFenceName), so a fence
   // somebody cleared the name of is still announced as the thing it is.
-  fence: 'fence',
+  fence: 'fence', board: 'board',
 };
 
 /**
@@ -153,8 +153,8 @@ const extMeta = (item: ItemFragment): string =>
 
 export function farKind(item: ItemFragment): string {
   if (item.type === 'note') return '';
-  // A folder has no extension, and a dot in its name is not one.
-  if (item.type === 'folder') return 'folder';
+  // A folder or a board has no extension, and a dot in its name is not one.
+  if (item.type === 'folder' || item.type === 'board') return item.type;
   const ext = (extMeta(item) || extOf(item.name) || '').replace(/^\./, '');
   return ext || KIND_WORD[item.type ?? ''] || 'file';
 }

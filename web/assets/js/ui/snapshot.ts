@@ -7,7 +7,9 @@
 // comes out is ExportOpts, below, which ui/export-options.ts fills from the box.
 
 import { readToken } from '../util.ts';
-import { board, adjustFilter, itemCrop, itemFaded, itemFlip, itemRotate, itemMatte } from '../state.ts';
+import {
+  board, adjustFilter, itemCrop, itemFaded, itemFlip, itemRotate, itemMatte, childOf, childFace,
+} from '../state.ts';
 import { itemBounds, PRINT_MAT, PRINT_CHIN } from '../geometry.ts';
 import { assetURL, getAsset } from '../storage/assets.ts';
 import { paperMm, toUnits, clampScale, MM_PER_INCH } from '../measure.ts';
@@ -656,6 +658,7 @@ type Painter = (p: Paint) => void | Promise<void>;
 const PAINTERS: Partial<Record<ItemType, Painter>> = {
   sticker: p => drawSticker(p.ctx, p.it, p.w, p.h),
   drawing: paintDrawing,
+  board: paintBoardCard,
   swatch: paintSwatch,
   fence: paintFence,
   note: paintNote,
@@ -663,6 +666,39 @@ const PAINTERS: Partial<Record<ItemType, Painter>> = {
   link: paintLink,
   text: paintText,
 };
+
+/**
+ * A board inside this one, as renderers.ts board() draws it: the child's
+ * picture in a window on the card, its name along the foot. With no picture
+ * yet, the named card every file without one gets.
+ */
+async function paintBoardCard(p: Paint) {
+  const { ctx, it, w, h, look, scale } = p;
+  const img = await loadImage(childFace(childOf(it))?.thumb ?? null);
+  if (!img) return paintMedia(p);
+  ctx.save();
+  cardFace(ctx, w, h, look, scale);
+  const pad = 8 * scale;
+  const size = Math.max(9, 13 * scale);
+  const foot = size * 1.8;
+  const pw = w - 2 * pad, ph = h - pad - foot;
+  ctx.save();
+  roundRect(ctx, -w / 2 + pad, -h / 2 + pad, pw, ph, Math.min(look.radius * scale * 0.5, pw / 2, ph / 2));
+  ctx.clip();
+  // Contained, centred in the window, as the card's object-fit does it.
+  const k = Math.min(pw / img.naturalWidth, ph / img.naturalHeight);
+  const iw = img.naturalWidth * k, ih = img.naturalHeight * k;
+  ctx.drawImage(img, -iw / 2, -h / 2 + pad + (ph - ih) / 2, iw, ih);
+  ctx.restore();
+  if (look.detail === 'full') {
+    ctx.fillStyle = look.ink;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `500 ${size}px ${look.display}`;
+    ctx.fillText((it.name || 'Untitled board').slice(0, 120), 0, h / 2 - foot / 2, pw);
+  }
+  ctx.restore();
+}
 
 /**
  * A drawing: the same outlines its card draws (canvas/drawing.ts), through

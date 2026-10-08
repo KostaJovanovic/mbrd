@@ -133,6 +133,18 @@ kitchen.mbrd
    opening the file does. Nothing is written on the way in or out, which is
    why neither asks `notUsersBoard()`.
 3. The board card: type, renderer, painter, menu entries, "New board inside".
+   *Built (v0.674):* `commands/boards.ts`; "New board inside" in the board's
+   right-click menu and the phone's More menu (there is no `+` flyout on the
+   bar to put it in); "Open board" and double-click or `Enter` on the card;
+   "Up a level" in the board's menu. Departures: the key is **Alt+Shift+↑**,
+   because Alt+↑ already steps the keyboard focus to the next card up; the
+   card's picture is *contained*, not cropped, since a child is as often tall
+   as wide; the card's name and the child's title are one name, each taking
+   the other's on the way in and out; and a save writes only the children a
+   board card still reaches, which is what ends a child whose card was undone
+   away or left with an emptied bin. The zoom in and out of the card's frame
+   is not built. "Put in a new board" moves cards between levels, so it is in
+   step 5.
 4. The breadcrumb, `Alt+↑`, Back on the web and on Android.
 5. Moving cards between levels, delete and restore, duplicate, copy-paste and
    merge carrying children.

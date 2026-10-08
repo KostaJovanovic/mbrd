@@ -1,7 +1,7 @@
 // Command surface: the single set of user-facing actions. Sidebar buttons,
 // keyboard, context menu, glass controls, and console all drive one object.
 // Factory (not module-level) because it closes over Viewport built at boot.
-// Split into commands/{file,connections,fences,view,item-meta}.ts and spread
+// Split into commands/{file,connections,fences,view,item-meta,boards}.ts and spread
 // back in. What stays here: board additions, selection-wide actions, title card,
 // arrangements.
 
@@ -67,6 +67,7 @@ import { connectionCommands } from './commands/connections.ts';
 import { fenceCommands, sharedFence } from './commands/fences.ts';
 import { viewCommands, canvasOnly } from './commands/view.ts';
 import { itemMetaCommands } from './commands/item-meta.ts';
+import { boardCommands } from './commands/boards.ts';
 import type { CommandViewport } from './commands/view.ts';
 import type { ViewPerf } from './perf/view-perf.ts';
 import type { BenchOptions, BenchResult } from './perf/bench.ts';
@@ -692,6 +693,8 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     },
     // --- one card at a time: the can*/setter pairs the menu reads ---
     ...itemMetaCommands(),
+    // Boards inside the board: make, go in, come out.
+    ...boardCommands(() => vp.toWorld(vp.left + vp.cx, vp.top + vp.cy)),
 
     // S: every command, searched by name at the pointer (ui/palette.ts).
     palette: (x?: number, y?: number) => {

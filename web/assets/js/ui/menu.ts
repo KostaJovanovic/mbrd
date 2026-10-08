@@ -88,6 +88,13 @@ export interface MenuCommands {
   //
   // The canvas menu
   addNoteAt: (at: Point | null) => void;
+  // Boards inside the board (commands/boards.ts)
+  newBoard: (at: Point | null) => void;
+  canNewBoard: () => boolean;
+  isBoardCard: (id: string) => boolean;
+  openBoard: (id: string) => void;
+  canLeaveBoard: () => boolean;
+  leaveBoard: () => void;
   selectAll: () => void;
   rearrange: () => void;
   nudgeBoard: () => void;
@@ -812,6 +819,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: 'Open', icon: 'i-expand', accel: editable ? '' : 'dbl-click',
       hidden: !viewable && !linkURL,
       action: () => linkURL ? cmds!.openLink(id) : cmds!.openViewer(id) },
+    // A board card opens the board inside it, not a viewer.
+    { label: 'Open board', icon: 'i-board', accel: 'dbl-click', hidden: many || !cmds!.isBoardCard(id),
+      action: () => cmds!.openBoard(id) },
     // Several: the viewer on the first, its arrows held to these.
     { label: `Open these ${count}`, icon: 'i-expand', hidden: !many || cmds!.viewableSelected() < 2,
       action: () => cmds!.openSelection() },
@@ -1206,6 +1216,12 @@ function canvasEntries(at: Point): MenuEntry[] {
       ? { label: 'Nudge fence', icon: 'i-nudge', action: () => cmds!.nudgeFence(fence) }
       : { label: 'Nudge board', icon: 'i-nudge', action: () => cmds!.nudgeBoard() },
     { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
+    { sep: true },
+    // A board inside this one, at the pointer. Absent past either limit.
+    { label: 'New board inside', icon: 'i-board', hidden: !cmds!.canNewBoard(),
+      action: () => cmds!.newBoard(at) },
+    { label: 'Up a level', icon: 'i-arrow-up', accel: 'Alt Shift ↑', hidden: !cmds!.canLeaveBoard(),
+      action: () => cmds!.leaveBoard() },
     { sep: true },
     // Board marks — tick on the trailing edge shows current state.
     { label: 'Snap to grid', icon: 'i-snap', check: cmds!.settingOn('snap'),

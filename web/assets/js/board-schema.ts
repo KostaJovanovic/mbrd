@@ -24,7 +24,7 @@ import {
 } from './layout.ts';
 import { isSticky, stuckTo } from './sticky.ts';
 import { fenceOf } from './fences.ts';
-import { atTop, childDocs, topDoc } from './board-tree.ts';
+import { atTop, childDocs, reachable, topDoc } from './board-tree.ts';
 import type { BoardDoc } from './board-tree.ts';
 
 // ---------------------------------------------------------------------------
@@ -425,16 +425,17 @@ const MAX_FONT_AXES = 32;
  * The whole file's board: the top board, with every board inside it under
  * `boards` by id, from wherever in the tree the board on screen is. What every
  * save, autosave and sync writes. The packer (storage/mbrd.ts) takes `boards`
- * out to `boards/<id>/`; board.json itself never carries the key.
+ * out to `boards/<id>/`; board.json itself never carries the key. Only the
+ * children a board card still reaches are written - see reachable().
  */
 export function serializeBoard(): ReturnType<typeof serializeLevel> & { boards?: Record<string, BoardDoc> } {
   const live = serializeLevel();
-  const docs = childDocs(live);
-  if (atTop()) return docs ? { ...live, boards: docs } : live;
+  const all = childDocs(live);
   // SAFETY: topDoc() is non-null exactly while a child is on screen (board-tree.ts),
   // and is a document serializeLevel() wrote when the top board was left.
-  const above = topDoc() as ReturnType<typeof serializeLevel>;
-  return docs ? { ...above, boards: docs } : above;
+  const root = atTop() ? live : topDoc() as ReturnType<typeof serializeLevel>;
+  const docs = all ? reachable(root, all) : {};
+  return Object.keys(docs).length ? { ...root, boards: docs } : root;
 }
 
 /** The board on screen alone, exactly as it lands in its board.json. */

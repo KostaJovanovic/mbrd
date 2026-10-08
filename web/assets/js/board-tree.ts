@@ -120,6 +120,23 @@ export function childIdsOf(doc: { items?: unknown, trash?: unknown }): string[] 
   return out;
 }
 
+/**
+ * Of `docs`, the ones a board card reaches from `root`, a card in a bin
+ * included. What a save keeps: a child whose card was undone away, or whose
+ * card left with an emptied bin, is not written, and so ends with the save.
+ */
+export function reachable(root: BoardDoc, docs: Record<string, BoardDoc>): Record<string, BoardDoc> {
+  const out: Record<string, BoardDoc> = {};
+  const queue = childIdsOf(root);
+  for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+    const doc = docs[id];
+    if (!doc || id in out) continue;
+    out[id] = doc;
+    queue.push(...childIdsOf(doc));
+  }
+  return out;
+}
+
 /** Every document in the tree other than the level on screen - what a sweep
  *  or a bin being emptied must leave the bytes of. */
 export function otherLevels(): BoardDoc[] {

@@ -4,11 +4,12 @@
 //
 // `meta` is Record<string, unknown> on purpose - narrow at the use site.
 
-// `gone` = tombstone after bin purge (see trash.ts).
+// `gone` = tombstone after bin purge (see trash.ts). `board` = a card that opens
+// a board inside this one (board-tree.ts).
 export type ItemType =
   | 'image' | 'video' | 'audio' | 'note' | 'link' | 'text' | 'model'
   | 'title' | 'ghost' | 'swatch' | 'sticker' | 'fence' | 'style-tile'
-  | 'font' | 'gone' | 'archive' | 'folder' | 'card' | 'drawing' | 'generic';
+  | 'font' | 'gone' | 'archive' | 'folder' | 'card' | 'drawing' | 'board' | 'generic';
 
 // Second arm is the reserved link-instead-of-embed form (no local bytes).
 export type ItemAsset =

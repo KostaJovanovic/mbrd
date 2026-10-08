@@ -3,7 +3,7 @@
 // geom, item, selection, settings, layout, board, trash, connections),
 // so renderer/HUD/sidebar stay in sync without knowing each other.
 
-import { isHash, isRecord, itemHashes } from './util.ts';
+import { isHash, isRecord, itemHashes, uid } from './util.ts';
 import { toast } from './notify.ts';
 import { cue } from './cuelume/engine.ts';
 import { latticeBox } from './geometry.ts';
@@ -65,8 +65,8 @@ import {
 } from './history.ts';
 import type { Command } from './history.ts';
 import {
-  setChildren, childDoc, pushLevel, popLevel, boardPath, atTop, topDoc, swapping, levelSwap,
-  MAX_DEPTH,
+  setChildren, childDoc, childCount, putChild, pushLevel, popLevel, boardPath, atTop, topDoc,
+  swapping, levelSwap, MAX_DEPTH, MAX_CHILD_BOARDS, CHILD_ID,
 } from './board-tree.ts';
 export { boardPath, atTop, levelSwap };
 import {
@@ -2172,8 +2172,11 @@ export function enterBoard(id: string): boolean {
   const doc = childDoc(id);
   const path = boardPath();
   if (!doc || path.length >= MAX_DEPTH || path.includes(id)) return false;
+  // The card's name is the child's title: a rename made on the card from
+  // above is the child's rename. See leaveBoard() for the other half.
+  const named = board.items.find(i => childOf(i) === id)?.name;
   pushLevel(id, serializeLevel());
-  swapping('in', () => loadLevel(doc, true));
+  swapping('in', () => loadLevel(named ? { ...doc, title: named } : doc, true));
   return true;
 }
 
@@ -2187,10 +2190,62 @@ export function leaveBoard(thumb: string | null = null): boolean {
   if (!here) return false;
   const kept = childDoc(here)?.thumb;
   const picture = thumb ?? (typeof kept === 'string' ? kept : null);
+  const title = board.title;
   const above = popLevel({ ...serializeLevel(), thumb: picture });
   if (!above) return false;
   swapping('out', () => loadLevel(above, true));
+  // After the load, not in the document before it: the card is renamed by its
+  // child, which is not an edit of this level and must not make the history
+  // it just adopted read as describing another board.
+  for (const it of board.items) {
+    if (childOf(it) !== here || it.name === title) continue;
+    it.name = title;
+    bus.emit('item', it.id);
+  }
   return true;
+}
+
+/** The child board a board card opens, or null for any other item. */
+export function childOf(it: { type?: unknown, meta?: unknown } | null | undefined): string | null {
+  if (it?.type !== 'board' || !isRecord(it.meta)) return null;
+  const id = it.meta.board;
+  return typeof id === 'string' && CHILD_ID.test(id) ? id : null;
+}
+
+const THUMB_URL = /^data:image\/(?:webp|jpeg);base64,[A-Za-z0-9+/]+=*$/;
+
+/** What a board card shows of its child: its picture, and how many cards it
+ *  holds. Null when the file has no such child - a card saying so. */
+export function childFace(id: string | null): { thumb: string | null, count: number } | null {
+  const doc = id ? childDoc(id) : undefined;
+  if (!doc) return null;
+  // Only the shape a thumbnail has: the card puts it in a CSS url(), and a
+  // quote in it would end the string there.
+  const thumb = typeof doc.thumb === 'string' && THUMB_URL.test(doc.thumb) ? doc.thumb : null;
+  const items: unknown[] = Array.isArray(doc.items) ? doc.items : [];
+  return { thumb, count: items.filter(i => isContent(i)).length };
+}
+
+/** Whether "New board inside" may make another: under both limits. */
+export const canMakeChild = () => childCount() < MAX_CHILD_BOARDS && boardPath().length < MAX_DEPTH;
+
+/** Size of a new board card: a photograph's, landscape. */
+const BOARD_CARD = { w: 320, h: 240 };
+
+/**
+ * "New board inside": an empty child, and the card that opens it centred on
+ * `at`, as one undo step. The child is in the tree from here on; an undo takes
+ * the card, and a save then leaves the child out (reachable()).
+ */
+export function newChildBoard(at: { x: number, y: number }): Item | null {
+  if (!canMakeChild()) return null;
+  const id = uid('b');
+  const title = 'Untitled board';
+  putChild(id, { title, items: [], trash: [] });
+  const [card] = addItems([{
+    type: 'board', name: title, x: at.x, y: at.y, ...BOARD_CARD, rot: 0, meta: { board: id },
+  }], 'New board inside');
+  return card ?? null;
 }
 
 /**

@@ -291,6 +291,7 @@ const KEYS: readonly KeyRow[] = [
   [['1'], '100% where you are'],
   [['←↑→↓'], 'nudge (+shift a step)'],
   [['alt', '+', '←↑→↓'], 'to the next card that way'],
+  [['alt', '+', 'shift', '+', '↑'], 'up a level, out of a board inside'],
   [['S'], 'search every command'],
   [['N'], 'a note at the pointer'],
   [['J'], 'join two cards'],

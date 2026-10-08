@@ -704,6 +704,15 @@
   <rect x="5.8" y="5.8" width="4.4" height="4.4" rx="1" fill="currentColor" fill-opacity="0.2"/>
 </symbol>
 
+<!-- A board inside the board: a sheet, and on it a smaller sheet with two
+     cards of its own. -->
+<symbol id="i-board" viewBox="0 0 16 16">
+  <rect x="1.8" y="2.2" width="12.4" height="11.6" rx="1.5"/>
+  <rect x="5.2" y="5.4" width="7.2" height="6" rx="1"/>
+  <rect x="6.6" y="6.8" width="1.8" height="1.6" rx="0.3" fill="currentColor" stroke="none"/>
+  <rect x="9.2" y="8.2" width="1.8" height="1.8" rx="0.3" fill="currentColor" stroke="none"/>
+</symbol>
+
 <!-- Show grid is the lattice; Snap to grid is the lattice with a card locked
      onto it, corner to dot. The board's own two settings, drawn as the board
      draws them. -->

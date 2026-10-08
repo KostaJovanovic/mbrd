@@ -1359,6 +1359,11 @@ type InputCommands = {
   connect?(): void,
   /** D: drawing mode on or off - the toolbar's Draw button. */
   draw?(): void,
+  /** Double-click or Enter on a board card: into the board it holds. */
+  openBoard?(id: string): void,
+  /** Alt+Shift+Up: back out to the board holding this one. */
+  canLeaveBoard?(): boolean,
+  leaveBoard?(): Promise<void>,
   toggleAnchor?(): void,
   raise?(): void,
   lower?(): void,
@@ -3668,6 +3673,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // A font card is written on too: its specimen text is editable, so a
     // double-click opens it rather than the viewer.
     else if (byId(id)?.type === 'font') cmds.editFontText?.(id);
+    // A board card opens the board it holds - a file manager's folder.
+    else if (byId(id)?.type === 'board') cmds.openBoard?.(id);
     // And on anything else it opens the item full size. A double-click on a file
     // is what every file manager in existence means by "open it", and until the
     // viewer existed this gesture had nothing to do on a photograph - which is
@@ -3946,6 +3953,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         if (type === 'note') cmds.editNote(only);
         else if (type === 'title') cmds.editTitleText?.();
         else if (type === 'font') cmds.editFontText?.(only);
+        else if (type === 'board') cmds.openBoard?.(only);
         else cmds.openViewer?.(only);
         e.preventDefault();
       } break;
@@ -4011,6 +4019,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         break;
       }
       case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown':
+        // Alt+Shift+Up: out of a board inside this one, to the board holding it.
+        // Not Alt+Up alone, which is the card-to-card step below.
+        if (e.altKey && e.shiftKey && !mod && e.key === 'ArrowUp' && cmds.canLeaveBoard?.()) {
+          void cmds.leaveBoard?.();
+          e.preventDefault();
+          break;
+        }
         // Alt moves the focus to the next card that way; the plain arrows nudge.
         if (e.altKey && !mod) {
           if (stepCards(e)) e.preventDefault();

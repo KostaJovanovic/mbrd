@@ -615,6 +615,41 @@
 /* A stroke the eraser has passed over, until the eraser lets go. */
 .drawing-art .is-erasing { opacity: 0.15; }
 
+/* A board inside this one (renderers.ts board()): the child small, as it was
+   last left, in a window on the card's paper, and its name along the foot. */
+.board-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 6px;
+}
+.board-peek {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: calc(var(--radius) * 0.5);
+  background: color-mix(in srgb, var(--ink) 5%, var(--paper-card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 10%, transparent);
+  color: var(--ink-3);
+  font-size: var(--t-tiny);
+  text-align: center;
+}
+/* Contained, not covering: the picture is framed to whatever the child holds,
+   tall or wide, and cropping it would show a slice of one card. */
+.board-peek.has-picture {
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+.board-card .card-name {
+  flex: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .sticker-art {
   display: block;
   width: 100%;

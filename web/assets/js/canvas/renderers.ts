@@ -13,7 +13,7 @@ import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { noPreview } from '../notify.ts';
 import {
   byId, bus, markDirty, board, isDefaultTitle, itemCrop, itemRotate, itemMatte,
-  setSwatchHex, baseStep, noteDisplay,
+  setSwatchHex, baseStep, noteDisplay, childOf, childFace,
 } from '../state.ts';
 import { bakeDisplayFor } from '../optimize/picture.ts';
 import { blobDimensions } from '../image-header.ts';
@@ -1842,6 +1842,36 @@ const RENDERERS = {
    *  branch for it. See canvas/drawing.ts. */
   drawing(item: Item) {
     return drawingArt(item);
+  },
+
+  /**
+   * A board inside this one: its picture, taken as it was last left, and its
+   * name along the foot. Before there is a picture, a sheet saying how many
+   * cards it holds. Born only by "New board inside", never by a file, so
+   * classify() has no branch for it. Double-click or Enter opens it.
+   */
+  board(item: Item) {
+    const card = document.createElement('div');
+    card.className = 'card board-card';
+    const face = childFace(childOf(item));
+    const peek = document.createElement('div');
+    peek.className = 'board-peek';
+    if (face?.thumb) {
+      // A background rather than an <img>: every picture rule in items.css
+      // reaches `.item-body img` - the fit, the blur well, the stills - and
+      // none of them is about this. The URL is a data: URL off the file's own
+      // thumbnail, checked as WebP or JPEG when it was read (storage/mbrd.ts).
+      peek.classList.add('has-picture');
+      peek.style.backgroundImage = `url("${face.thumb}")`;
+    } else {
+      peek.textContent = !face ? 'This board is missing from the file'
+        : face.count ? `${face.count} card${face.count === 1 ? '' : 's'}` : 'Empty';
+    }
+    const name = document.createElement('div');
+    name.className = 'card-name';
+    name.textContent = item.name || 'Untitled board';
+    card.append(peek, name);
+    return card;
   },
 
   generic(item: Item) {
