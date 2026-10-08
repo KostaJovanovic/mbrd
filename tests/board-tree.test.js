@@ -9,7 +9,10 @@ import {
   setChildren, childDocs, childCount, pushLevel, popLevel, boardPath, atTop, topDoc,
   childIdsOf, otherLevels, MAX_CHILD_BOARDS,
 } from '../web/assets/js/board-tree.ts';
-import { loadBoard, serializeBoard } from '../web/assets/js/state.ts';
+import {
+  board, loadBoard, serializeBoard, enterBoard, leaveBoard, fileTitle, setFileTitle,
+  isDirty, markDirty, renameBoard, undo,
+} from '../web/assets/js/state.ts';
 
 const doc = (title, items = []) => ({ title, items, trash: [] });
 
@@ -68,4 +71,54 @@ test('a board opened with children saves them back', () => {
   assert.equal(saved.boards.tiles.title, 'Tiles');
   loadBoard({ title: 'Plain', items: [] });
   assert.equal('boards' in serializeBoard(), false, 'a board with none writes no key');
+});
+
+test('going into a child puts it on screen, and the file stays the top board', () => {
+  loadBoard({ title: 'Kitchen', items: [], boards: { tiles: doc('Tiles'), grout: doc('Grout') } });
+  board.view = { pan: { x: 40, y: -12 }, zoom: 0.5 };
+  assert.ok(enterBoard('tiles'));
+  assert.equal(board.title, 'Tiles');
+  assert.equal(fileTitle(), 'Kitchen');
+  assert.deepEqual(boardPath(), ['tiles']);
+  const saved = serializeBoard();
+  assert.equal(saved.title, 'Kitchen', 'a save from inside writes the top as board.json');
+  assert.equal(saved.boards.tiles.title, 'Tiles');
+  assert.equal(enterBoard('nope'), false, 'no such child');
+  assert.ok(enterBoard('grout'));
+  assert.equal(enterBoard('tiles'), false, 'already on the path');
+  assert.ok(leaveBoard('data:image/webp;base64,AA'));
+  assert.ok(leaveBoard());
+  assert.ok(atTop());
+  assert.equal(board.title, 'Kitchen');
+  assert.deepEqual(board.view, { pan: { x: 40, y: -12 }, zoom: 0.5 }, 'back where it was left');
+  assert.equal(serializeBoard().boards.grout.thumb, 'data:image/webp;base64,AA');
+  assert.equal(leaveBoard(), false, 'nothing above the top');
+});
+
+test('a level change keeps the dirty flag and each level its own history', () => {
+  loadBoard({ title: 'Kitchen', items: [], boards: { tiles: doc('Tiles') } });
+  assert.equal(isDirty(), false);
+  markDirty();
+  enterBoard('tiles');
+  assert.ok(isDirty(), 'an unsaved edit on the top is still unsaved inside');
+  renameBoard('Wall tiles');
+  leaveBoard();
+  assert.equal(board.title, 'Kitchen');
+  undo();
+  assert.equal(board.title, 'Kitchen', "the child's rename is not the top's to undo");
+  enterBoard('tiles');
+  assert.equal(board.title, 'Wall tiles');
+  undo();
+  assert.equal(board.title, 'Tiles', 'and is still the child\'s');
+  leaveBoard();
+});
+
+test('a name picked for the file from inside a child renames the top', () => {
+  loadBoard({ title: 'Kitchen', items: [], boards: { tiles: doc('Tiles') } });
+  enterBoard('tiles');
+  setFileTitle('Kitchen, final');
+  assert.equal(board.title, 'Tiles');
+  assert.equal(fileTitle(), 'Kitchen, final');
+  leaveBoard();
+  assert.equal(board.title, 'Kitchen, final');
 });

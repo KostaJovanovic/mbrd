@@ -18,8 +18,9 @@ import {
 } from './library.ts';
 import type { LibraryEntry } from './library.ts';
 import {
-  board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus, mergeBoard, byId, select,
+  board, serializeBoard, loadBoard, markDirty, isDirty, bus, mergeBoard, byId, select,
   defaultBoardTitle, isNotFoundBoard, isBenchBoard, notUsersBoard, hasContent, isDefaultTitle,
+  fileTitle, setFileTitle, atTop, levelSwap,
 } from '../state.ts';
 import { normalizeBoard } from '../board-schema.ts';
 import { planMerge } from '../merge.ts';
@@ -74,7 +75,8 @@ export function setBoardThumb(fn: ThumbMaker | null | undefined) {
  */
 let shot: { url: string, gen: number } | null = null;
 let shotFiled = true;
-bus.on('board:load', () => { shot = null; shotFiled = true; });
+// Not a level change: the file's picture is the top board's, wherever one is.
+bus.on('board:load', () => { if (!levelSwap()) { shot = null; shotFiled = true; } });
 
 /** The picture a board arrived with, as the one its file already holds. */
 function carryShot(url: string | null) {
@@ -85,7 +87,8 @@ function carryShot(url: string | null) {
 /** The board's picture, drawn again only if it has changed since the last.
  *  A failed drawing keeps the last one: an old picture beats a blank. */
 async function takeThumb() {
-  if (shot && shot.gen === edits) return shot.url;
+  // Inside a child the screen is not the file's picture; the last one is.
+  if (!atTop() || (shot && shot.gen === edits)) return shot?.url ?? null;
   const gen = edits;
   const url = await makeThumb().catch(() => null);
   if (url) {
@@ -131,8 +134,8 @@ let created: string | null = null;
  *  when `doc` itself moves. */
 function reportDocument() {
   platform.setDocument({
-    title: board.title, ref: doc, dirty: isDirty(),
-    owned: !notUsersBoard() && (!isDefaultTitle(board.title) || hasContent()),
+    title: fileTitle(), ref: doc, dirty: isDirty(),
+    owned: !notUsersBoard() && (!isDefaultTitle(fileTitle()) || hasContent()),
   });
 }
 bus.on('board', reportDocument);
@@ -180,7 +183,7 @@ bus.on('history', () => {
   toast('This board is kept only in this browser - save a copy as a file to keep it safe', '',
     { label: 'Save a copy', run: () => { void exportBoard(); } });
 });
-bus.on('board:load', () => { sinceCopy = 0; nudged = false; });
+bus.on('board:load', () => { if (!levelSwap()) { sinceCopy = 0; nudged = false; } });
 
 /** Durability answer + storage estimate. Reports only — asking here would
  *  make a Debug row request a permission. Estimate is the engine's (vague,
@@ -316,12 +319,12 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
     // title must match. Cancel throws AbortError before any state moves.
     const picked = picking && (pickNew || !doc);
     if (picked) {
-      doc = await platform.files.pickSave(fileNameFor(board.title), PICK_SPEC);
+      doc = await platform.files.pickSave(fileNameFor(fileTitle()), PICK_SPEC);
       reportDocument();
     }
     // Only a name chosen now renames the board: a rename made since the last
     // pick must survive the next export to the same file.
-    if (picked) setTitle(titleFromFileName(doc!.name));
+    if (picked) setFileTitle(titleFromFileName(doc!.name));
 
     // Busy strip after the picker — packing is the slow half, and showing
     // "working" over a file browser would be a lie.
@@ -351,7 +354,7 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
     // Exporting is also a save — bytes are on disk.
     if (edits === gen) markDirty(false);
     sinceCopy = 0;
-    toast('Exported ' + (picking && doc ? doc.name : fileNameFor(board.title)));
+    toast('Exported ' + (picking && doc ? doc.name : fileNameFor(fileTitle())));
     return true;
   } catch (err) {
     if (isAbort(err)) return false;   // user closed the picker
@@ -377,11 +380,11 @@ export async function shareBoard({ history = true } = {}) {
     if (!history) delete data.timeline;
     const { blob, manifest } = await packBoard(data, { created, thumb: shot?.url });
     created = manifest.created;
-    const file = new File([blob], fileNameFor(board.title), { type: MIME });
+    const file = new File([blob], fileNameFor(fileTitle()), { type: MIME });
     // canShare({files}) is the real probe — a browser can have share() for
     // text but refuse files.
     if (navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title: board.title });
+      await navigator.share({ files: [file], title: fileTitle() });
       return true;
     }
     return exportBoard({ history });
@@ -997,7 +1000,7 @@ export async function stashCurrent() {
   // It is also the cheap path: no serialise, no pack, no deflate of every
   // photograph on the board just to shelve a file that is already on disk.
   if (isDesktop() && doc?.path) {
-    await putLibraryBoard(id, null, { title: board.title, at: Date.now(), thumb, path: doc.path });
+    await putLibraryBoard(id, null, { title: fileTitle(), at: Date.now(), thumb, path: doc.path });
     return id;
   }
   const data = serializeBoard();
@@ -1010,7 +1013,7 @@ export async function stashCurrent() {
   // app's own working copy, and one that is a picture short beats none.
   const { blob, manifest } = await packBoard(data, { created, allowMissing: true, thumb });
   created = manifest.created;
-  await putLibraryBoard(id, blob, { title: board.title, at: Date.now(), thumb });
+  await putLibraryBoard(id, blob, { title: fileTitle(), at: Date.now(), thumb });
   return id;
 }
 
@@ -1377,7 +1380,7 @@ let snapping = false;
 // 'autosaved' is an edit reaching the store, not a pan or a restore.
 bus.on('autosaved', () => { void snapshotBoard(); });
 // A board just opened is snapshotted at its first edit, not fifteen minutes on.
-bus.on('board:load', () => { lastSnapshot = 0; });
+bus.on('board:load', () => { if (!levelSwap()) lastSnapshot = 0; });
 
 async function snapshotBoard() {
   if (isDesktop() || snapping || notUsersBoard()) return;
@@ -1558,9 +1561,9 @@ let warnedFile = false;
 // both change the title with the flag down. The edits reach the file through
 // the autosave (session.ts), which calls saveDocument().
 bus.on('board', () => {
-  if (isDirty() && folder && board.title !== namedTitle) void renameDocument();
+  if (isDirty() && folder && fileTitle() !== namedTitle) void renameDocument();
 });
-bus.on('board:load', () => { namedTitle = board.title; });
+bus.on('board:load', () => { namedTitle = fileTitle(); });
 
 /** The id of the shelf row that already points at this file, if one does. */
 async function rowForFile(ref: DocumentRef | null) {
@@ -1576,7 +1579,7 @@ async function fileRow() {
   const id = await ensureBoardId();
   const row = (await libraryIndex()).find(e => e.id === id);
   await putLibraryBoard(id, null, {
-    title: board.title, at: Date.now(), thumb: shot?.url ?? row?.thumb ?? null, path: doc.path,
+    title: fileTitle(), at: Date.now(), thumb: shot?.url ?? row?.thumb ?? null, path: doc.path,
   });
 }
 
@@ -1688,10 +1691,10 @@ function writeDocument(): Promise<boolean> {
         const thumb = shot?.url ?? null;
         const packed = await packBoardFile(data, { created, allowMissing: true, thumb });
         created = packed.manifest.created;
-        doc = await port.create(fileNameFor(board.title), packed.blob);
+        doc = await port.create(fileNameFor(fileTitle()), packed.blob);
         if ((shot?.url ?? null) === thumb) shotFiled = true;
         fileLayout = doc.path ? { path: doc.path, layout: packed.layout } : null;
-        namedTitle = board.title;
+        namedTitle = fileTitle();
         reportDocument();
       }
       await fileRow();
@@ -1718,14 +1721,15 @@ async function renameDocument() {
   if (!folder || !port) return;
   await inTurn(async () => {
     const ref = doc;
-    if (!ref?.path || board.title === namedTitle) return;
-    namedTitle = board.title;
+    const title = fileTitle();
+    if (!ref?.path || title === namedTitle) return;
+    namedTitle = title;
     // A name that already reads as this title stays. "My Board.mbrd" from
     // Explorer and My_Board.mbrd name one board, and a rename would move
     // somebody's file for a spelling.
-    if (titleFromFileName(ref.name) === board.title) return;
+    if (titleFromFileName(ref.name) === title) return;
     try {
-      const moved = await port.rename(ref, fileNameFor(board.title));
+      const moved = await port.rename(ref, fileNameFor(title));
       if (!moved || moved.path === ref.path) return;
       doc = moved;
       reportDocument();
@@ -1765,7 +1769,7 @@ export function adoptFolder(): Promise<void> {
         reportDocument();
       }
     }
-    namedTitle = board.title;
+    namedTitle = fileTitle();
     const packed = rows.filter(e => !e.path && e.id !== id);
     let moved = 0;
     if (packed.length) {

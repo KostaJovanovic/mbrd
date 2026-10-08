@@ -125,7 +125,13 @@ kitchen.mbrd
    round trip, missing child, shared directory, too deep, too many, and an
    older build's refusal path.
 2. State: the path, the children map, enter and leave through `board:load`,
-   the view per level.
+   the view per level. *Built (v0.673):* `enterBoard()` / `leaveBoard()` in
+   `state.ts`, with `levelSwap()` telling each `board:load` listener that is
+   about the file (its name, picture, save button, sync latch) to stay put.
+   The file's name is `fileTitle()`, the top board's. One departure: the
+   session does not remember the level, so a reload opens at the top, as
+   opening the file does. Nothing is written on the way in or out, which is
+   why neither asks `notUsersBoard()`.
 3. The board card: type, renderer, painter, menu entries, "New board inside".
 4. The breadcrumb, `Alt+↑`, Back on the web and on Android.
 5. Moving cards between levels, delete and restore, duplicate, copy-paste and

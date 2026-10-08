@@ -25,7 +25,7 @@ import {
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent, markBenchBoard,
   defaultBoardTitle,
-  goTo, timelineSteps, timelineStale, lastCommand, timelinePlaying,
+  goTo, timelineSteps, timelineStale, lastCommand, timelinePlaying, levelSwap,
 } from './state.ts';
 import { freezePrefs } from './prefs.ts';
 import { homePath, isPatchPage, isNotFoundPage, isBenchPage, openingFace, openingShare } from './page.ts';
@@ -538,13 +538,16 @@ bus.on('board:load', () => {
   resetModels();
   syncBoardMode();
   // No grow-all: the payloadless 'items' emit after loadBoard() handles it.
-  openingView();
+  // Coming back out of a child lands where the level was left; going in, or
+  // opening anything, frames the board.
+  if (levelSwap() === 'out') vp.setView(board.view.pan, board.view.zoom);
+  else openingView();
   el('hud')!.hidden = !board.settings.hud;
   paintSnap();
   paintTilt();
   paintCount();
-  // A different board has never been saved.
-  resetSave();
+  // A different board has never been saved. A level of the same file has.
+  if (!levelSwap()) resetSave();
 });
 
 /** `mbrd` console handle + `launchQueue` PWA file-handling (not in lib.dom yet). */
@@ -736,6 +739,8 @@ function initCloudSync() {
   // Reset latch when a different board arrives.
   for (const arrival of ['board:load', 'board:new'] as const) {
     bus.on(arrival, () => {
+      // A level of the same file is the same board to the cloud.
+      if (levelSwap()) return;
       syncStopped = null;
       // Re-read sync state for the new board and repaint the panel.
       void boardSyncState().then(() => paintPanel()).catch(() => {});

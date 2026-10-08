@@ -10,7 +10,7 @@ import { latticeBox } from './geometry.ts';
 import { splitAppearance, mergeAppearance } from './layout-settings.ts';
 import {
   normalizeBoard, normalizeFonts, normalizeMediaFit, normalizeMobileHeader,
-  normalizePaletteSources, serializeBoard,
+  normalizePaletteSources, serializeBoard, serializeLevel,
 } from './board-schema.ts';
 
 export { serializeBoard };
@@ -64,7 +64,11 @@ import {
   clearHistory, dropStacks, lastCommand, takeBack, undoAction,
 } from './history.ts';
 import type { Command } from './history.ts';
-import { setChildren } from './board-tree.ts';
+import {
+  setChildren, childDoc, pushLevel, popLevel, boardPath, atTop, topDoc, swapping, levelSwap,
+  MAX_DEPTH,
+} from './board-tree.ts';
+export { boardPath, atTop, levelSwap };
 import {
   adoptTimeline, timelineSteps, timelineAt, timelineStale, timelineHashes, goTo,
   nameStep, declareOp, registerOp, editStep, rebuildFrom, stepEditable,
@@ -2078,6 +2082,15 @@ export function setTitle(title: unknown) {
   bus.emit('board');
 }
 
+/** setTitle() for the file's own name, which is the top board's: a name
+ *  picked in a save dialog from inside a child renames the top, not the child. */
+export function setFileTitle(title: unknown) {
+  const above = topDoc();
+  if (!above) return setTitle(title);
+  above.title = cleanBoardTitle(title) || 'Untitled board';
+  bus.emit('board');
+}
+
 /** Rename the board by hand: one undo, and one Timeline step for a run of
  *  renames. setTitle() stays quiet for the app's own writes (the save picker, a load). */
 export function renameBoard(title: unknown) {
@@ -2139,8 +2152,53 @@ export function loadBoard(data: unknown) {
   loadLevel(data);
 }
 
-/** One level of the tree onto the screen: the whole of a load but the tree. */
-function loadLevel(data: unknown) {
+/**
+ * The title the file goes by: the top board's, whichever level is on screen.
+ * What names the file, its shelf row and the window - a child's title is its
+ * own business and never renames the file it lives in.
+ */
+export function fileTitle(): string {
+  const above = topDoc();
+  return above && typeof above.title === 'string' ? above.title : board.title;
+}
+
+/**
+ * Go into the child board `id` names: the level on screen is written into the
+ * tree as it stands, history included, and the child loaded in its place.
+ * False when there is no such child, the path is already MAX_DEPTH deep, or
+ * the child is already on the path (two cards naming each other's boards).
+ */
+export function enterBoard(id: string): boolean {
+  const doc = childDoc(id);
+  const path = boardPath();
+  if (!doc || path.length >= MAX_DEPTH || path.includes(id)) return false;
+  pushLevel(id, serializeLevel());
+  swapping('in', () => loadLevel(doc, true));
+  return true;
+}
+
+/**
+ * Come back out one level. `thumb` is the child's picture as it is left, for
+ * the board card that opens it; without one the last picture stays. False at
+ * the top.
+ */
+export function leaveBoard(thumb: string | null = null): boolean {
+  const here = boardPath().pop();
+  if (!here) return false;
+  const kept = childDoc(here)?.thumb;
+  const picture = thumb ?? (typeof kept === 'string' ? kept : null);
+  const above = popLevel({ ...serializeLevel(), thumb: picture });
+  if (!above) return false;
+  swapping('out', () => loadLevel(above, true));
+  return true;
+}
+
+/**
+ * One level of the tree onto the screen: the whole of a load but the tree.
+ * `level` is a move within the file rather than a file arriving: the dirty
+ * flag, the clipboard and the hint latch are the file's, and stay as they are.
+ */
+function loadLevel(data: unknown, level = false) {
   const layoutMode = board.layoutMode;
   const next = normalizeBoard(data);
   board.title = next.title;
@@ -2187,7 +2245,9 @@ function loadLevel(data: unknown) {
   // nothing but regions is a board with nothing in it and has not earned its
   // hints away. This is the same question hasContent() asks, and it drifted from
   // it when fences arrived.
-  resetGhostLatch(board.items.some(isContent));
+  // A child is never an empty board somebody has just arrived at: it was made
+  // inside one that already had them dismissed, so no hints in it either.
+  resetGhostLatch(level || board.items.some(isContent));
   // The Desktop title card is seeded by the app (main.ts, on 'board:load'), not
   // here: keeping loadBoard() free of it lets state tests load and serialise a
   // board of exactly the items they gave it. See ensureTitleCard().
@@ -2221,8 +2281,12 @@ function loadLevel(data: unknown) {
   // stale here rather than believed.
   adoptTimeline(isRecord(data) ? data.timeline : null, data);
   // The clipboard crosses a board only with its bytes - see clipboardOnBoardLoad().
-  clipboardOnBoardLoad();
-  resetDirty();
+  // Not between levels, which share one assets/: every hash a copy names still
+  // resolves there, and pasting a card into a child is half of what it is for.
+  if (!level) {
+    clipboardOnBoardLoad();
+    resetDirty();
+  }
   // 'board:load' is the "everything was replaced" signal - distinct from
   // 'board', which also fires for a title change or a dirty-flag flip and so
   // must never be treated as a reason to reset the view.

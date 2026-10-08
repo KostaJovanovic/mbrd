@@ -27,6 +27,18 @@ const path: string[] = [];
 /** The top board's document while a child is on screen, else null. */
 let top: BoardDoc | null = null;
 
+/** Which way the level on screen is changing, while it changes; null for a
+ *  board arriving whole. A 'board:load' listener that is about the file -
+ *  its name, its picture, its save button - asks this and stays put. */
+let swap: 'in' | 'out' | null = null;
+export const levelSwap = () => swap;
+
+/** Run a level change with levelSwap() answering `dir` throughout. */
+export function swapping(dir: 'in' | 'out', run: () => void) {
+  swap = dir;
+  try { run(); } finally { swap = null; }
+}
+
 /** Replace the tree with the one a file or a session brought: `raw` is a
  *  board's `boards`, id to document. Anything that is not one is dropped, and
  *  past MAX_CHILD_BOARDS the rest are left out and counted. */
@@ -50,7 +62,9 @@ export function childDocs(live: BoardDoc | null = null): Record<string, BoardDoc
   const out: Record<string, BoardDoc> = {};
   for (const [id, doc] of children) out[id] = doc;
   const here = path[path.length - 1];
-  if (here && live) out[here] = live;
+  // The picture is taken on the way out, so a save made inside keeps the last.
+  const thumb = here ? children.get(here)?.thumb : undefined;
+  if (here && live) out[here] = thumb ? { ...live, thumb } : live;
   return out;
 }
 
