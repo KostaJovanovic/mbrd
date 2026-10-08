@@ -5,7 +5,7 @@
 
 import { bus } from '../state.ts';
 import { cue } from '../cuelume/engine.ts';
-import { onPen, penState, setPen, type PenState } from '../canvas/pen.ts';
+import { drawingEnabled, onPen, penState, setPen, type PenState } from '../canvas/pen.ts';
 import { isInk } from '../canvas/strokes.ts';
 
 export function initPenBar(): void {
@@ -32,6 +32,7 @@ export function initPenBar(): void {
     bar.hidden = !s.on;
     bar.dataset.tool = s.tool;
     drawBtn?.setAttribute('aria-pressed', String(s.on));
+    if (drawBtn instanceof HTMLElement) drawBtn.hidden = !drawingEnabled();
     for (const b of bar.querySelectorAll<HTMLElement>('button')) {
       const { penTool, penInk, penSize } = b.dataset;
       const pressed = penTool ? penTool === s.tool

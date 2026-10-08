@@ -42,7 +42,7 @@ import { getAsset, assetURL } from './storage/assets.ts';
 import { close as closeSidebar, open as openSidebar, isOpen as isSidebarOpen } from './ui/sidebar.ts';
 import { revealFold } from './ui/panel.ts';
 import { closeToolbar, isOpen as isToolbarOpen, isArmed as isConnectorArmed, MORE_TOOLS, setArmed } from './ui/toolbar.ts';
-import { penState, setPen, combinable, combineDrawings } from './canvas/pen.ts';
+import { drawingEnabled, penState, setPen, combinable, combineDrawings } from './canvas/pen.ts';
 import { openPalette } from './ui/palette.ts';
 import { openContextMenu, openAnchored, justDismissed, close as closeMenu } from './ui/menu.ts';
 import { tourEditing } from './ui/tour-edit.ts';
@@ -674,6 +674,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     /** Drawing mode on or off (canvas/pen.ts) - the Draw button and D. The
      *  board's other mode, so taking up the pen puts the Join tool down. */
     draw: () => {
+      if (!drawingEnabled()) return;
       if (board.layoutMode === 'mobile') { canvasOnly('Drawing is a canvas thing'); return; }
       const on = !penState().on;
       if (on) setArmed(false);
@@ -694,7 +695,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       // Second tap closes — menu already dismissed by its own outside-press listener.
       if (justDismissed(btn)) return;
       const table: Record<string, ((...args: never[]) => void) | undefined> = cmds;
-      openAnchored(btn.getBoundingClientRect(), MORE_TOOLS.map(t => ({
+      openAnchored(btn.getBoundingClientRect(), MORE_TOOLS.filter(t => !t.when || t.when()).map(t => ({
         label: t.label, icon: t.icon, action: () => runCommand(table[t.cmd]?.(), t.label),
       // focus: true — opened by a press, not a hover.
       })), { label: 'More tools', owner: btn, focus: true });

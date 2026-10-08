@@ -168,7 +168,7 @@ function toolRows(): Row[] {
     const fly = FLYOUTS[cmd];
     if (fly) out.push(...flatten(fly(cmds!), ['Tools', short || label], W.tools, true));
   }
-  for (const t of MORE_TOOLS) out.push(...cmdRow(t.label, t.cmd, ['Tools'], W.tools, { icon: t.icon }));
+  for (const t of MORE_TOOLS) if (!t.when || t.when()) out.push(...cmdRow(t.label, t.cmd, ['Tools'], W.tools, { icon: t.icon }));
   return out;
 }
 

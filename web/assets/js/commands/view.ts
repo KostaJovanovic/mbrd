@@ -15,6 +15,7 @@ import { DEFAULT_SCALE } from '../measure.ts';
 import { platform } from '../platform/platform.ts';
 import { clearQualityOverrides } from '../quality.ts';
 import { cueLogOn, dumpCueLog, setCueLog } from '../cuelume/engine.ts';
+import { drawingEnabled, setDrawingEnabled } from '../canvas/pen.ts';
 import { BASE_ZOOM, onNarrowScreen, travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { ViewPerf } from '../perf/view-perf.ts';
@@ -238,6 +239,14 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
       toast(rows.length
         ? `${rows.length} cue${rows.length === 1 ? '' : 's'} printed to the console`
         : 'Nothing logged yet - press something first');
+    },
+    /** Offer drawing or not, while it is being finished (canvas/pen.ts). */
+    debugDrawing: () => {
+      const on = !drawingEnabled();
+      setDrawingEnabled(on);
+      document.querySelector('[data-cmd="debug-drawing"]')?.setAttribute('aria-pressed', String(on));
+      toast(on ? 'Drawing on - the Draw button is in the toolbar, or press D' : 'Drawing off');
+      return on;
     },
     // Lock/unlock the current magnification.
     lockZoom: () => {

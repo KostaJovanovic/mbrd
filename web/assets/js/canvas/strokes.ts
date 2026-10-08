@@ -459,15 +459,32 @@ function densify(pts: readonly Pt[], step: number): Pt[] {
  * on their one neighbour, or the last step of the stair stays as a hook.
  */
 function steady(pts: readonly Pt[], width: number): Pt[] {
+  return smoothed(pts, Math.max(0.75, width * 0.35), 0.05);
+}
+
+/**
+ * The same staircase, taken out as a stroke is stored, at the size of the
+ * pixel it was drawn with. Zoomed out, one screen pixel is many board units,
+ * so the mouse's steps are as large on the board as the zoom is far, and
+ * steady() - which works at the stroke's width - leaves them in.
+ * `pixel` is a screen pixel in board units at the press.
+ */
+export function unstep(pts: readonly Pt[], pixel: number): Pt[] {
+  return smoothed(pts, Math.max(0.75, pixel * 1.4), Math.max(0.05, pixel * 0.05));
+}
+
+/** Resampled every `step`, averaged three times with its neighbours,
+ *  simplified again to `tolerance`. */
+function smoothed(pts: readonly Pt[], step: number, tolerance: number): Pt[] {
   if (pts.length < 3) return pts.slice();
-  let line = densify(pts, Math.max(0.75, width * 0.35));
+  let line = densify(pts, step);
   for (let pass = 0; pass < 3; pass++) {
     line = line.map((q, i) => {
       const a = line[Math.max(0, i - 1)], b = line[Math.min(line.length - 1, i + 1)];
       return { x: (a.x + 2 * q.x + b.x) / 4, y: (a.y + 2 * q.y + b.y) / 4, p: q.p };
     });
   }
-  return simplify(line, 0.05);
+  return simplify(line, tolerance);
 }
 
 /** The outline of a line whose half-width at each point is `radii[i]`, with

@@ -198,6 +198,8 @@
 
 /* Two ids to beat the (1,0,1) specificity of `#toolbar button` above. */
 #toolbar #toolbar-toggle { display: none; }
+/* The same two ids, so a tool held back (Draw, until Enable drawing) stays gone. */
+#toolbar #toolbar-tools button[hidden] { display: none; }
 
 /* Mobile-only tool (the More button); hidden on desktop. */
 #toolbar [data-mobile] { display: none; }

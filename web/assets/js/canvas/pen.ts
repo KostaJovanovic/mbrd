@@ -11,7 +11,7 @@ import { rotatedExtents } from '../geometry.ts';
 import type { Viewport } from './viewport.ts';
 import {
   isInk, MAX_STROKES, addStroke, frameScale, joinDrawings, joinsDrawing, newDrawing, outlinePts, readDrawing,
-  toLocal, touches, type Burst, type Frame, type Ink, type PenTool, type Pt,
+  toLocal, touches, unstep, type Burst, type Frame, type Ink, type PenTool, type Pt,
 } from './strokes.ts';
 import { currentTier } from './drawing.ts';
 
@@ -62,6 +62,20 @@ export function setPen(patch: Partial<PenState>) {
   for (const fn of watchers) fn(s);
 }
 
+const ENABLED = 'mbrd.drawing';
+
+/** Whether drawing is offered at all. Off until Enable drawing in the Debug
+ *  fold turns it on, while the feature is still being finished; a board's
+ *  drawings show either way. Kept on the device. */
+export const drawingEnabled = () => readPref(ENABLED) === '1';
+
+/** Offer drawing or stop offering it - putting the pen down if it is up. */
+export function setDrawingEnabled(on: boolean) {
+  writePref(ENABLED, on ? '1' : '0');
+  if (!on && penState().on) setPen({ on: false });
+  else for (const fn of watchers) fn(penState());
+}
+
 /** Hear every change, for the toolbar's button and the pen bar. */
 export function onPen(fn: (s: PenState) => void): () => void {
   watchers.add(fn);
@@ -92,8 +106,10 @@ export function initPen(viewport: Viewport) {
 type Live = {
   tool: PenTool,
   ink: Ink,
-  /** World units: the size on screen over the zoom at the press. */
+  /** World units, the tool's size as it is (SIZES). */
   width: number,
+  /** A screen pixel in world units at the press: the size of the pointer's steps. */
+  pixel: number,
   pts: Pt[],
   /** When the press came, for the burst rule. */
   at: number,
@@ -119,6 +135,7 @@ export function beginStroke(at: { x: number, y: number }, pressure: number, onCa
   live = {
     tool: s.tool, ink: s.ink,
     width: SIZES[s.tool][s.size],
+    pixel: 1 / vp.zoom,
     pts: [{ x: at.x, y: at.y, p: pressure }],
     at: now,
     on: card?.type === 'drawing' && !isLocked(card) ? card.id : null,
@@ -176,6 +193,7 @@ export function endStroke(now: number) {
   if (!done) return;
   if (done.tool === 'eraser') { finishErase(done.erased); return; }
   const tool = done.tool;
+  const pts = unstep(done.pts, done.pixel);
   // A stroke that starts on a drawing joins it; otherwise one in a burst joins
   // the drawing the burst is making; otherwise it is a new card.
   const target = [done.on, joinsDrawing(burst, done.pts[0], done.at) ? burst?.id : null]
@@ -186,14 +204,14 @@ export function endStroke(now: number) {
   if (target) {
     const d = readDrawing(target.meta);
     const f: Frame = { x: target.x, y: target.y, w: target.w, h: target.h, rot: target.rot, space: d.space };
-    const next = addStroke(f, d, done.pts, done.width, tool, done.ink);
+    const next = addStroke(f, d, pts, done.width, tool, done.ink);
     setDrawings([{
       id: target.id,
       next: { ...next.box, meta: { ...target.meta, strokes: next.drawing.strokes, space: next.drawing.space } },
     }], 'Draw');
     id = target.id;
   } else {
-    const made = newDrawing(done.pts, done.width, tool, done.ink);
+    const made = newDrawing(pts, done.width, tool, done.ink);
     const [item] = addItems([{
       type: 'drawing', name: '', rot: 0, ...made.box,
       meta: { strokes: made.drawing.strokes, space: made.drawing.space },

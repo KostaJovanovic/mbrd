@@ -13,6 +13,7 @@ import { setDraftFrom } from '../canvas/web.ts';
 import { openAnchored } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 import { openFlyout } from './flyout.ts';
+import { drawingEnabled, onPen } from '../canvas/pen.ts';
 
 /** data-cmd="add-files" -> cmds.addFiles. The panel's own mapping. */
 const camel = (s: string): string => s.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
@@ -27,11 +28,11 @@ export interface ToolbarCommands {
  * them (cmds.moreTools) and the S box (ui/palette.ts) finds them. `cmd` names
  * the cmds entry each runs.
  */
-export const MORE_TOOLS: readonly { label: string, icon: string, cmd: string }[] = [
+export const MORE_TOOLS: readonly { label: string, icon: string, cmd: string, when?: () => boolean }[] = [
   { label: 'Add a colour', icon: 'i-swatch', cmd: 'addSwatch' },
   { label: 'Add a link', icon: 'i-link', cmd: 'addLink' },
   { label: 'New LaTeX document', icon: 'i-pen', cmd: 'newLatex' },
-  { label: 'Draw', icon: 'i-draw', cmd: 'draw' },
+  { label: 'Draw', icon: 'i-draw', cmd: 'draw', when: drawingEnabled },
   { label: 'New board inside', icon: 'i-board', cmd: 'newBoard' },
   { label: 'Stickers', icon: 'i-sticker', cmd: 'stickers' },
 ];
@@ -84,6 +85,8 @@ export function initToolbar(cmds: ToolbarCommands): void {
   // The room changes with the window, with a panel opening at either side,
   // and with the look (faces and letter-spacing change the words' width).
   addEventListener('resize', () => { holdStill(); scheduleFit(); });
+  // And with the Draw button coming or going (Enable drawing, in Debug).
+  onPen(scheduleFit);
   const panels = new MutationObserver(scheduleFit);
   for (const id of ['sidebar', 'header-panel']) {
     const panel = document.getElementById(id);

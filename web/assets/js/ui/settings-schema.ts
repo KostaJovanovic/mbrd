@@ -22,6 +22,7 @@ import {
   SHARPNESS_STEPS, BUILD_STEPS,
 } from '../quality.ts';
 import { SOUND_STOPS, cueLogOn, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
+import { drawingEnabled } from '../canvas/pen.ts';
 import {
   wheelMode, setWheelMode, zoomReversed, setZoomReversed,
 } from '../controls.ts';
@@ -1359,6 +1360,10 @@ export const SECTIONS: Section[] = [
         { cmd: 'debug-sound', label: 'Log interface sounds',
           pressed: () => cueLogOn() },
         { cmd: 'debug-sound-report', label: 'Print the cue log' },
+        // Drawing is held back here while it is being finished: off, the Draw
+        // button, D and the More menu's row are gone (canvas/pen.ts).
+        { cmd: 'debug-drawing', label: 'Enable drawing',
+          pressed: () => drawingEnabled() },
         // Remove all connections lived here; it is in the Join tool's flyout now,
         // beside the generator whose result it is usually for taking back.
       ] },
