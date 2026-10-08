@@ -331,6 +331,54 @@
 .pen-size[data-pen-size="1"] span { width: 8px; height: 8px; }
 .pen-size[data-pen-size="2"] span { width: 14px; height: 14px; }
 
+/* The trail back up out of a board inside another (ui/board-path.ts): under
+   the menu button, each board above a button, the one on screen plain. */
+#board-path {
+  position: fixed;
+  z-index: var(--z-chrome);
+  top: calc(max(var(--panel-inset), env(safe-area-inset-top)) + var(--toolbar-h) + 8px);
+  left: max(var(--panel-inset), env(safe-area-inset-left));
+  max-width: min(46vw, 560px);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 10px 3px 3px;
+  border-radius: var(--leaf);
+  outline: var(--hairline) solid var(--rule-2);
+  outline-offset: calc(-1 * var(--hairline));
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  font-size: var(--t-small);
+  white-space: nowrap;
+}
+#board-path[hidden] { display: none; }
+#board-path button {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--accent-text);
+  font: inherit;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  #board-path button:hover { background: var(--paper-2); }
+}
+#board-path button:focus-visible { background: var(--paper-2); }
+#board-path .path-sep { color: var(--ink-3); }
+/* The phone's one-button form (mobile.css): the board one level up. */
+#board-path .path-up { display: none; }
+#board-path .path-here {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 4px;
+  color: var(--ink);
+}
+
 /* ---------------------------------------------------------
    The now-playing bar (ui/nowplaying.ts)
    --------------------------------------------------------- */

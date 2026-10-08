@@ -80,6 +80,7 @@ import { initDrawer } from './ui/drawer.ts';
 import { initNowPlaying } from './ui/nowplaying.ts';
 import { initToolbar } from './ui/toolbar.ts';
 import { initPenBar } from './ui/pen-bar.ts';
+import { initBoardPath } from './ui/board-path.ts';
 import { initPen } from './canvas/pen.ts';
 import { initFlyouts } from './ui/flyout.ts';
 import { initPalette } from './ui/palette.ts';
@@ -408,6 +409,7 @@ initHud(vp, cmds);
 initToolbar(cmds);
 // The pen's bar, which presses the toolbar's Draw button with it.
 initPenBar();
+initBoardPath(cmds.leaveTo);
 // Flyouts behind toolbar buttons. After toolbar + initMenu().
 initFlyouts(cmds);
 // The S box reads every menu above, the toolbar and the panel's schema.
@@ -917,7 +919,11 @@ platform.lifecycle.onBack(() => {
   }
   const esc = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true });
   (document.activeElement ?? document.body).dispatchEvent(esc);
-  return wasClosed(esc);
+  if (wasClosed(esc)) return true;
+  // Nothing open: inside a board within another, Back is the board above.
+  if (!cmds.canLeaveBoard()) return false;
+  void cmds.leaveBoard();
+  return true;
 });
 
 // A new deploy loads itself at the next quiet moment, the board stored first.

@@ -588,6 +588,10 @@
   <button type="button" class="pen-size" data-pen-size="2" aria-pressed="false" title="Broad"><span></span></button>
 </div>
 
+<!-- The boards above the one on screen, each a button back to it, while a
+     board inside another is open (ui/board-path.ts). Filled by script. -->
+<nav id="board-path" aria-label="Boards above this one" hidden></nav>
+
 <!-- Timeline, docked along the foot on every width (ui/timeline-view.ts). The
      board ends above it: its height is --dock. Must be between #toolbar and
      #nowplaying — all three are linked by `~` combinators in the CSS. Hidden

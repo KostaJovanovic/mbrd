@@ -5,11 +5,12 @@
 
 import { toast } from '../notify.ts';
 import {
-  byId, select, childOf, enterBoard, leaveBoard, newChildBoard, canMakeChild, atTop,
+  byId, select, childOf, enterBoard, leaveBoard, newChildBoard, canMakeChild, atTop, boardPath,
   timelinePlaying,
 } from '../state.ts';
 import { flushNoteEdit } from '../canvas/notes.ts';
 import { boardThumb } from '../ui/snapshot.ts';
+import { settleHistory } from '../ui/board-path.ts';
 import { tourActive } from '../ui/tour.ts';
 import { tourEditing } from '../ui/tour-edit.ts';
 import type { Point } from '../arrange/arrangements.ts';
@@ -43,16 +44,28 @@ export function boardCommands(centre: Centre) {
     },
     canLeaveBoard: () => !atTop(),
     /** Back out one level, with the child's picture for its card. */
-    leaveBoard: async () => {
-      if (atTop() || held() || leaving) return;
-      leaving = true;
-      try {
-        flushNoteEdit();
-        const thumb = await boardThumb().catch(() => null);
-        leaveBoard(thumb);
-      } finally {
-        leaving = false;
-      }
-    },
+    leaveBoard: () => leaveTo(boardPath().length - 1),
+    /** Back out to `level`, 0 being the top: the trail's buttons. */
+    leaveTo,
   };
+}
+
+/**
+ * Out, one level at a time to `level`, each taking its own picture on the way
+ * for the card that opens it. Then the history entries going in pushed, which
+ * are behind the board on screen now (ui/board-path.ts).
+ */
+async function leaveTo(level: number) {
+  if (atTop() || held() || leaving) return;
+  leaving = true;
+  try {
+    flushNoteEdit();
+    while (boardPath().length > Math.max(0, level)) {
+      const thumb = await boardThumb().catch(() => null);
+      if (!leaveBoard(thumb)) break;
+    }
+  } finally {
+    leaving = false;
+  }
+  settleHistory();
 }

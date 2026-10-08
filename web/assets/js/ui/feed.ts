@@ -7,7 +7,7 @@ import {
   board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, itemRotate, itemMatte,
   flipTransform, stuckTo, isRider, noteDisplay,
   select, selection, deselect, clearSelection, isMultiSelect, trackTitle, isFence, mobileRuns,
-  timelinePlaying,
+  timelinePlaying, childOf, enterBoard,
 } from '../state.ts';
 import { noteWords } from '../canvas/note-model.ts';
 import { bakeDisplayFor } from '../optimize/picture.ts';
@@ -710,6 +710,9 @@ function buildTile(item: Item): Tile {
  * viewer is where the right-click menu sends it.
  */
 function wireOpen(t: Tile) {
+  // A board card opens the board inside it, as a double-click does on the canvas.
+  const child = childOf(t.item);
+  if (child) { actAsButton(t.el, () => { if (!timelinePlaying()) enterBoard(child); }); return; }
   if (!OPENS.has(t.kind) || !canView(t.item.id)) return;
   actAsButton(t.el, () => openViewer(t.item.id, { thumb: t.el.getBoundingClientRect() }));
 }

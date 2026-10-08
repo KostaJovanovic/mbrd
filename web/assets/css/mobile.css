@@ -1483,6 +1483,16 @@
     top: auto;
     bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--dock) + var(--bar-h) + var(--bar-gap));
   }
+  /* The way back up, under the menu button: on a phone only the board one
+     level up, behind an arrow, since a trail of names will not fit. */
+  #board-path {
+    top: calc(max(12px, env(safe-area-inset-top)) + var(--chrome-button-h) + var(--bar-gap));
+    left: max(12px, env(safe-area-inset-left));
+    max-width: calc(100vw - 24px);
+    padding-right: 3px;
+  }
+  #board-path > :not(.path-up) { display: none; }
+  #board-path .path-up { display: block; }
   #toolbar {
     top: auto;
     left: calc(max(12px, env(safe-area-inset-left)) + var(--chrome-button-w) + var(--bar-gap));

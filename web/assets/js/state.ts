@@ -2205,6 +2205,15 @@ export function leaveBoard(thumb: string | null = null): boolean {
   return true;
 }
 
+/** The names from the top board down to the one on screen, for the trail back
+ *  up. One name at the top. */
+export function boardTrail(): string[] {
+  const path = boardPath();
+  if (!path.length) return [board.title];
+  const named = (doc: unknown) => (isRecord(doc) && typeof doc.title === 'string' && doc.title) || 'Untitled board';
+  return [fileTitle(), ...path.slice(0, -1).map(id => named(childDoc(id))), board.title];
+}
+
 /** The child board a board card opens, or null for any other item. */
 export function childOf(it: { type?: unknown, meta?: unknown } | null | undefined): string | null {
   if (it?.type !== 'board' || !isRecord(it.meta)) return null;

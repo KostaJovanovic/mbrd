@@ -146,6 +146,14 @@ kitchen.mbrd
    is not built. "Put in a new board" moves cards between levels, so it is in
    step 5.
 4. The breadcrumb, `Alt+↑`, Back on the web and on Android.
+   *Built (v0.675):* `ui/board-path.ts`. The trail is its own small bar under
+   the menu button rather than the masthead's field, since on the canvas the
+   masthead is the title card, which belongs to the board on screen; on a
+   phone it is the one button back to the board above. A desktop browser's
+   Back pops an entry pushed on the way in, and a way out by hand takes those
+   entries back quietly. On a phone, an installed copy and both apps, Back
+   goes through `main.ts`'s `onBack`, which comes up a level once nothing is
+   left open to close. A tap on a board card in the Feed opens it.
 5. Moving cards between levels, delete and restore, duplicate, copy-paste and
    merge carrying children.
 6. "Same look as the board above".
