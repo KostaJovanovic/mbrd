@@ -893,7 +893,9 @@ function pickCards(): Item[] {
     .slice(0, TUNING.maxCards);
 }
 
-const playable = () => board.items.filter(i => i.type !== 'ghost' && i.w > 0 && i.h > 0);
+// A drawing is left out: its box is mostly empty board, and grime caked on air
+// around a few strokes reads as a mess laid on nothing.
+const playable = () => board.items.filter(i => i.type !== 'ghost' && i.type !== 'drawing' && i.w > 0 && i.h > 0);
 
 /** The item as the dealer needs it. `type` rides along so a note can be dealt
  *  coffee and a video a film of dust - see GRIME_FOR in mess.ts. */
