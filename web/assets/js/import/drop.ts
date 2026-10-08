@@ -836,7 +836,7 @@ export async function importFiles(
     );
   select(added.map((i: Item) => i.id));
 
-  const verb = cancelled ? 'Stopped — kept' : replace ? replace.verb : 'Added';
+  const verb = cancelled ? 'Stopped, kept' : replace ? replace.verb : 'Added';
   let msg = `${verb} ${added.length} item${added.length === 1 ? '' : 's'}`;
   if (trimmed) msg += ` (capped at ${MAX_FILES})`;
   // "Skipped" — these were declined by the user, not refused by the app.

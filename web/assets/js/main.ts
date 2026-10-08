@@ -758,7 +758,7 @@ function initCloudSync() {
   const waitForLine = () => {
     if (waiting) return;
     waiting = true;
-    toast('Offline — this board will sync when the connection is back');
+    toast('Offline. This board will sync when the connection is back');
     addEventListener('online', () => { waiting = false; push(); }, { once: true });
   };
   const push = () => {
@@ -781,21 +781,21 @@ function initCloudSync() {
       if (!provider?.signedIn()) {
         stop();
         // The press is the gesture a sign-in window needs.
-        toast('Signed out of Drive — this board is not syncing', '',
+        toast('Signed out of Drive, so this board is not syncing', '',
           { label: 'Connect', run: () => { void cmds.connectGdrive(); } });
         return;
       }
       const out = await pushBoardToCloud();
       if (!out.ok) {
         stop();
-        toast('This board changed somewhere else — press Sync now to sort it out', 'error');
+        toast('This board changed somewhere else. Press Sync now to sort it out', 'error');
       }
     })().catch(err => {
       // The line went down mid-push: the same wait as above, not a stop.
       if (offline()) { waitForLine(); return; }
       stop();
       console.warn('[mbrd] cloud sync stopped:', err);
-      toast('Cloud sync stopped — press Sync now to try again', 'error');
+      toast('Cloud sync stopped. Press Sync now to try again', 'error');
     });
   };
   bus.on('autosaved', push);
@@ -847,7 +847,7 @@ function warnMissingCapabilities() {
       '. See research/docs/browser-support.md.');
   }
   if (!inflate) {
-    toast('This browser can’t open .mbrd files made by a newer one — update it, or use the latest Safari, Chrome or Firefox.', 'error');
+    toast('This browser can’t open .mbrd files made by a newer one. Update it, or use the latest Safari, Chrome or Firefox.', 'error');
   }
 }
 

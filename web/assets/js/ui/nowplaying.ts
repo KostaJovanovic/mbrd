@@ -600,5 +600,5 @@ function name(item: Item): string {
   const title = str(item.meta?.trackTitle)
     || (item.name ? baseName(item.name) || item.name : (item.type === 'video' ? 'Video' : 'Audio'));
   const artist = str(item.meta?.artist);
-  return artist ? `${title} — ${artist}` : title;
+  return artist ? `${title} - ${artist}` : title;
 }

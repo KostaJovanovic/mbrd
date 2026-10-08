@@ -711,7 +711,7 @@ export const SECTIONS: Section[] = [
       // panel open.
       { type: 'buttons', when: () => anyConnected(), buttons: [
         { cmd: 'share-link', label: 'Share link', closesPanel: true,
-          title: () => 'Upload a copy and copy a link to it — whoever you send it to needs no account' },
+          title: () => 'Upload a copy and copy a link to it. Whoever you send it to needs no account' },
         { cmd: 'shared-links', label: 'Shared links',
           title: () => 'The links you have shared: copy one again, or stop sharing it' },
       ] },

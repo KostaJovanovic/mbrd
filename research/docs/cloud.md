@@ -2,7 +2,7 @@
 
 *What a share link is, what a provider has to do, and what has to be edited to
 add one. A specification: this describes the app as it stands. The argument that
-led here — including the two designs it rules out — is
+led here, including the two designs it rules out, is
 [`../old/share-link-2026-08-14.md`](../old/share-link-2026-08-14.md), which is
 still worth reading before proposing any other way of sharing a board.*
 
@@ -22,7 +22,7 @@ the whole design and is what makes the feature cheap:
 
 The recipient path is an anonymous fetch of a public file. Google Drive is the
 first and so far only provider; OneDrive is next and lands on the same seam with
-no user-facing design left to do. iCloud is never — Apple exposes no public API
+no user-facing design left to do. iCloud is never: Apple exposes no public API
 that lets a website put a file into somebody's iCloud Drive or produce a public
 link to one, so it is out of the list rather than late in it.
 
@@ -38,21 +38,21 @@ open it, and the first provider decides how often that is true.
 
 Opaque and ours, not a raw provider URL. The temptation is to accept any
 `https://` URL and fetch it, which would handle every service at once with no
-sign-in code — and it is the wrong trade *here* specifically, because it forces
+sign-in code, and it is the wrong trade *here* specifically, because it forces
 `connect-src` open to `https:`. `web/_headers` spends two hundred lines arguing
 that this app fetches from a named list of hosts; a fixed provider table keeps
 the policy a list of names, which is a promise the header can actually keep.
 
 - **The query, not the fragment**, unlike every other thing this app reads off
   its own URL (`#feed`, `#grips`, `#perf`, `#load`). A fragment is never sent to
-  a server, which is exactly why the OAuth token comes back in one — but a share
+  a server, which is exactly why the OAuth token comes back in one, but a share
   link is meant to survive being pasted into a chat window, a mail client and a
   document, and those rewrite and truncate fragments far more readily than query
   strings. What is in this one is a provider name and a file id that is already
   public to anyone holding the link.
 - **The parameter name is `s`, and it is written in one place**: `SHARE_PARAM`
-  in `page.ts`. It is read from two directions that must agree — the builder
-  spells it into a URL, the boot reads it back — and a second spelling would be
+  in `page.ts`. It is read from two directions that must agree (the builder
+  spells it into a URL, the boot reads it back), and a second spelling would be
   a link this app writes and cannot open, which fails at nobody's desk but the
   recipient's.
 - **The first dot separates.** The provider half is checked against the table;
@@ -62,29 +62,29 @@ the policy a list of names, which is a promise the header can actually keep.
 
 ## The two paths
 
-**Out** — `cmds.shareLink` in `commands/file.ts`, in this order and the order
+**Out**: `cmds.shareLink` in `commands/file.ts`, in this order and the order
 matters:
 
-1. `confirmEmptyExport()` — nothing to share is worth saying before anything else.
+1. `confirmEmptyExport()`: nothing to share is worth saying before anything else.
 2. The provider, through `shareProvider()`.
-3. `askHistory()` — the file is going to somebody else by definition.
+3. `askHistory()`: the file is going to somebody else by definition.
 4. **A sign-in dialog, immediately before the popup.** Every browser blocks a
    popup that is not opened from a live user gesture, and the two questions above
    spend it; the popup is opened from the press that answers *this* dialog. It is
-   also the honest interface — a Google window appearing unannounced over
+   also the honest interface: a Google window appearing unannounced over
    somebody's board is a worse surprise than a sentence saying it is about to.
-5. `packForShare()` in `storage/storage.ts` — the same `serializeBoard()` and
+5. `packForShare()` in `storage/storage.ts`: the same `serializeBoard()` and
    `packBoard()` Export and Send file use, so a board sent as a link and the same
    board exported to disk are byte-for-byte the same file.
 6. A size question if the archive is over `HEAVY_SHARE` (100 MB). See below.
 7. `provider.upload()`, then the link, then the clipboard.
 
-**In** — `openIncomingShare()` in `main.ts`, after the session is back, beside
+**In**: `openIncomingShare()` in `main.ts`, after the session is back, beside
 the `#feed` read and for the same reason:
 
 1. `openingShare()` (`page.ts`) reads the query string and imports nothing.
 2. `parseShareRef()` turns the value into a reference or `null`.
-3. The address is cleared with `replaceState` **before** the board arrives — a
+3. The address is cleared with `replaceState` **before** the board arrives: a
    reload of `?s=…` would otherwise fetch and open the same board a second time
    over whatever had been done to the first copy.
 4. `openSharedBoard()` fetches and hands the blob to **`openFile()`**.
@@ -99,7 +99,7 @@ own confirm would be a second place that policy could drift from.
 
 `ShareProvider` in `storage/cloud/provider.ts`: `configured()`, `signedIn()`,
 `signIn()`, `upload()`, `download()`. Every method may throw, and a thrown
-`Error`'s message is shown to a person — so a provider's failures have to read as
+`Error`'s message is shown to a person, so a provider's failures have to read as
 sentences rather than as status codes.
 
 - **`signIn()` must be called from a live user gesture.** It opens a popup.
@@ -109,7 +109,7 @@ sentences rather than as status codes.
   non-sensitive, and so avoids the annual third-party security assessment the
   broader scopes drag in.
 - **Absence, not failure.** A provider whose identifiers were never filled in
-  answers `false` to `configured()` and is simply not offered — the schema's own
+  answers `false` to `configured()` and is simply not offered: the schema's own
   rule applied to a capability instead of to a control.
 
 ### The OAuth flow, and why it looks old-fashioned
@@ -130,13 +130,13 @@ was not: an expired token at share time is a sign-in prompt on a button somebody
 deliberately pressed, where at sync time it is a silent background failure.
 
 **No SDK, ever.** Google's own answer is a script from `accounts.google.com`.
-Loading it would put a remote host in `script-src` — the directive `web/_headers`
+Loading it would put a remote host in `script-src`, the directive `web/_headers`
 argues hardest about, since a host there is a place an injected `<script>` can
 come from. A hundred lines of `fetch` is much the cheaper half of that trade.
 
 **`web/oauth.html` carries no script**, and that is three decisions in one. Once
 the provider has redirected the popup there it is same-origin again, so the
-opener simply reads its location — no hash in `_headers` to keep in step with a
+opener simply reads its location: no hash in `_headers` to keep in step with a
 file, no `postMessage` with a target origin to get wrong, and nothing to break
 when a browser blocks script in a popup. It exists at all because every path this
 site does not have is answered with `index.html`, so a redirect to a
@@ -157,7 +157,7 @@ every origin this app is served from (`http://localhost:6273` included, or the
 feature cannot be tried locally), each redirect URI being the origin plus
 `/oauth.html`, and a browser API key restricted to the same referrers.
 
-Both identifiers are **public by construction** — the client id is in every
+Both identifiers are **public by construction**: the client id is in every
 authorisation URL a person can read out of their own address bar, and the API key
 is in every request the recipient's browser makes. What protects them is
 registration, not secrecy: a copy lifted from this repository is useless from any
@@ -209,26 +209,26 @@ than in the suite:
    same treatment, or the general "no module names a remote host the policy does
    not allow" check is the only thing catching it.
 5. Its sign-in page in `csp.test.js`'s `NOT_FETCHED`, if it is navigated to
-   rather than fetched — which it will be, since that is how this flow works.
+   rather than fetched, which it will be, since that is how this flow works.
 
 And the picker, once there are two. **A menu, never a second modal**:
 `ui/menu.ts` renders every menu in the app and `openAnchored()` opens a
 non-cursor one. It is one call over `PROVIDER_IDS` and no module below `ui/`
 changes. With one provider there is nothing to choose, which is why there is no
-picker today — a menu with one row is worse than no menu.
+picker today: a menu with one row is worse than no menu.
 
 ## What is still open
 
 - **The size question.** Over `HEAVY_SHARE` (100 MB) the app says the number
   and asks. That is not a ceiling and there is deliberately no `CeilingId` in
-  `consent.ts` for it — a ceiling in this app means *larger than something a
+  `consent.ts` for it. A ceiling in this app means *larger than something a
   reader can safely allocate*, and this is only *larger than somebody would like
   to wait for*.
 
 ## The viewing copy
 
 The whole board ships the originals, so a board of video is slow to upload and
-— the part that is not obvious from the sending end — the recipient waits
+(the part that is not obvious from the sending end) the recipient waits
 through the entire download before seeing anything. So a board over 20 MB is
 packed twice, and when the second pack is at most 60% of the first, the sender
 is asked which to send. The second is the **viewing copy**
@@ -276,7 +276,7 @@ object. An asset's `Blob` is the store's own object on every push.
 
 *The second thing the sign-in is for, and the reason the directory is
 `storage/cloud/` rather than `storage/share/`. Same account, same scope, same
-host in `connect-src`, same registered application — the expensive half of this
+host in `connect-src`, same registered application: the expensive half of this
 was paid for by the share link, which is why it exists at all.*
 
 ## The layout, and why it is not a `.mbrd`
@@ -290,7 +290,7 @@ mbrd/                      one folder, made once
 
 **A re-sync uploads `board.json` and nothing else.** The asset store is already
 content-addressed, so a file named by the SHA-256 of its own contents can only
-ever hold one set of bytes — which makes "have I already uploaded this?" a
+ever hold one set of bytes, which makes "have I already uploaded this?" a
 question the folder listing answers, with no manifest to keep in step and nothing
 that can go stale. A 200 MB video goes up on the sync where it arrived and is
 never touched again.
@@ -303,7 +303,7 @@ minutes.
 `old/gdrive-implementation.md` worried that splitting assets out "stops a board
 being one file you can email, which is currently a deliberate property of the
 format". It does not: the `.mbrd` export is untouched. That was one decision read
-as two — a *representation in a provider* is not the format.
+as two: a *representation in a provider* is not the format.
 
 `drive.file` is what makes the listing safe, and it is worth restating because it
 looks like it should not work: with that scope `files.list` returns **only files
@@ -315,13 +315,13 @@ Picker is needed to find a board again on a second machine.
 
 - **Not a merge.** Item positions are absolute and there is no CRDT, so two
   machines that both moved the same photograph have no correct answer. What this
-  does is *notice* — the `modifiedTime` Drive reports against the one we last saw
-  — and hand the question to a person. Last writer wins, but never silently.
+  does is *notice* (the `modifiedTime` Drive reports against the one we last saw)
+  and hand the question to a person. Last writer wins, but never silently.
 - **Not a daemon.** Browser-only OAuth gives an hour-long token with no safe way
   to hold a refresh token, and a popup cannot be reopened without a user gesture,
   so a timer-driven sync would fail once an hour in a way nothing could recover
-  from unattended. It hangs off the `autosaved` signal instead — which already
-  answers *did a person actually change something* — and when it cannot proceed
+  from unattended. It hangs off the `autosaved` signal instead, which already
+  answers *did a person actually change something*, and when it cannot proceed
   it **stops, latches, and says so once**. The row in the panel is how somebody
   comes back, and pressing it is the gesture a sign-in needs anyway. The latch
   lifts on the next autosave after a push lands (Sync now) or after a sign-in
@@ -329,7 +329,7 @@ Picker is needed to find a board again on a second machine.
 - **Not a delete.** Stopping a sync leaves the Drive folder exactly where it is.
   "Stop keeping this in sync" and "delete my board out of my Drive" are two
   different sentences, and a button that quietly meant both would be the worst
-  kind of data loss — the kind where the app was technically told to do it.
+  kind of data loss: the kind where the app was technically told to do it.
 
 ## The ordering that is the durability guarantee
 
@@ -353,7 +353,7 @@ the next push: a push that worked does not fail over housekeeping.
 ## Conflicts, exactly
 
 `BoardSync.seen` is the `modifiedTime` Drive reported for `board.json`
-immediately after **we** wrote it — read back rather than guessed, because it is
+immediately after **we** wrote it, read back rather than guessed, because it is
 Drive's clock and a local `Date.now()` would make the very next push look like
 somebody else's edit. A listing that disagrees means another machine has written
 since. Two cases produce one:
@@ -365,20 +365,20 @@ since. Two cases produce one:
   conflict too.
 
 `force` is what a caller passes once a person has been asked and said overwrite,
-and it re-establishes the baseline — a force that did not move `seen` would
+and it re-establishes the baseline: a force that did not move `seen` would
 conflict forever. Nothing in the automatic path may pass it.
 
 ## Where the bookkeeping lives
 
 One `kv` row, `cloud-sync`: board id → `{ provider, folder, file, seen, at }`.
-Local to this browser **on purpose** — it is a record of this machine's
+Local to this browser **on purpose**: it is a record of this machine's
 relationship with the remote, not a property of the board, so it must not travel
 inside a `.mbrd`. A board file carrying somebody's Drive folder id would leak it
 to everybody they ever send the board to. A second machine finds the folder by
 name instead: it is named for the board id, and `drive.file` listings only ever
 return this app's own files.
 
-`pushBoard()` does not write that row — it hands one back and the caller stores
+`pushBoard()` does not write that row; it hands one back and the caller stores
 it. That is what keeps the engine testable without a browser, and it is why
 `tests/sync.test.js` can assert the interesting behaviour (what is uploaded, what
 is not, what counts as a conflict) against a forty-line fake store.
@@ -388,7 +388,7 @@ is not, what counts as a conflict) against a forty-line fake store.
 `boardAssetHashes()` in `storage/mbrd.ts` answers "what does this board point
 at": live items, the bin, the faces the board is set in, and the pictures the
 step history names. `packBoard()` answers the same question for itself, in a loop
-that also captures labels and sorts fatal misses from tolerable ones — so they
+that also captures labels and sorts fatal misses from tolerable ones, so they
 are **two implementations bound by an assertion** rather than shared code, and
 `tests/mbrd.test.js` packs a board and asserts the archive's `assets/` entries
 are exactly that set.

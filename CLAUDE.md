@@ -5,9 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This file is a **checklist of things that break silently**, not an explanation of
 the app. The reasoning lives elsewhere and is not repeated here:
 
-- **[`research/docs/architecture.md`](research/docs/architecture.md)** — how the app
+- **[`research/docs/architecture.md`](research/docs/architecture.md)**: how the app
   is put together. The single source of truth.
-- **[`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)** — how to run it and
+- **[`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)**: how to run it and
   test it, the five easily-broken invariants, style, and what a commit or PR has
   to say. It and `.github/THIRD-PARTY.md` sit there rather than at the root
   because GitHub surfaces both from `.github/`, and the root is kept for files
@@ -15,22 +15,22 @@ the app. The reasoning lives elsewhere and is not repeated here:
 - **Module headers.** Every file opens with a 2–5 line comment: what the module
   does, key constraint, self-contained. **Read the top of a file before changing
   it**, and keep that convention in anything you add. Inline comments are short
-  and state WHY, not WHAT — proportional to the complexity they explain.
+  and state WHY, not WHAT, proportional to the complexity they explain.
 
 There is deliberately no `AGENTS.md`: conventions stated in two places disagree
 within a quarter.
 
 **Edit files with the file tools, never through the shell.** Read, Edit, Write,
-Grep, Glob — not `cat`, `sed -i`, a heredoc or a throwaway Python script, and
+Grep, Glob; not `cat`, `sed -i`, a heredoc or a throwaway Python script, and
 this holds over any harness setting that says to prefer the shell. The reason is
 review: a tool edit lands as a diff somebody can read, and a `sed` rewrite lands
 as an opaque command whose effect has to be reconstructed from the file
-afterwards. The shell is for commands that are commands — `npm test`, the build,
+afterwards. The shell is for commands that are commands: `npm test`, the build,
 `git`, `tools/serve.py`.
 
 ## Committing
 
-**`save.bat` is the only way to commit — never run `git commit` or `git push`
+**`save.bat` is the only way to commit. Never run `git commit` or `git push`
 directly.** A commit made around it stamps nothing: the version in `version.js`
 and the service-worker epoch fall behind, and the bundle, `404.html` and
 `patch.html` go out as whatever was last built. From a terminal:
@@ -42,17 +42,17 @@ and the service-worker epoch fall behind, and the bundle, `404.html` and
 
 Both run every step an interactive save runs, answer every question with the
 choice that loses nothing (no `git init`, no pull, no force push), and exit
-non-zero on any failure, a push that did not happen included — the commit is
+non-zero on any failure, a push that did not happen included; the commit is
 then kept locally. An empty message becomes `v<version>`.
 
 **Never add `Co-Authored-By`, "Generated with Claude Code", or any other
 Claude/AI attribution** to a commit message or a PR description.
 
 **Commit freely; never push.** A commit on the current branch, `main` included,
-needs no permission and no branch of its own — that is `save.bat quick-commit`.
-Anything that leaves this machine — `save.bat quick`, `git push`, `save.bat
+needs no permission and no branch of its own; that is `save.bat quick-commit`.
+Anything that leaves this machine (`save.bat quick`, `git push`, `save.bat
 release`, answering yes to `save.bat`'s push prompt, `gh workflow run`, `gh pr
-create` — is the maintainer's to run, every time, even when the work is
+create`) is the maintainer's to run, every time, even when the work is
 finished and the push looks like the obvious last step. Say the commit is ready
 and stop there. The reason is that a push deploys: wrangler serves the
 committed bundle, and `save.bat release` publishes four installers that the
@@ -61,7 +61,7 @@ updaters in every installed copy then read.
 ## Commands
 
 ```bash
-npm test                          # node --test over tests/**/*.test.{js,ts} — no install, no deps
+npm test                          # node --test over tests/**/*.test.{js,ts}; no install, no deps
 node --test tests/state-history.test.js                            # one file
 node --test --test-name-pattern "undo" tests/state-history.test.js # one test
 python tools/serve.py [port]      # dev server on 6273; server.bat on Windows
@@ -72,8 +72,8 @@ never does:
 
 ```bash
 npm run dev         # esbuild watch → web/assets/app.js; edit, then refresh
-npm run build       # minified bundle + the three lab bundles — this is what ships
-npm run lint        # oxlint, correctness only — adding a formatter is a regression
+npm run build       # minified bundle + the three lab bundles; this is what ships
+npm run lint        # oxlint, correctness only; adding a formatter is a regression
 npm run typecheck   # tsc -p tsconfig.json (noEmit set there), strict, every .ts under web/assets/js
 npm run dev:lab     # watch build for web/lab.html, the pigment lab
 npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
@@ -83,8 +83,8 @@ save.bat quick-commit "message"  # the same, commit only, no menu and no prompts
 save.bat quick "message"         # the same, commit and push, no menu and no prompts
 save.bat crown "message"         # quick-commit, and this commit becomes the next X.0
 save.bat release    # the same, pushed, then GitHub builds Windows + Android and publishes
-save.bat release all # the same, with macOS and Linux too — four systems, ten times the minutes
-save.bat portable   # build the web bundle, then desktop/portable/ — no commit
+save.bat release all # the same, with macOS and Linux too: four systems, ten times the minutes
+save.bat portable   # build the web bundle, then desktop/portable/; no commit
 ```
 
 `save.bat` does not rebuild `desktop/portable/`, the portable copy. That is
@@ -97,7 +97,7 @@ in place. It needs `desktop/node_modules`.
 **A release is `save.bat release` (option 3 in its menu), and nothing else.**
 After the push it runs `gh workflow run release.yml`, and
 `.github/workflows/release.yml` builds and publishes into this repository's own
-releases, which `Get the app` and the updaters read — so **this repository has
+releases, which `Get the app` and the updaters read, so **this repository has
 to be public**, or GitHub answers its releases with a 404 to anybody signed out.
 Copies installed before the move read `KostaJovanovic/mbrd-release`, which the
 workflow mirrors each release to while the `RELEASES_TOKEN` secret is set. A
@@ -111,8 +111,8 @@ reads are the maintainer's.
 `save.bat release` build **Windows and Android**; option 7 and `save.bat
 release all` add macOS and Linux. A macOS minute bills at ten times a Linux
 one, so the two absent systems cost more than the two present. The short run
-starts no macOS or Linux runner at all — the `systems` input shortens the
-matrix rather than skipping jobs — and its release carries two files and says
+starts no macOS or Linux runner at all (the `systems` input shortens the
+matrix rather than skipping jobs), and its release carries two files and says
 so in its notes. A macOS or Linux copy then sees a version it cannot download
 until the next full release, which updates it straight there; nothing is
 stranded, because the updaters store a check time and never a version
@@ -126,7 +126,7 @@ and publish flips the draft visible once every expected name is in it. The
 draft is what keeps the all-at-once rule: GitHub's latest-release endpoint,
 which every updater reads, excludes drafts. Storage is 0.5 GB on this account
 and one release set is about 1.3 GB, so the old collect-then-publish shape
-could never fit — it filled, every upload was refused, and the cleanup step sat
+could never fit: it filled, every upload was refused, and the cleanup step sat
 in the job that a failed upload skips. **Do not reintroduce
 `actions/upload-artifact` for the apps.**
 
@@ -171,7 +171,7 @@ packed `app.asar` for `dist/chrome/titlebar.html`. A new chrome file is an entry
 in `CHROME_FILES` and a source `build.mjs` builds or copies.
 
 `desktop/portable/` is the unpacked app plus the `portable` marker
-`installer.nsh`'s Portable branch writes — there is no portable *target*, only
+`installer.nsh`'s Portable branch writes. There is no portable *target*, only
 that page inside the one Setup.exe. `main.ts` reads the marker before `ready` and
 puts `userData` in `portable/data`, which is why **`portable/data/` survives a
 rebuild and everything else in there does not**. Not `desktop/dist/`, which is
@@ -187,11 +187,11 @@ Android keeps the same folder through `MbrdBoards.java`: `MbrdRoot`'s, which
 is `Documents/mbrd` with the storage grant, and its bin is `.trash/` inside it.
 
 The root package declares four devDependencies and no runtime dependency, and
-`npm test` installs nothing — that is what the two-package layout is for.
+`npm test` installs nothing; that is what the two-package layout is for.
 
 The lint is oxlint plus one vendored plugin, `tools/oxlint/anti-slop`, which is
 why `@oxlint/plugins` is a dependency. Its rules are the single departure from
-correctness-only and a narrow one — each fires on a way of writing TypeScript
+correctness-only and a narrow one: each fires on a way of writing TypeScript
 that hides a mistake, never on layout. The argument is in `.oxlintrc.json`'s
 header.
 
@@ -212,10 +212,10 @@ runs them.
 The other `.mjs` under `tools/` are not build steps. `preset-oklch.mjs` and
 `gen-tier-palettes.mjs` print numbers that were pasted into `tokens.css` by
 hand; nothing regenerates from them and nothing should. `bench-compare.mjs`
-and `grime-shots.mjs` are benches — each file's header says how to run it.
+and `grime-shots.mjs` are benches; each file's header says how to run it.
 
 **A refresh alone is not enough.** The app is TypeScript, the browser gets one
-esbuild bundle, and `index.html` loads `assets/app.js` — so an edit needs
+esbuild bundle, and `index.html` loads `assets/app.js`, so an edit needs
 `npm run dev` running.
 
 **`npm test` needing no install is load-bearing.** Node strips types natively
@@ -223,7 +223,7 @@ from 22.18, which is why `engines` says 22.18 and `erasableSyntaxOnly` is on:
 an `enum`, `namespace` or parameter property would make the whole suite
 unrunnable without a loader. tsc refuses them first.
 
-**`npm test` alone is not the bar.** CI runs six legs in this order — `npm test`
+**`npm test` alone is not the bar.** CI runs six legs in this order: `npm test`
 *before* `npm ci` (the only thing keeping the zero-install claim honest), then
 lint, typecheck, build, a parse of every committed module and both Python
 tools, and `node tools/smoke.mjs` (headless boot, example board, no console
@@ -231,7 +231,7 @@ error; Playwright from `desktop/` locally). **The deploy does not wait for
 them:** Cloudflare's git connection deploys every push to main, red or green.
 The build leg catches what `npm test` cannot: an unresolvable import, or
 a dynamic import naming something that moved. The parse leg catches syntax
-errors in modules no test imports — most of `ui/` and `canvas/` — but only after
+errors in modules no test imports (most of `ui/` and `canvas/`), but only after
 the push, so `node --check` and `python -m py_compile` locally are faster.
 **No leg typechecks `desktop/`.** CI checks `mobile/`'s types but not the
 shell's, and lint is all it gets, so a change there needs `cd desktop && npm run
@@ -239,14 +239,14 @@ typecheck` locally, because nothing after the push will catch a type error.
 
 **The typecheck leg does not reach everything, and the parse leg is why that is
 survivable.** `include` is `web/assets/js/**/*.ts` and nothing else, so
-`tools/` — the generators, and the vendored `anti-slop` plugin, which
-`.oxlintrc.json` also ignores — is outside it, as are the six `.js` files left
+`tools/` (the generators, and the vendored `anti-slop` plugin, which
+`.oxlintrc.json` also ignores) is outside it, as are the six `.js` files left
 under `web/assets/js`: the four classic workers, which need `importScripts`
 (`import/tiff-worker.js`, `import/heif-worker.js`, `mesh/occt-worker.js`,
 `optimize/media-worker.js`), the module worker `canvas/matte-worker.js`, and
 `version.js`, which `save.bat` stamps. Every one of those is *parsed* by the
 fifth leg, and the five workers by `tests/imports.test.js` too. Nothing is
-typechecked twice and nothing is silently excused — but "green typecheck" means
+typechecked twice and nothing is silently excused, but "green typecheck" means
 the app's TypeScript, not the repository.
 
 **`tsconfig.json` closes its ambient types (`"types": []`) and that line is not
@@ -303,12 +303,12 @@ platform 36. `mobile/README.md` is how it fits together. What breaks silently:
 | --- | --- | --- |
 | `web/assets/js/version.js`, the `VERSION` line in `web/sw.js` | `save.bat` stamps both by regex | reformatting breaks the stamp silently |
 | `web/404.html` | byte-for-byte copy of `index.html`, remade by `save.bat` | `tests/notfound.test.js`, on one byte |
-| `web/patch.html` | generated from `patch-notes.md` | nothing — `save.bat` regenerates it and a hand edit is overwritten |
-| `web/assets/js/import/formats.ts`, `web/assets/stickers.svg` | generated | — |
-| `web/assets/app.js` | the bundle, and it **is committed** — wrangler serves `./web` statically, so the last committed bundle is what visitors get | drifts behind its sources |
+| `web/patch.html` | generated from `patch-notes.md` | nothing; `save.bat` regenerates it and a hand edit is overwritten |
+| `web/assets/js/import/formats.ts`, `web/assets/stickers.svg` | generated | |
+| `web/assets/app.js` | the bundle, and it **is committed**: wrangler serves `./web` statically, so the last committed bundle is what visitors get | drifts behind its sources |
 
 Also: **no apostrophes anywhere inside `SHELL` in `web/sw.js`**, comments
-included — `tests/sw.test.js` reads that list by pulling out single-quoted runs.
+included, because `tests/sw.test.js` reads that list by pulling out single-quoted runs.
 
 ## Where a change goes
 
@@ -322,7 +322,7 @@ included — `tests/sw.test.js` reads that list by pulling out single-quoted run
   in `canvas/renderers.ts`.
 - **A 3D format** → a module under `mesh/`, an entry in `KINDS` and one in
   `PARSERS`, all reachable from `mesh.ts`. `classify()` needs no edit: it asks
-  `meshKind()`. **Every reader must be synchronous** — the per-parse ceilings in
+  `meshKind()`. **Every reader must be synchronous**: the per-parse ceilings in
   `mesh/shared.ts` and the `lift` retry in `canvas/model.ts` both rest on there
   being no `await` under `parseMesh()`, which is why `mesh/zip.ts` inflates by
   hand instead of using `DecompressionStream`.
@@ -335,14 +335,14 @@ included — `tests/sw.test.js` reads that list by pulling out single-quoted run
   misspelled id fails *silently* on screen; `tests/icons.test.js` is what
   catches it, in both directions.
 - **A stylesheet** → a `<link>` in `index.html`, the same place in `SHELL`
-  (`web/sw.js`), and the same place in `APP_CSS_ORDER` (`tests/helpers.js`) —
+  (`web/sw.js`), and the same place in `APP_CSS_ORDER` (`tests/helpers.js`):
   one list written three times, because **document order is the cascade** and
   `quality.css` wins on it rather than on specificity. Miss the third and
   every CSS test stops reading that sheet, which is why
   `tests/css-order.test.js` compares the three lists name for name and in
   order. `patch.html` is generated and needs no edit.
-- **An id** — written in `index.html` or handed to a node at runtime by a
-  module — is how the sheets address the furniture. A rename fails *silently*:
+- **An id**, written in `index.html` or handed to a node at runtime by a
+  module, is how the sheets address the furniture. A rename fails *silently*:
   the selector stays valid CSS and matches nothing. `tests/element-ids.test.js`
   checks both directions, the job `tests/icons.test.js` does for icon names.
 - **A sound** → a recipe in `RECIPES` and a mapping from what happened to what
@@ -353,19 +353,19 @@ included — `tests/sw.test.js` reads that list by pulling out single-quoted run
   `ShareProvider`, its id in `PROVIDER_IDS` (`cloud/provider.ts`) and its object
   in `PROVIDERS` (`cloud/cloud.ts`), its identifiers in `cloud/config.ts`, **its
   API host in `connect-src` in `web/_headers`**, and its sign-in page in
-  `tests/csp.test.js`'s `NOT_FETCHED` — that last one because the sign-in is
+  `tests/csp.test.js`'s `NOT_FETCHED`. That last one is because the sign-in is
   *navigated* to and not fetched, which is the only shape of URL allowed to be
   absent from the policy. Implementing `store` as well as the share methods is
   what lets it keep boards in sync; a provider that cannot is absent from that
   half rather than failing in it. The picker, once there are two, is one
   `openAnchored()` call and never a second menu. `research/docs/cloud.md` is the
   specification. **The rule in `config.ts` is both identifiers or neither, and
-  `tests/share.test.js` is what holds it** — a client id with no API key is the
+  `tests/share.test.js` is what holds it**. A client id with no API key is the
   one state worth a test, because sign-in and upload both work and only the
   recipient's fetch fails, days later, with nothing to explain it.
   `canShareLink()` is the switch that keeps the rows absent rather than broken,
   so either state is a legal checkout. The web pair ships filled (both are
-  origin-restricted and safe in the clear — the argument is in `config.ts`'s own
+  origin-restricted and safe in the clear; the argument is in `config.ts`'s own
   header); `GOOGLE_DESKTOP_CLIENT_ID` and its secret ship empty, which keeps
   Drive out of the desktop app rather than broken in it. When both halves are
   present the test also checks they are the shape Google issues, which catches
@@ -379,9 +379,9 @@ included — `tests/sw.test.js` reads that list by pulling out single-quoted run
 - **A size ceiling** → a `CeilingId` and a risk sentence in `consent.ts`, a
   `throw oversize(...)` where the number is measured, and a `lift()` at the
   nearest async caller that knows the file. **No ceiling refuses anything on its
-  own.** The numbers stay where they are argued — `IMPORT_LIMITS`
+  own.** The numbers stay where they are argued (`IMPORT_LIMITS`
   (`import/budget.ts`), `LIMITS` (`storage/zip.ts`), `MAX_TRIANGLES`
-  (`mesh.ts`), `MAX_ART` (`import/artwork.ts`) — and `consent.ts` holds only the
+  (`mesh.ts`), `MAX_ART` (`import/artwork.ts`)), and `consent.ts` holds only the
   prose and the decision.
 - **Do not split `canvas/input.ts`.** One pipeline, exactly one active gesture.
 
@@ -389,7 +389,7 @@ Two traps in that list, both found the hard way:
 
 - **A button that opens a menu must call `justDismissed()` first.** The menu
   closes on outside `pointerdown` in the capture phase, and the button is
-  outside it — so the second press already closed it and the `click` reopens it.
+  outside it, so the second press already closed it and the `click` reopens it.
   No toggle written in the opener can see this.
 - **A native `<select>` stops being one only when there is something it cannot
   do**, never for consistency. The bar, and who has cleared it, is in the
@@ -404,29 +404,29 @@ Two traps in that list, both found the hard way:
   purpose.
 - **`state.ts` is the only door**, and the base layer under it may never import
   it back. `tests/layers.test.js` holds that list too.
-- **A lower module that needs the interface gets it injected, never imported** —
+- **A lower module that needs the interface gets it injected, never imported**:
   `setOverlays()` (`notify.ts`), `setAssetNameLookup()`, `setNoteMenu()`
   (`canvas/notes.ts`). Unwired, each is a no-op, which is what keeps those
   modules loadable in a test with no browser.
-- **No module touches `document` at import time** — export an `init*()`. Seven
+- **No module touches `document` at import time**; export an `init*()`. Seven
   are exempt and `tests/imports.test.js` names them: `main.ts`,
   `ui/appearance.ts` and the five workers.
 - **No module carries `@ts-nocheck`.** `tests/ts-debt.test.js` counted the
   migration to zero and is now a plain guard.
 - **Import paths are case-sensitive on the deployed host and not on Windows.**
   CI runs on `ubuntu-latest` for this, but reports after the push and the deploy
-  does not wait — match the filename exactly.
+  does not wait, so match the filename exactly.
 
 ## Safety rules
 
-- **The hand-written binary readers parse files the app did not write** —
+- **The hand-written binary readers parse files the app did not write**:
   `storage/zip.ts`, `mesh.ts` and everything under `mesh/`, `import/artwork.ts`,
   `import/preview.ts`, `import/document.ts`, `import/containers.ts`,
   `import/pureref.ts`, `optimize/opus.ts`. All bounds-check before allocating. A change near them
   wants a test that feeds it something broken.
 - **Those readers throw two different things and the difference is load-bearing.**
   `Oversize` (`consent.ts`) means "this is larger than the number somebody wrote
-  down" — a question, carried up to whoever owns the file, and lifted with a
+  down": a question, carried up to whoever owns the file, and lifted with a
   `lift` flag if they say yes. A plain `Error` means the file does not say what it
   means: an offset past the end, two entries under one name, a count that is not
   an integer. **`lift` must never reach the second kind.** A ceiling that stops
@@ -441,7 +441,7 @@ Two traps in that list, both found the hard way:
   Argued at length in `consent.ts`; the short version is that a module with no
   interface attached must not invent a refusal, and this is what keeps `import/`,
   `storage/` and `mesh.ts` loadable in a test with no DOM. It also means the
-  ceilings are only as good as `main.ts`'s wiring — if that line goes, nothing
+  ceilings are only as good as `main.ts`'s wiring. If that line goes, nothing
   fails, and every limit in the app silently becomes no limit.
 - **Nothing that reads a foreign document may touch `innerHTML`.**
   `ui/markdown.ts` and `ui/documents.ts` build trees with `createElement` and
@@ -450,7 +450,7 @@ Two traps in that list, both found the hard way:
   **allow-list**.
 - **`web/_headers` is a CSP nothing here runs.** `serve.py` sends no headers, so
   a mistake is invisible locally and is a picture that does not draw on the
-  deploy. `tests/csp.test.js` is the whole substitute — it checks the inline
+  deploy. `tests/csp.test.js` is the whole substitute: it checks the inline
   `<script>` hashes in `index.html` against their bytes, the embed hosts against
   `canvas/embed.ts`, the one `connect-src` host against `optimize/media.ts`, and
   the worker exemption. **A new embed provider is two edits.**
@@ -463,23 +463,23 @@ Two traps in that list, both found the hard way:
 1. **`#sidebar`, `#header-panel`, … `#toolbar`, `#timeline-strip`,
    `#nowplaying`, `#tour`.** Every rule that steps one of these up a tier is a
    *general sibling combinator*, which only looks forward. Move any of them
-   above its dependents and a layout breaks silently — and only in one state:
+   above its dependents and a layout breaks silently, and only in one state:
    on a phone, or while the timeline is open, or while something is playing.
 2. The strip and the player share one gap along the foot, `--foot-left` /
    `--foot-right`, defined once at `:root` in `chrome.css`. A panel opening at
    either end widens it for both.
 
-## `/patch` — a document wearing the app's cascade
+## `/patch`: a document wearing the app's cascade
 
-`web/patch.html` is **index.html's `<head>`** — the fonts, the whole cascade in
-order, and the pre-paint look script — and then the changelog. Nothing else: no
+`web/patch.html` is **index.html's `<head>`** (the fonts, the whole cascade in
+order, and the pre-paint look script) and then the changelog. Nothing else: no
 sidebar, no board furniture, no bundle. Generated by `node
 tools/gen-patch-page.mjs` from `patch-notes.md`; `save.bat` re-runs it on every
 save, so what is committed follows the prose.
 
 Do not put index.html's body back on it: that boots half a megabyte of script
-under a board nobody can see, and pins `#grain` — the app's fixed, full-window
-paper texture — still behind a page whose own texture scrolls.
+under a board nobody can see, and pins `#grain` (the app's fixed, full-window
+paper texture) still behind a page whose own texture scrolls.
 
 What matters when touching it:
 
@@ -494,16 +494,16 @@ What matters when touching it:
   `patch.html`, so a returning visitor can be handed a cached copy from back
   when the page did boot the app. That branch reads no session and freezes the
   preference store, which is what keeps such a copy harmless.
-- The page follows the whimsy dial by design — the pre-paint script alone puts
+- The page follows the whimsy dial by design: the pre-paint script alone puts
   the reader's look on it, with no script of its own.
-- No `<base>` tag, unlike `index.html` — a base makes every fragment resolve
+- No `<base>` tag, unlike `index.html`: a base makes every fragment resolve
   against it and load a board.
 
 ## `web/lab.html`, `web/lab-sound.html` and `web/lab-grime.html` are benches, not pages of the site
 
 Each has its own bundle (`npm run dev:lab`, `npm run dev:sound`,
 `npm run dev:grime`), its own
-colours, none of `tokens.css` — a bench rendering at the current whimsy tier
+colours, none of `tokens.css`, because a bench rendering at the current whimsy tier
 makes a wrong colour and a warmly displayed one look identical. `noindex` rather
 than a `robots.txt` Disallow (a Disallow stops the fetch, which stops the
 directive being read), absent from `sitemap.xml` and from `SHELL`.
@@ -515,7 +515,7 @@ explicitly**.
 
 ## Where the reasoning lives
 
-`research/docs/` holds the specifications —
+`research/docs/` holds the specifications:
 [`mbrd-format.md`](research/docs/mbrd-format.md),
 [`layout-settings.md`](research/docs/layout-settings.md),
 [`browser-support.md`](research/docs/browser-support.md),
@@ -524,7 +524,7 @@ explicitly**.
 `research/` holds why things are the way they are, in two tiers: open work at
 the top level, and carried-out work in `old/`. See
 [`research/README.md`](research/README.md). **Nothing in `old/` is
-authoritative** — if it disagrees with the code, the code is right.
+authoritative**: if it disagrees with the code, the code is right.
 
 `window.mbrd` is a deliberate console handle, and `main.ts` names all nine
 keys: `board`, `bus`, `vp`, `cmds`, `selection`, `perf`, `debugGrips`, `joins`,

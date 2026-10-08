@@ -114,7 +114,7 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
       btn.type = 'button';
       btn.setAttribute('role', 'status');
       btn.title = 'This browser stopped storing the board. Export it to a file to keep it';
-      btn.textContent = 'Not saved — Export';
+      btn.textContent = 'Not saved: Export';
       btn.addEventListener('click', () => { cue('pick'); cmds.export(); });
       el('drawer-dock')!.append(btn);
       mark = btn;

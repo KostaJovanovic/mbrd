@@ -1,11 +1,11 @@
-# The phone blink, and what a zoom costs — 20 September 2026
+# The phone blink, and what a zoom costs, 20 September 2026
 
 **Status: partly done, 2026-09-23.** The blink and the slow zoom are fixed. The
 tight-shadow redesign is still open and waits on the maintainer.
 
 Measured on the maintainer's Android phone (1224x2720, dpr 3, 90Hz panel,
 Android 16) over USB, against `test.mbrd`: 106 items, mostly photographs.
-The harness is `research/phone-trace/cdp.mjs` — a dependency-free CDP client
+The harness is `research/phone-trace/cdp.mjs`, a dependency-free CDP client
 that drives the WebView, runs `mbrd.perf`, and records renderer traces.
 
 ## What was wrong, and what fixed it
@@ -17,7 +17,7 @@ may not draw`. Zoom decided it: ten zoom steps near 100% produced 0 warnings,
 the same ten zoomed out produced 213.
 
 `will-change: transform` on `#world` both promotes the layer *and pins its
-raster scale*, so a board at 30% was still being rastered at 1:1 — ten
+raster scale*, so a board at 30% was still being rastered at 1:1: ten
 screenfuls of texture for one screen. Promotion now comes from a `translateZ(0)`
 written into the transform (`canvas/viewport.ts`), which carries no such hint.
 **213 warnings to 0**, and the maintainer confirmed the blink was gone. For
@@ -27,7 +27,7 @@ code scores 85.
 **The zoom being slow.** A traced pinch spent 28ms of each 55ms frame inside
 `recalcStyle`, invalidated by the per-frame `--iz` write, which is inherited by
 every node under `#world`. And `RasterImplementation::ReadbackImagePixels` cost
-110ms a go — the frozen-GIF capture in `canvas/stills.ts`, shooting on the frame
+110ms a go: the frozen-GIF capture in `canvas/stills.ts`, shooting on the frame
 that crosses the rung. `--iz` now moves on a coarser ladder while a gesture is in
 flight (`IZ_STEP_MOVING`), and the capture is owed to the settling frame instead
 of taken mid-gesture. Measured over a 6s zoom loop: **79 frames to ~115**, median
@@ -55,8 +55,8 @@ are warnings over one normal-sized pinch (0.34 to 0.82 and back, 3s):
 | no shadow | **0** |
 
 The shape of that table is the finding: **cost follows the area of translucent
-shadow in board space, not the blur arithmetic.** A pre-blurred texture — the
-obvious "cheaper to draw" answer — still scores 8, because the pixels still have
+shadow in board space, not the blur arithmetic.** A pre-blurred texture, the
+obvious "cheaper to draw" answer, still scores 8, because the pixels still have
 to be blended over the same wide penumbra. A tight shadow scores 0 while still
 being a soft shadow. Turning shadows off below the far-zoom rung scores 17: no
 good, because most of the pinch happens above it.

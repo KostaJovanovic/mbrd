@@ -1,4 +1,4 @@
-# The motion audit — 24 September 2026
+# The motion audit, 24 September 2026
 
 **Status: partly done, 2026-09-24.** All twenty built (commits 17dbdac,
 dcc3400, bf5f7d1) except two halves that want a browser first: the delete
@@ -44,14 +44,14 @@ Everything else is independent. By value for effort: **1, 2, 3, 7, 12, 4, 8,
 5, 6, 9, 10**, then the rest.
 
 Every fix is checked the same way mechanically, and that is not repeated below:
-`npm test`, `npm run typecheck`, `npm run lint` (from PowerShell — the Bash
+`npm test`, `npm run typecheck`, `npm run lint` (from PowerShell, since the Bash
 wrapper mangles its output) and `npm run build` all pass. The feel checks need
 `npm run dev` running. DevTools' Animations panel at 10% speed is the tool for
 most of them; Rendering → "Emulate prefers-reduced-motion" for the rest.
 
 ---
 
-## 1. JS-driven motion ignores prefers-reduced-motion — HIGH
+## 1. JS-driven motion ignores prefers-reduced-motion (HIGH)
 
 **Problem.** Reduced motion is honoured for CSS by one rule
 (`status.css:186-199`: all durations cut to 0.01ms). It cannot reach a WAAPI
@@ -105,11 +105,11 @@ and closes at once on Escape; a sticky turned into a document and back swaps
 with no flight; F and 0 cut; clean mode's black fades rather than a star
 opening, and no spider walks. With it off, all of it is as before.
 
-## 2. The Ctrl+K search palette animates — HIGH
+## 2. The Ctrl+K search palette animates (HIGH)
 
 **Problem.** `#search` (`menu.css:12-25`) carries
-`animation: ctx-in var(--dur-fast) var(--ease);` — fade, 3px drop, 0.97 scale
-— on every Ctrl+K (`search.ts:50`). A palette opened from the keyboard many
+`animation: ctx-in var(--dur-fast) var(--ease);` (fade, 3px drop, 0.97 scale)
+on every Ctrl+K (`search.ts:50`). A palette opened from the keyboard many
 times a day should be there on the next frame; its close is already instant
 (`search.ts:122`).
 
@@ -124,23 +124,23 @@ four pointer-opened ones also share the ctx-in entrance."
 **Check.** Ctrl+K repeatedly: the palette is simply there; the Animations
 panel records nothing.
 
-## 3. Menus replay their pop-in where nothing moved — MEDIUM
+## 3. Menus replay their pop-in where nothing moved (MEDIUM)
 
 **Problem.** `render()` (`menu.ts:1020`) always builds a fresh `#ctx-menu`,
 and `menu.css:127` always gives it `ctx-in`. So it pops in when:
-- opened from the keyboard — ArrowDown on a flyout button (`flyout.ts:72`),
+- opened from the keyboard: ArrowDown on a flyout button (`flyout.ts:72`),
   the ContextMenu key / Shift+F10, Enter on a fold;
-- a drill-down page turns — `swap()` removes the old page outright because
+- a drill-down page turns: `swap()` removes the old page outright because
   "a page turn must not flinch" (`menu.ts:997`), then renders the new one with
   the pop-in anyway;
-- the pointer hops from one open toolbar flyout to the next — the dwell is
+- the pointer hops from one open toolbar flyout to the next: the dwell is
   skipped (`flyout.ts:98-99`) but the entrance is not.
 
 **Change.**
 1. `MenuOpts` (`menu.ts:68`): add `instant?: boolean;` with the doc
    `/** no entrance or exit - see .is-instant in menu.css */`.
 2. Near `let down` (`menu.ts:343`):
-   `/** The last input was a key, not a pointer. */ let byKeys = false;` — and in
+   `/** The last input was a key, not a pointer. */ let byKeys = false;`, and in
    `initMenu()`, after the `pointerdown` that records `down` (line 304):
    ```ts
    addEventListener('keydown', () => { byKeys = true; }, true);
@@ -151,7 +151,7 @@ and `menu.css:127` always gives it `ctx-in`. So it pops in when:
    `if (opts.instant || byKeys) node.classList.add('is-instant');`
 4. `swap()` (`menu.ts:999`): add `instant: true` to the options it passes.
 5. `dismiss()` (`menu.ts:220`), first line:
-   `if (el.classList.contains('is-instant')) { el.remove(); return; }` — or the
+   `if (el.classList.contains('is-instant')) { el.remove(); return; }`, or the
    panel sits inert on screen for `LEAVE_MS` waiting for an `animationend`
    that never comes.
 6. `openAnchored()` (`menu.ts:481-489`): accept `instant = false` in its
@@ -172,7 +172,7 @@ key, ArrowDown on Arrange, Enter on a fold and "Back" all show the menu with
 no animation, and Escape removes it at once. Hover Arrange until it opens,
 slide to Note and Colour: only the first pops in.
 
-## 4. The connection chip re-pops on every press — MEDIUM
+## 4. The connection chip re-pops on every press (MEDIUM)
 
 **Problem.** The chip over a marked line carries two cycling buttons, and
 "pressing the thing you are looking at to see the next state is the whole
@@ -184,7 +184,7 @@ const next = `${conn.a}\0${conn.b}\0${dir}\0${style}\0${meta.label || ''}`;
 if (next !== sig) { build(conn, dir, style, !!meta.label); sig = next; }
 ```
 `build()` removes the node and makes a new one, which plays `ctx-in`
-(`menu.css:316`) — the chip blinks and pops on every press, and the pressed
+(`menu.css:316`): the chip blinks and pops on every press, and the pressed
 button is destroyed, so keyboard focus drops to `<body>`. Hiding it off-screen
 with `node.hidden` (`conn-chip.ts:191`) restarts the animation too, so panning
 the line back into view pops it again.
@@ -230,7 +230,7 @@ times fast: the icon walks through its four states with no blink. Tab to it
 and press Space repeatedly: focus stays. Pan the line away and back: no pop.
 Mark another line: one pop.
 
-## 5. Submenus close while being aimed at — MEDIUM
+## 5. Submenus close while being aimed at (MEDIUM)
 
 **Problem.** A fold's submenu opens beside its row, top-aligned
 (`menu.ts:1199-1200`). Reaching its lower rows means moving diagonally across
@@ -278,7 +278,7 @@ bottom row across two or three siblings: it stays open. Move straight down
 instead: it closes at once. Stop on a sibling: it closes after the grace.
 Near the right edge (submenu flipped left) the same holds leftwards.
 
-## 6. The document viewer opens and closes too slowly — MEDIUM
+## 6. The document viewer opens and closes too slowly (MEDIUM)
 
 **Problem.** Closing a document, Escape included (`viewer.ts:214-218`):
 ```ts
@@ -299,14 +299,14 @@ which still plays with Quality's animations off.
 
 **Change.**
 1. `viewport.ts`, beside `travelMs` (after fix 1):
-   `export const fastMs = () => cssMs('--dur-fast', 130);` — no reduced-motion
+   `export const fastMs = () => cssMs('--dur-fast', 130);`, with no reduced-motion
    zero here: a fade is what reduced motion keeps.
 2. `viewer.ts`: import `fastMs`; both `duration: 180` become `duration: fastMs()`.
 3. `viewer.ts:345`: `ms * 1.6` → `ms * 1.1`.
 4. `viewer.ts:385-393`: `const long = ms * 0.7;`, the sheet's easing becomes
    `cssEase()` (the app's `--ease`, already read by the grow), and the desk
    and parts fade on `'ease-out'`. Keep the transforms (down the window,
-   tipping 1.5°) — the direction is the design, only its curve changes. The
+   tipping 1.5°): the direction is the design, only its curve changes. The
    doc comment gains: "Off the mark at once and quick - the user asked to be
    back on the board, so the first frames are the ones that must move."
 
@@ -318,7 +318,7 @@ wants the fall kept, the fallback is: the old curve on the *sheet only*, at
 the first frame, board visible almost at once, gone in ~0.3s. Try Softish and
 Harsh. With Quality's animations off, a document appears at once.
 
-## 7. Rapid zoom steps lose ground — MEDIUM
+## 7. Rapid zoom steps lose ground (MEDIUM)
 
 **Problem.** `+`/`-` (`input.ts:3279-3280`) and the pill's buttons
 (`hud.ts:58-59`) each start a 190ms step from `z0 = this.zoom`
@@ -351,7 +351,7 @@ repeat rate.
 **Check.** At 100%, four fast `+` presses land on 244% exactly. One press
 alone is unchanged. Grabbing the board mid-flight stops it where it is.
 
-## 8. A finger on a card lifts it — MEDIUM
+## 8. A finger on a card lifts it (MEDIUM)
 
 **Problem.** Card hover is mirrored from pointer events so the shadow twin
 can lift too (`items.ts:343-350`), and `pointerover` fires for a finger at
@@ -374,7 +374,7 @@ Pen stays as it is; a pen really hovers.
 and panning from a card leaves it flat; `.is-hover` never appears. With a
 mouse, unchanged.
 
-## 9. Fly-to swings the destination outward first — MEDIUM (P)
+## 9. Fly-to swings the destination outward first (MEDIUM, P)
 
 **Problem.** Fit, home, zoom-to-item (search, inventory), the pill's reset and
 tour stops all go through `viewTo()`, which moves zoom geometrically and the
@@ -424,7 +424,7 @@ do not commit it). Zoomed out to ~15%, Ctrl+K to a card near the edge: it
 travels steadily inward as it grows. F from zoomed-in: everything shrinks
 toward one point. The end views are identical to before.
 
-## 10. A hand-picked pigment skips the palette fade — MEDIUM (P)
+## 10. A hand-picked pigment skips the palette fade (MEDIUM, P)
 
 **Problem.** A palette change fades the colour tokens on `:root` over 700ms,
 and `followFade()` (`appearance.ts:266-289`) is what makes that look right:
@@ -434,7 +434,7 @@ cached colours every frame, and `settle()` re-reads the controls at the end.
 `setPigments`, `dropPigments` and `apply` all call it. `setVar()` does not
 (`appearance.ts:541-607`), and picking an accent in the Pigment picker
 (`appearance-controls.ts:125-136`) rewrites the whole sheet through it. So
-the `:root` transition runs with no `.is-fading` — the flash — and
+the `:root` transition runs with no `.is-fading` (the flash), and
 `persist()` repaints the canvas once at t≈0, in the old colours, and never
 again: the grid and the lines look stale until something else redraws them.
 
@@ -443,7 +443,7 @@ again: the grid and the lines look stale until something else redraws them.
 `persist({ soon: true })`, with a comment: "A pigment moves the whole sheet,
 so it fades as a palette change does." Also fix two stale comments: setVar
 does not run "on every frame of a colour drag" (the picker is a dialog that
-returns one value) — it runs on every input of a *slider*
+returns one value); it runs on every input of a *slider*
 (`appearance.ts:566-567`, `appearance-controls.ts:130-131`).
 
 **Check.** In Firefox, where the flash is worst: pick a very different
@@ -451,10 +451,10 @@ accent. Before: buttons lag and flash, and the grid keeps the old colour until
 you pan. After: one surface turning over ~0.7s, grid included. Dragging the
 radius slider starts no fade.
 
-## 11. Undo and redo press on the slow curve; Harsh presses at all — LOW
+## 11. Undo and redo press on the slow curve; Harsh presses at all (LOW)
 
 **Problem.** The zoom pill and toolbar override their glyph press to be fast
-and flat, and argue it: "Press: fast, no overshoot — feedback, not decoration"
+and flat, and argue it: "Press: fast, no overshoot: feedback, not decoration"
 (`chrome.css:68-74`, `chrome.css:228-232`). The history pill has the same
 buttons and no override, so undo and redo press in over `--dur-base` on the
 overshoot curve:
@@ -464,8 +464,8 @@ overshoot curve:
 #history-ctl button:hover:not(:disabled) svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
 #history-ctl button:active:not(:disabled) svg { transform: scale(calc(var(--btn-press) - 0.08)); }
 ```
-And `- 0.08` is a constant, so Harsh — which sets `--btn-press: 1` under
-"Nothing moves on its own" (`tokens.css:1080-1087`) — still presses these
+And `- 0.08` is a constant, so Harsh, which sets `--btn-press: 1` under
+"Nothing moves on its own" (`tokens.css:1080-1087`), still presses these
 glyphs to 0.92.
 
 **Change.**
@@ -483,7 +483,7 @@ glyphs to 0.92.
    the three `scale(calc(var(--btn-press) - 0.08))` (`chrome.css:69, 229`,
    `drawer.css:166`) with `scale(var(--glyph-press))`. A new token needs
    entries in `look.ts`'s `TOKENS` and `layout-settings.ts`'s `AXIS_TOKENS`
-   only if boards may set it — they should not, so leave both lists alone
+   only if boards may set it. They should not, so leave both lists alone
    and check `tests/appearance.test.js` still passes (it holds those lists
    against tokens.css; if it objects, add the token to both lists instead).
 3. `#drawer-btn:hover svg` (`drawer.css:57`) and `#history-ctl`'s hover
@@ -494,7 +494,7 @@ glyphs to 0.92.
 zoom or history glyph moves on press. On a touch screen, tapping the drawer
 button does not leave its icon lifted.
 
-## 12. Every sheet is removed by its fallback timer — LOW
+## 12. Every sheet is removed by its fallback timer (LOW)
 
 **Problem.** `hideSheet()` waits for the slide to end:
 ```ts
@@ -504,7 +504,7 @@ el.addEventListener('transitionend',
 exits.set(el, setTimeout(done, EXIT_MS));
 ```
 `{ once: true }` removes the listener after the *first* `transitionend`,
-whatever it was — and the sheets' opacity transition (`--dur-fast`) ends
+whatever it was, and the sheets' opacity transition (`--dur-fast`) ends
 before their transform (`--dur-base`), see `drawer.css:193-195`. So the
 transform check never passes and every sheet (drawer, sticker pad, Playlist)
 is removed by the 500ms timer, invisible on screen for the difference.
@@ -527,10 +527,10 @@ to `onEnd` by declaring `onEnd` before it.
 goes the moment its slide ends (~240ms), not at 500ms. Close and reopen fast:
 never two `#drawer-window`s.
 
-## 13. The drag pickup is dead CSS — LOW
+## 13. The drag pickup is dead CSS (LOW)
 
 **Problem.** `items.css:71-76` and `canvas.css:119` style `.item.is-dragging`
-and `.item-shadow.is-dragging` — at Softish, a card picked up rises 16px and
+and `.item-shadow.is-dragging`: at Softish, a card picked up rises 16px and
 leans −2° (`tokens.css:971-972`). No JS ever adds that class to a board item
 (only `playlist.ts` and `timeline-view.ts` use the name, for their own rows),
 and the history shows canvas JS never did. At the default tier the tokens are
@@ -545,7 +545,7 @@ remove the two rules and the `:not(.is-dragging)` in `items.css:82`.
 **Check (if wired).** At Softish, a picked-up card lifts and leans under the
 pointer, and settles on drop. At the default tier nothing changes.
 
-## 14. A deleted card's ghost overlaps its undo — LOW (P)
+## 14. A deleted card's ghost overlaps its undo (LOW, P)
 
 **Problem.** A delete clones the card into `#exit-layer` above everything and
 plays a keyframe exit (`exit-anim.ts:53-76`, `items.ts:871-874`). Nothing can
@@ -579,16 +579,16 @@ was there.
 **Check.** Delete a card and press Ctrl+Z at once: no ghost over the returned
 card. At 30% zoom, the exit starts from exactly the card that was there.
 
-## 15. Two layout-property transitions — LOW
+## 15. Two layout-property transitions (LOW)
 
 **Problem.** `#viewport` transitions `bottom` (`canvas.css:21`) when the
 Timeline fades on idle, tours and clean mode. Each frame resizes the board
-box, which runs the viewport's `ResizeObserver` (measure and apply) — layout
+box, which runs the viewport's `ResizeObserver` (measure and apply): layout
 work on the most sensitive surface, every time the chrome wakes from idle.
 And `#mobile-playlist` transitions `padding-left` on the overshoot curve
 (`mobile.css:47`), re-laying out the whole column each frame on tablets.
 
-**Change.** For the Playlist: move the column with `translate` instead —
+**Change.** For the Playlist: move the column with `translate` instead:
 transition `translate var(--dur-base) var(--ease)` (no overshoot on a column
 of text) and set the offset as `translate: <the same calc> 0` on the open
 state; keep the padding for the settled layout only if the centring needs it
@@ -601,14 +601,14 @@ direction.
 **Check.** On a tablet width, opening the sidebar slides the Playlist column
 without overshoot, and the Performance panel shows no layout per frame.
 
-## 16. Small cleanups — LOW
+## 16. Small cleanups (LOW)
 
 Each is one or two lines.
 
 - **Busy strip.** Its hide timer is a literal 260ms (`overlays.ts:126`)
   against a `var(--dur-base)` transition (`status.css:57-58`) that is 400ms at
   Softish, so the strip is cut mid-exit there; and the exit inherits
-  `--ease-back`, so it overshoots on the way out — the opposite of what
+  `--ease-back`, so it overshoots on the way out, the opposite of what
   `chrome.css:470-477` argues for `#nowplaying`. Hide on the strip's own
   `transitionend` for `translate` (timer as backstop), and give the leaving
   state `transition: translate var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);`
@@ -643,7 +643,7 @@ Each is one or two lines.
 
 **Check.** Each by eye at 10% speed in the Animations panel.
 
-## 17. Missed: a photo opens from nowhere — additive
+## 17. Missed: a photo opens from nowhere (additive)
 
 Opening a picture from a Feed tile (`feed.ts:695`) or a board card pops the
 viewer from the centre (`ask-in`). A lightbox is anchored to the thumbnail it
@@ -654,7 +654,7 @@ from those two call sites, and teach `growFrom` (or a sibling of it) to grow
 the picture itself rather than a blank paper card. Reduced motion is already
 covered by fix 1.
 
-## 18. Missed: rearranging teleports every card — additive
+## 18. Missed: rearranging teleports every card (additive)
 
 `board-actions.ts:779-786` commits the new positions and then flies the view
 to fit, so every card jumps. Slide the cards that are on screen from where
@@ -665,7 +665,7 @@ limited to what is on screen, the way `.is-reshape-seen` limits the corner
 change (`tokens.css:625-644`). The stagger must never delay input: the
 positions are committed before anything plays.
 
-## 19. Missed: the toast stack jumps — additive
+## 19. Missed: the toast stack jumps (additive)
 
 `#toast` is a bottom-anchored column (`status.css:139-151`); each new line
 (`overlays.ts:34`) pushes the others up by its height in one frame, and the
@@ -674,7 +674,7 @@ record each line's `top`; after, animate each from its old offset
 (`translate: 0 Δpx` → `0 0`, `--dur-fast`, `--ease`). Fade the dropped line
 the way an expiring one fades (`is-going`) instead of removing it.
 
-## 20. Missed: the Timeline strip jumps the foot — additive
+## 20. Missed: the Timeline strip jumps the foot (additive)
 
 Opening or closing the strip (`timeline-view.ts:249-265`) toggles `hidden`
 and writes `--dock`, so everything anchored to the foot (the drawer dock, the

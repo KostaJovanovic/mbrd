@@ -100,7 +100,7 @@ export function createViewPerf(vp: { apply(): void }) {
    */
   const summary = () => {
     const { sorted, median, base, twos, overs, off } = stats();
-    if (!gaps.length) return `${runLabel()} — no motion sampled`;
+    if (!gaps.length) return `${runLabel()}: no motion sampled`;
     const m = viewStats();
     const cullAvg = cullProfile.runs ? cullProfile.ms / cullProfile.runs : 0;
     const fullPct = cullProfile.runs ? 100 * cullProfile.fullSyncs / cullProfile.runs : 0;
@@ -142,7 +142,7 @@ export function createViewPerf(vp: { apply(): void }) {
     // being taken down is allowed to have set back to null.
     const line = document.createElement('div');
     hudText = line;
-    line.textContent = 'perf — move the board';
+    line.textContent = 'perf: move the board';
     const copy = document.createElement('button');
     copy.type = 'button';
     copy.textContent = 'copy';
@@ -242,7 +242,7 @@ export function createViewPerf(vp: { apply(): void }) {
       reset(); on = true; cullProfile.on = true;
       if (overlay) showHud();
       if (!already) raf = requestAnimationFrame(tick);
-      console.log('[perf] on — pan/zoom continuously, then mbrd.perf.report()');
+      console.log('[perf] on: pan/zoom continuously, then mbrd.perf.report()');
     },
     off() { on = false; cullProfile.on = false; if (raf) cancelAnimationFrame(raf); raf = 0; hideHud(); console.log('[perf] off'); },
     /**
@@ -269,7 +269,7 @@ export function createViewPerf(vp: { apply(): void }) {
       if (f > worstFrame) worstFrame = f;
     },
     report() {
-      if (!gaps.length) { console.log('[perf] no motion sampled — mbrd.perf.on(), then pan'); return null; }
+      if (!gaps.length) { console.log('[perf] no motion sampled. Run mbrd.perf.on(), then pan'); return null; }
       const { sorted, median, janks, base, twos, overs, off } = stats();
       const mem = viewStats();
       const share = (k: number) => +(100 * k / gaps.length).toFixed(1);

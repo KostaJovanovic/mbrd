@@ -1,4 +1,4 @@
-# The motion audit — 5 October 2026
+# The motion audit, 5 October 2026
 
 **Status: open, 2026-10-05.** Nothing here is built. Read-only audit of the
 source at `b44b923` plus the uncommitted selection-ring work in the tree
@@ -37,7 +37,7 @@ Every fix gets the usual mechanical check, which is not repeated below:
 
 ---
 
-## Must fix — reads as broken
+## Must fix: reads as broken
 
 ### 1. The new selection ring falls out of step with its card
 
@@ -212,7 +212,7 @@ today's cut.
 
 ---
 
-## Should fix — noticeably un-fluid
+## Should fix: noticeably un-fluid
 
 ### 4. A long-press on a card gives no feedback until the menu appears
 
@@ -350,7 +350,7 @@ being edited and shrink back into it.
 `transition-duration` to 0.01ms. Menus, dialogs, toasts, sheets, the sidebar,
 the busy strip and `#nowplaying` therefore all pop on and off. Apple's (and
 WCAG's) reading of reduced motion is: replace movement with a cross-fade,
-not with a cut. The JS side already gets this right — `fastMs()` is
+not with a cut. The JS side already gets this right: `fastMs()` is
 deliberately not zeroed (`viewport.ts:456-458`), so the viewer fades. The
 CSS side contradicts it. Smaller cases: `chrome.css:393, 832, 1106` set
 `transition: none` outright on `#nowplaying`, `#tour` and `#tour-editor`.
@@ -538,7 +538,7 @@ is right.
 
 ---
 
-## Already good — leave it alone
+## Already good: leave it alone
 
 - **Pan and glide.** Glide is clock-integrated exponential decay, handed the
   finger's velocity over a 90ms window, with an idle-before-lift veto, and
@@ -579,7 +579,7 @@ is right.
 **Scope.** Read in full: menus and flyouts (`ui/menu.ts`, `ui/flyout.ts`, `menu.css`), Find and the connection chip, the Playlist's reorder, the Feed, `#nowplaying`, the tour bar and tour editor, and the text editor's ribbon, find bar, outline, Vomit Mode and counts.
 Same rules, same tree, same caveat: read from code, nothing watched. Findings continue the numbering above; **(P)** marks inference about rendering.
 
-### Must fix — reads as broken
+### Must fix: reads as broken
 
 #### 17. A stop's peek fades the cards and leaves their shadows and rings at full strength
 
@@ -638,7 +638,7 @@ sound is the interface saying the opposite of what is happening.
 
 **Cost.** None. The loop stops, so it saves work too.
 
-### Should fix — noticeably un-fluid
+### Should fix: noticeably un-fluid
 
 #### 19. The Feed jumps whenever the wall reflows
 
@@ -856,7 +856,7 @@ browser. **Fix:** read `.tour-chips`'s `scrollTop` before
 `host.textContent = ''` and write it back after the append, as `paint()`
 already does for the caption's caret.
 
-### Already good — leave it alone
+### Already good: leave it alone
 
 - **Menus.** Press, drag and release with `is-hot` rows (`followPress`,
   `releasePress`) behaves like the iOS menu. Keyboard opens, drill-down pages

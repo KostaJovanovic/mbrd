@@ -1,4 +1,4 @@
-# Export the board's own cards — 21 September 2026
+# Export the board's own cards, 21 September 2026
 
 **Status: built, 7 October 2026.** `ui/capture.ts` and `ui/capture-css.ts`,
 wired into `renderBoardCanvas()` through `drawCard()`. What the spike and the
@@ -66,7 +66,7 @@ export that stays right is one drawn *by* it.
 
 `snapshot.ts`'s header says foreignObject taints the canvas. Measured on
 2026-09-21 in Edge 145: an SVG holding HTML in a `<foreignObject>`, loaded as a
-**`data:` URL** and drawn with `drawImage()`, leaves the canvas readable —
+**`data:` URL** and drawn with `drawImage()`, leaves the canvas readable:
 `getImageData()` returned the pixel. The same SVG as a **`blob:` URL taints it**
 (SecurityError). So the route is open on Chromium, which is Chrome, Edge, the
 desktop shell (Electron) and the Android shell (WebView), provided every URL
@@ -90,7 +90,7 @@ the stage and the underlay unchanged.
 For each item, in z order:
 
 1. **Build it detached.** `buildItem(item, tilt, false)` from
-   `canvas/item-dom.ts` — the node the board would mount, built whether or not
+   `canvas/item-dom.ts`, the node the board would mount, built whether or not
    the board has it mounted, so a culled card exports as well as a visible one.
    Never read the mounted node: it carries hover, selection, grips, badges and
    drag state, and a culled card has none.
@@ -102,8 +102,8 @@ For each item, in z order:
    that paints late or into a `<canvas>` needs an entry.
 3. **Freeze what an image cannot hold.** SVG-as-image runs no script and loads
    nothing but `data:` URLs. So, on a clone:
-   - every `<img>`, `background-image` and `<image>` becomes a `data:` URL —
-     `blob:` and same-origin alike — downscaled first to the pixel size the card
+   - every `<img>`, `background-image` and `<image>` becomes a `data:` URL
+     (`blob:` and same-origin alike), downscaled first to the pixel size the card
      is drawn at, or a 300 ppi A4 of photographs becomes hundreds of megabytes
      of base64;
    - every `<canvas>` becomes an `<img>` of its pixels;
@@ -115,12 +115,12 @@ For each item, in z order:
    so that `:root[data-whimsy="0"] …` selectors match it, with `:root`'s
    custom properties inherited down through the foreignObject. Only if that
    proves unreliable, fall back to rewriting `:root` in the sheet text. Font
-   faces the card actually uses — `fonts.css` and the board's own faces from
-   `ui/fonts.ts` — go in as `data:` URLs in `@font-face`. `url()`s in the
+   faces the card actually uses (`fonts.css` and the board's own faces from
+   `ui/fonts.ts`) go in as `data:` URLs in `@font-face`. `url()`s in the
    stylesheet that the card does not need are dropped, not inlined.
 5. **Draw it.** Serialise (XMLSerializer, XHTML namespace), wrap at the card's
    world size with a `viewBox`, encode as a `data:image/svg+xml` URL, decode,
-   and `drawImage()` it at `w * scale` pixels — onto the export canvas, or onto
+   and `drawImage()` it at `w * scale` pixels, onto the export canvas, or onto
    the stage when the card is turned. An SVG image rasterises at the size it is
    drawn, so 300 ppi should be sharp rather than an upscale; the spike checks.
 6. **Keep the shadows out of it.** The underlay pass already draws every
@@ -149,23 +149,23 @@ line in the module header saying which engines take it.
    screenshot. Settles the six unknowns below. If any of the first three fails,
    stop and report back rather than work round it.
 2. `ui/capture.ts` (or `canvas/capture.ts` if the layering prefers): build,
-   settle, freeze, dress, draw, for one item. Pure helpers — CSS text
+   settle, freeze, dress, draw, for one item. Pure helpers (CSS text
    assembly, the `:root` attribute copy, the URL inlining walk over a detached
-   tree — tested under `node --test` on hand-built nodes where they can be.
+   tree) are tested under `node --test` on hand-built nodes where they can be.
 3. Wire it into `renderBoardCanvas()` behind the probe, card by card, picture
    first, then note, text, link, swatch, audio, archive, title, and the untested
    kinds. Each one lands with its row in the audit harness passing by eye.
 4. Delete each painter the capture fully replaces, except where the thumbnail or
    the Safari fallback still reads it.
-5. Measure a real board — `test.mbrd`, 106 items, mostly photographs — at 300
+5. Measure a real board (`test.mbrd`, 106 items, mostly photographs) at 300
    ppi: time, peak memory, file size. The busy strip gets `job.step(done,
    total)` per card if it takes more than a second or two.
 
 ## Unknowns the spike settles
 
 1. Whether a `data:` SVG carrying `@font-face` `data:` fonts renders them, in
-   Chromium, **under the deployed CSP** (`font-src 'self' blob:` has no `data:`
-   — the question is whether the page's policy reaches inside an image
+   Chromium, **under the deployed CSP** (`font-src 'self' blob:` has no `data:`;
+   the question is whether the page's policy reaches inside an image
    document). `serve.py` sends no headers, so this needs the policy injected
    locally or a built APK (`mobile/`, which stages `web/_headers`).
 2. Whether `:root[data-…]` rules match the `<svg>` root and its custom

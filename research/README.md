@@ -44,33 +44,33 @@ The changelog source is `patch-notes.md` at the repository root, not in here.
 
 ## Current
 
-- `todo-2026-09-14.md` — **the list of open work.** Audited on 2026-09-14 and
+- `todo-2026-09-14.md`: **the list of open work.** Audited on 2026-09-14 and
   trimmed on 2026-09-15 to what is still open: should be done, checks still
   owed, needs the maintainer (with the phone design calls P6 to P11), and
   ideas. What was done, decided or skipped, with the fix list R1 to R38, is in
   `old/done-2026-09-15.md`.
-- `bench-2026-09-23.md` — the plan for a benchmark built into the app: preset
+- `bench-2026-09-23.md`: the plan for a benchmark built into the app: preset
   moves, zooms and animations on a generated standard board (`#bench`) or the
   board on screen, saved as a JSON file, with real frame timings on Android.
   Built on 2026-09-24 except the lab page; not yet run on a phone. Its last
   section is what was built and where it differs from the plan.
-- `qol-2026-10-04.md` — the second quality-of-life round: 23 picked changes
+- `qol-2026-10-04.md`: the second quality-of-life round: 23 picked changes
   in six batches (align carrying notes, drops avoiding cards, Nudge and fence
   scopes, selection and join rows, the viewer, Alt+drag), with three open
   questions. Not yet built.
-- `features-2026-10-07.md` — eighteen features and 1.0 gaps the maintainer
+- `features-2026-10-07.md`: eighteen features and 1.0 gaps the maintainer
   picked on 2026-10-07, each with the answers it has to match: colour search,
   rolling backups, JSON Canvas, colourblind mode, the pen, boards inside
   boards and the rest. All built by 2026-10-08.
-- `pen-2026-10-07.md` — the design for item 17, the pen, highlighter and
+- `pen-2026-10-07.md`: the design for item 17, the pen, highlighter and
   eraser: a `drawing` card, a `stroke` gesture inside `input.ts`, the dial's
   three ways of drawing a stroke. Built 2026-10-08; its last section says
   where the build differs.
-- `boards-in-boards-2026-10-07.md` — the design for item 18: children as
+- `boards-in-boards-2026-10-07.md`: the design for item 18: children as
   `boards/<id>/` inside the parent `.mbrd`, gated by `requires: ["boards"]`,
   a board card and a breadcrumb. Built 2026-10-08 in six steps; each step in
   its order of work says what was built and where it differs.
-- `patch-notes-full.md` — **an archive, not open work.** It holds every release
+- `patch-notes-full.md`: **an archive, not open work.** It holds every release
   at the length it was first written, internal work included. Nothing generates
   anything from it.
 

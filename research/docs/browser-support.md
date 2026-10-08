@@ -1,7 +1,7 @@
 # Browser support
 
 The one hard property of this project is that it ships no bundler, no build step
-and no runtime dependency — the browser loads the ES modules under `web/`
+and no runtime dependency: the browser loads the ES modules under `web/`
 directly. Everything below follows from that: the supported set is "browsers
 new enough to run the modules as written", stated here so "supported" is a
 contract rather than a guess. This file is what the startup capability check
@@ -16,28 +16,28 @@ contract rather than a guess. This file is what the startup capability check
 | **Compatibility floor** | 16.4 | Where WebKit added Compression Streams (`deflate-raw`) and OffscreenCanvas 2D. Runs, with the degradations listed. |
 | **Below the floor** | < 16.4 | Not supported. Cannot open a `.mbrd` a newer browser deflated; the OffscreenCanvas optimiser path is absent. |
 
-Chrome and Firefox: current and one prior major. Both clear the floor comfortably
-— the floor is set by WebKit, which is last to ship these features.
+Chrome and Firefox: current and one prior major. Both clear the floor comfortably;
+the floor is set by WebKit, which is last to ship these features.
 
 ## What sets the floor
 
 A `.mbrd` written by a modern browser deflates its entries (`storage/mbrd.ts`),
 and the reader inflates only through `DecompressionStream('deflate-raw')`
-(`storage/zip.ts`) — there is no JavaScript fallback. That is the single hard
+(`storage/zip.ts`); there is no JavaScript fallback. That is the single hard
 break below Safari 16.4 and the only capability the startup check raises a toast
 for. The rest degrade inside optional paths:
 
-- **OffscreenCanvas 2D** — image thumbnails and the optimiser (`optimize/picture.ts`,
+- **OffscreenCanvas 2D**: image thumbnails and the optimiser (`optimize/picture.ts`,
   `canvas/model.ts` still capture).
-- **`<dialog>.showModal()`** — the discard/clear question; `ui/dialog.ts` already
+- **`<dialog>.showModal()`**: the discard/clear question; `ui/dialog.ts` already
   feature-detects and defaults destructive answers to cancel when it is absent.
-- **CSS `@property`** — the 700ms crossfade between palettes (Safari 16.4). Below
+- **CSS `@property`**: the 700ms crossfade between palettes (Safari 16.4). Below
   it a palette switch is a hard cut, which is what it was before the fade existed.
   `:has()` and `color-mix()` are *not* on this list any more: `:has()` is 15.4, and
   `color-mix()` is carried below 16.2 by the fallback described next.
 - **`color-mix()` has a fallback, and the mechanism is worth knowing.** The app
   mixes a colour 141 times. Ninety-nine of those are `color-mix(in srgb, C N%,
-  transparent)`, which is not a mix at all — mixing is done on premultiplied
+  transparent)`, which is not a mix at all: mixing is done on premultiplied
   values and `transparent` premultiplies to nothing, so the result is exactly `C`
   at `N%` alpha and `rgb(var(--C-c) / N%)` is the same colour rather than an
   approximation of it. Those are restated in channel form inside `@supports not
@@ -46,23 +46,23 @@ for. The rest degrade inside optional paths:
   **A doubled declaration would not have worked**, and the reason generalises: a
   declaration containing `var()` is valid at *parse* time, so the cascade picks
   the `color-mix()` line, substitutes into it, and only then finds a function it
-  cannot read — which makes the property invalid at computed-value time and drops
+  cannot read, which makes the property invalid at computed-value time and drops
   it to its initial value rather than to the line above it. `@supports` is
   resolved before the cascade, which is why it is the mechanism that works. It
   also means a current browser skips the whole block unparsed, so the fade above
   and everything else about the look are untouched.
   The remaining thirty-one are blends of two pigments, which have no `rgb()`
-  spelling and no value that can be written down — Harsh derives its entire sheet
+  spelling and no value that can be written down: Harsh derives its entire sheet
   from `--accent`, and `--accent` may be a colour `ui/pigments.ts` pulled out of a
   photograph. `ui/legacy-color.ts` computes those at every change of look by
   reading the recipe back out of the computed value, so it carries no second copy
   of the palette. `tests/legacy-color.test.js` holds the two lists together in
   both directions.
-- **External SVG `<use>`** — every icon in the app is a `<symbol>` in
+- **External SVG `<use>`**: every icon in the app is a `<symbol>` in
   `assets/icons.svg`, referenced as `<use href="assets/icons.svg#i-note">`. Above
   the floor this is uniform; it is called out because it is the app's only
   cross-document reference and it fails in a particular way. A browser that will
-  not follow it draws *nothing* — no error, no fallback, a blank box where the
+  not follow it draws *nothing*: no error, no fallback, a blank box where the
   icon was. IE and legacy Edge were the browsers that needed a polyfill for it
   (`svg4everybody`); every engine at or above this floor resolves it natively.
   Two consequences that outlive any one browser, both from the symbol rendering
@@ -80,9 +80,9 @@ Documented so "Safari support" does not imply feature parity on every point rele
   iOS alike, and the Safari 27 beta adds nothing. The specification says an
   engine that cannot write the type asked for substitutes PNG *and says
   nothing*, so the failure is invisible on every other engine. **Ask for WebP,
-  then keep whatever comes back** — a mismatch is not a refusal. Six places
+  then keep whatever comes back**; a mismatch is not a refusal. Six places
   treated it as one, which cost, in order: the display copy (so a board of two
-  dozen photographs mounted full-resolution originals and killed the tab —
+  dozen photographs mounted full-resolution originals and killed the tab;
   `canvas/display.ts`), every thumbnail, every video poster, every model still,
   the whole picture pass of the optimiser, and the library's board thumbnails.
   Where alpha may be present the substitute PNG is kept; where the picture is
@@ -97,15 +97,15 @@ Documented so "Safari support" does not imply feature parity on every point rele
   PNG through the element path and as a thrown error through the other, and
   every caller
   was written against the first. `surfaceToBlob()` in `canvas/surface.ts` now
-  owns that difference — it catches the rejection and retries as PNG, so both
+  owns that difference: it catches the rejection and retries as PNG, so both
   spellings answer alike and the "check what came back" rule above is the whole
   of what a caller has to know.
 - **The canvas area ceiling is 16,777,216 pixels**, and a canvas past it draws
-  *transparent* rather than throwing — so an over-large export is a blank file
+  *transparent* rather than throwing, so an over-large export is a blank file
   rather than an error. `MAX_AREA` in `ui/snapshot.ts` caps Export as PNG and
   Export as PDF, but **only where the ceiling is real**: `drawsPastArea()` paints
   one white pixel on a deliberately oversized canvas and reads it back, so the
-  question is put to the engine rather than to the user agent — a sniff would be
+  question is put to the engine rather than to the user agent; a sniff would be
   wrong for Chrome on iOS, which is WebKit underneath. The probe costs one large
   allocation, so it is reached only from a board whose export would exceed the
   cap anyway, and the answer is kept for the session. Everywhere else the edge
@@ -139,15 +139,15 @@ Documented so "Safari support" does not imply feature parity on every point rele
   blurred surfaces (audio play button over cover art, the dialog scrim) carry it.
 - **The Audio Session API is Safari-only, and that is where it is needed.** The
   interface sounds run on a live `AudioContext`, which on a phone can interrupt
-  or duck audio playing in another app — and somebody arranging pictures with
+  or duck audio playing in another app, and somebody arranging pictures with
   music on in the background is the ordinary case here, not the edge one. There
   is **no way to duck another app from a web page**; no API offers it. What
   there is is `navigator.audioSession.type = 'ambient'`, which says *mix,
-  interrupt nothing, and be silenced by the ringer switch* — the same category a
+  interrupt nothing, and be silenced by the ringer switch*, the same category a
   keyboard click uses. `cuelume/engine.ts` sets it where it exists and does
   nothing where it does not, which is the whole of the handling: elsewhere a
   hundred-millisecond Web Audio blip generally mixes anyway. **Unverified on
-  hardware**, and it cannot be verified anywhere else — see the checklist below.
+  hardware**, and it cannot be verified anywhere else; see the checklist below.
 - **Optimiser codecs.** WebCodecs audio encoding needs Safari 26; Ogg Opus
   playback needs 18.4; WebM on iOS needs 17.4. These only matter if the optional
   ffmpeg core is bundled, which this repo does not ship.
@@ -161,13 +161,13 @@ cost the video card its picture on one engine for as long as the card has
 existed.
 
 - **Firefox does not implement Media Fragment URI seeking.** `#t=0.1` on a media
-  source is honoured by Chrome and by Safari and dropped on the floor by Firefox
-  — which mattered because `RENDERERS.video` used exactly that to pull a real
+  source is honoured by Chrome and by Safari and dropped on the floor by Firefox,
+  which mattered because `RENDERERS.video` used exactly that to pull a real
   frame onto a parked clip, and `canvas/poster.ts` says so in its header: *"the
   desktop path gets a frame for free"*. It was free on two engines out of three.
   On Firefox the element loaded its metadata, painted nothing, and the card was
   a black rectangle unless the clip had a captured poster to fall back on. It is
-  now asked for twice — the fragment for the engines that honour it, and a plain
+  now asked for twice: the fragment for the engines that honour it, and a plain
   `currentTime` seek on `loadedmetadata` for the ones that do not, guarded so
   the second is a no-op wherever the first worked. The seek is what every engine
   has, so this is one line covering a whole browser.
@@ -192,20 +192,20 @@ Deliberate boundaries rather than bugs, documented so they read as stated scope:
   in the service-worker precache. So the first HEVC poster on a fresh install
   needs a connection, and offline it degrades to a black rectangle with a dead
   play button. The clip itself still plays where the browser can decode it; only
-  the still is affected. This is cross-browser, not a Safari quirk — Safari is the
+  the still is affected. This is cross-browser, not a Safari quirk. Safari is the
   one desktop browser that decodes HEVC natively and so rarely reaches this path.
 - **A HEIC is drawn by a video decoder, not an image one.** Safari decodes HEIC
   in an `<img>` and no other engine does, so `import/drop.ts` puts a picture
-  every engine can draw beside the untouched original on the way in — see
+  every engine can draw beside the untouched original on the way in; see
   `NOT_PORTABLE` in `import/preview.ts`. `import/heif.ts` reads the container
   itself and decodes the HEVC inside it, through whichever of **two** decoders
-  is there. WebCodecs first — the machine's own, a fifth of a second for a
+  is there. WebCodecs first: the machine's own, a fifth of a second for a
   forty-eight-tile grid, and no download. Vendored libheif second
   (`import/heif-worker.js`, heic2any), a megabyte and a third and five times
   slower, fetched only when the first one was not available.
   It has to exist: **`VideoDecoder` is undefined outside a secure context**, so
-  on a plain-http LAN or link-local dev address — the case `web/sw.js`
-  deliberately supports — WebCodecs is simply absent, and before the second
+  on a plain-http LAN or link-local dev address (the case `web/sw.js`
+  deliberately supports), WebCodecs is simply absent, and before the second
   decoder landed the same file drew on `localhost` and became a named card one
   address over. Measured: `http://localhost:6273` → `typeof VideoDecoder ===
   'function'`, no `heic2any.min.js` request; `http://169.254.83.107:6273` →
@@ -217,8 +217,8 @@ Deliberate boundaries rather than bugs, documented so they read as stated scope:
   bug fix, so from iOS 27 a photo added on a phone arrives as a HEIC where it
   used to arrive as a JPEG.
 - **A camera RAW with no baked preview is developed on the way in.** Most RAWs
-  carry a full-size JPEG the camera wrote for its own screen; some — a Samsung
-  `.dng` among them — carry none at all, and those used to land as grey named
+  carry a full-size JPEG the camera wrote for its own screen; some (a Samsung
+  `.dng` among them) carry none at all, and those used to land as grey named
   cards. `import/drop.ts` now develops one with LibRaw at half size (about a
   fifth of a second for twelve megapixels, and still over the display ceiling),
   which costs nothing on the ninety-nine RAWs in a hundred that never reach it.
@@ -239,7 +239,7 @@ Deliberate boundaries rather than bugs, documented so they read as stated scope:
 The Node suite (`npm test`) validates pure logic and structural invariants; it
 does not instantiate WebKit. Adopting a browser driver (Playwright/WebKit,
 `safaridriver`) would add the dev dependency and CI runner this project is
-deliberately built without — a maintainer's call, not a default. Until then, run
+deliberately built without: a maintainer's call, not a default. Until then, run
 this by hand on **current macOS Safari, the minimum supported Safari, and current
 iPhone + iPad Safari** before a release:
 
@@ -247,14 +247,14 @@ iPhone + iPad Safari** before a release:
 2. Add files → autosave → reload → board restored.
 3. Pan / pinch-zoom / marquee-select / resize handles on touch and trackpad.
    Specifically: a two-finger swipe on the trackpad must **pan** and a mouse
-   wheel must **zoom**, on the same machine — `readWheel()` tells them apart by
+   wheel must **zoom**, on the same machine. `readWheel()` tells them apart by
    the shape of the deltas, and Safari's are its own (see `canvas/input.ts`).
 4. Save, then Export a `.mbrd`; reopen it. Cross-check: export from Chromium,
    open in Safari, and back.
 5. Clear everything → confirm the wipe, and that Cancel aborts it.
 6. Play an audio and a video card; confirm the volume slider is hidden on iPhone.
    A video card must show a **real frame** before it is tapped, not a black
-   rectangle — that is the poster, and it is the tell for the WebP note above.
+   rectangle. That is the poster, and it is the tell for the WebP note above.
    An audio card's source is parked until first play on a coarse-pointer engine
    (`rationsDecoders()`), so confirm one still plays, seeks and shows a waveform.
 7. Install to Home Screen / Dock; confirm the icon and a cold offline launch.
@@ -264,11 +264,11 @@ iPhone + iPad Safari** before a release:
    above: a blank export and a pass that reports nothing to do look exactly like
    success.
 10. **With music playing in another app on an iPhone**, open a board and do
-   anything that makes a sound — drop a file, undo, toggle the grid. The music
+   anything that makes a sound: drop a file, undo, toggle the grid. The music
    must keep playing at the volume it was at, and the ringer switch must silence
    the interface sounds. This is the one claim in this document that no test in
    the repository can make, and the only place it can be made is on a phone.
 
 If a `safaridriver` suite is added later, flows 1–5 and 9 are the ones worth
-automating first; 3, 7, 8 and 10 stay manual — 10 permanently, since a driver
+automating first; 3, 7, 8 and 10 stay manual, 10 permanently, since a driver
 has no second app to play music from.

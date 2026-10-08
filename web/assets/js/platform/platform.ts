@@ -484,7 +484,7 @@ let staticTitle: string | null = null;
 function webSetDocument(state: DocumentState) {
   if (!hasWindow() || typeof document === 'undefined') return;
   staticTitle ??= document.title;
-  document.title = state.owned && state.title ? `${state.title} — mbrd` : staticTitle;
+  document.title = state.owned && state.title ? `${state.title} - mbrd` : staticTitle;
 }
 
 const web: Platform = {

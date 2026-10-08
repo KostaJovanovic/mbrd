@@ -108,6 +108,6 @@ export function clock(secs: number): string {
 /** Toast for a rejected play() — almost always the browser blocking autoplay, not a broken file. */
 export function reportPlayError(err: { name?: string } | null | undefined): void {
   toast(err && err.name === 'NotAllowedError'
-    ? 'Your browser blocked playback — allow audio for this site'
+    ? 'Your browser blocked playback. Allow audio for this site'
     : 'Could not play this file');
 }

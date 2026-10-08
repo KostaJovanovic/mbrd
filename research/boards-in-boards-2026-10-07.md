@@ -1,4 +1,4 @@
-# Boards inside boards — 7 October 2026
+# Boards inside boards, 7 October 2026
 
 **Status: done, 2026-10-08.** Approved by the maintainer on 2026-10-08 with
 every recommendation below taken, and built the same day in v0.672 to v0.677.
@@ -48,7 +48,7 @@ child, and a breadcrumb leads back.
 
 ```
 kitchen.mbrd
-├── manifest.json            "requires": ["boards"] — only while the tree has a child
+├── manifest.json            "requires": ["boards"], only while the tree has a child
 ├── board.json               the top board; a board card is an item of type "board"
 ├── boards/<id>/board.json   one child, the same shape as a top board.json
 ├── boards/<id>/timeline/…   its history, as timeline/ is for the top
@@ -118,7 +118,7 @@ kitchen.mbrd
 - **The breadcrumb** is the masthead's own field (`ui/board-title.ts`) showing
   the path when it is longer than one. On a phone, the parent's name and a
   back arrow.
-- **Writers that must ask `notUsersBoard()`** — entering and leaving write
+- **Writers that must ask `notUsersBoard()`**: entering and leaving write
   the session's position. They go through the same guard as everything else.
 
 ## Order of work

@@ -193,14 +193,14 @@ export function initDrawer(viewport: Viewport) {
   // A full bin drops its oldest to make room (TRASH_LIMIT in board-model.ts); say
   // so, since those entries are past getting back by any other means.
   bus.on('trash:evicted', n => toast(
-    n === 1 ? 'Drawer full — dropped the oldest item' : `Drawer full — dropped the ${n} oldest items`));
+    n === 1 ? 'Drawer full, so the oldest item was dropped' : `Drawer full, so the ${n} oldest items were dropped`));
   // And the warning before the first of those: the bin is exactly full.
-  bus.on('trash:full', () => toast('Drawer full — the next delete drops the oldest item for good'));
+  bus.on('trash:full', () => toast('Drawer full. The next delete drops the oldest item for good'));
   // Emptying deletes files, not just entries, so it's worth saying what went.
   // Count is of *files* only - notes/swatches/stickers had no bytes to begin
   // with. See emptyTrash() in trash.ts.
   bus.on('trash:purged', ({ items, bytes }) => toast(
-    `Deleted ${items} ${items === 1 ? 'file' : 'files'} for good${bytes ? ` — ${formatBytes(bytes)} freed` : ''}`));
+    `Deleted ${items} ${items === 1 ? 'file' : 'files'} for good${bytes ? `, ${formatBytes(bytes)} freed` : ''}`));
 
   // Quality settings are read when the window is built, so a change while
   // it's open (rare, visible) is answered by rebuilding - same trade
@@ -252,7 +252,7 @@ function openDrawer() {
   emptyBtn.type = 'button';
   emptyBtn.className = 'drawer-empty';
   emptyBtn.textContent = 'Empty';
-  emptyBtn.title = 'Throw it all out — the files go for good';
+  emptyBtn.title = 'Throw it all out. The files go for good';
   emptyBtn.addEventListener('click', confirmEmpty);
 
   const close = document.createElement('button');

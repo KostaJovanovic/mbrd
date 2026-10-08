@@ -218,8 +218,6 @@ function buildPage(shell, releases, entries) {
     throw new Error('the load block is missing the app cascade - has the head been reordered?');
   }
 
-  // The version stamp, which the app used to write into the sidebar's foot on
-  // this page. There is no sidebar here now, so it is read and printed below.
   const stamps = readFileSync(join(ROOT, 'web', 'assets', 'js', 'version.js'), 'utf8');
   // The app's own count, not the sum of the spans. The two agree as long as the
   // releases tile the history from the first commit to this one - but this is
@@ -228,7 +226,6 @@ function buildPage(shell, releases, entries) {
   // is the number in the foot of the app's sidebar and a reader comparing the
   // two should find one figure and not two derivations of it.
   const commits = (stamps.match(/const COMMIT_COUNT = (\d+)/) || [])[1] || '';
-  const version = (stamps.match(/const VERSION = '([^']+)'/) || [])[1] || '';
   const oldest = releases.at(-1);
   const DESC = 'Every version of mbrd, newest first - what was added, what was fixed and '
     + 'what got faster on the infinite freeform moodboard that runs in your browser.';
@@ -363,7 +360,7 @@ ${entries}
   </ol>
 
   <footer class="pn-foot">
-    <span><span class="wm">mbrd</span> ${esc(version)} by valjdakosta</span>
+    <span><span class="wm">mbrd</span> by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>

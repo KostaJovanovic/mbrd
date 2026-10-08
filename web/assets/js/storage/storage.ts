@@ -302,7 +302,7 @@ export async function saveBoard() {
   const durable = await ensurePersistence();
   if (durable) toast('Saved in this browser');
   else {
-    toast('Saved in this browser — export a file to keep a durable copy', '',
+    toast('Saved in this browser. Export a file to keep a durable copy', '',
       { label: 'Export', run: () => { void exportBoard(); } });
   }
   return true;

@@ -61,7 +61,7 @@ function watch(fresh: ServiceWorker | null) {
   const ready = () => {
     if (waiting || !navigator.serviceWorker.controller) return;
     if (fresh.state !== 'installed' && fresh.state !== 'activated') return;
-    toast('New version ready — it loads when you pause', '', { label: 'Reload now', run: () => { void deps!.restart({ quiet: false }); } });
+    toast('New version ready. It loads when you pause', '', { label: 'Reload now', run: () => { void deps!.restart({ quiet: false }); } });
     waiting = setInterval(() => { void apply(); }, POLL_MS);
   };
   // Both: a worker already past `installing` fires no more statechanges.

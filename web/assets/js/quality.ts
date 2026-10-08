@@ -41,9 +41,9 @@ export const SHARPNESS_STEPS = [
 
 /** Cards built per frame (BUILD_BUDGET in canvas/items.ts). Smaller = smoother zoom, slower fill. */
 export const BUILD_STEPS = [
-  { n: 12, label: '12 — fills in fastest' },
+  { n: 12, label: '12 (fills in fastest)' },
   { n: 8, label: '8' },
-  { n: 4, label: '4 — smoothest' },
+  { n: 4, label: '4 (smoothest)' },
 ];
 
 // Balanced changes only invisible-at-rest things (softer pictures, no panel

@@ -150,7 +150,7 @@ function buildSliders(): void {
 
   draft.layers.forEach((layer, i) => {
     // SAFETY: the ternary tests layer.kind === 'tone' before it reads waveform.
-    panel.append(el('div', 'sub', `layer ${i + 1} — ${layer.kind === 'tone' ? (layer as ToneLayer).waveform : layer.filterType + ' noise'}`));
+    panel.append(el('div', 'sub', `layer ${i + 1}: ${layer.kind === 'tone' ? (layer as ToneLayer).waveform : layer.filterType + ' noise'}`));
     for (const field of FIELDS) {
       const bag: Partial<Record<LayerNumberKey, number>> = layer;
       const value = bag[field.key];

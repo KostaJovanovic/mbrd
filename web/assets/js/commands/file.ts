@@ -114,16 +114,16 @@ async function runSync({ force }: { force: boolean }): Promise<void> {
     });
     if (out.ok) {
       toast(out.uploaded
-        ? `Synced — ${out.uploaded} new file${out.uploaded === 1 ? '' : 's'} sent`
-        : 'Synced — nothing new to send');
+        ? `Synced: ${out.uploaded} new file${out.uploaded === 1 ? '' : 's'} sent`
+        : 'Synced, nothing new to send');
       return;
     }
     job.end();
     const answer = await ask({
       title: 'This board changed somewhere else',
       body: `The copy in Drive was written on ${new Date(out.theirs).toLocaleString()}, `
-        + 'which was not from this machine. There is no way to merge two boards — item '
-        + 'positions are absolute — so this is a choice between the two copies.',
+        + 'which was not from this machine. There is no way to merge two boards (item '
+        + 'positions are absolute), so this is a choice between the two copies.',
       go: 'Overwrite the cloud copy',
       cancel: 'Leave it alone',
       danger: true,
@@ -157,7 +157,7 @@ async function handOverLink(link: string): Promise<void> {
   };
 
   if (await copy()) {
-    toast('Link copied — anyone with it can open this board');
+    toast('Link copied. Anyone with it can open this board');
     return;
   }
   const again = await ask({
@@ -168,8 +168,8 @@ async function handOverLink(link: string): Promise<void> {
     field: { value: link },
   });
   if (again === null) return;
-  if (await copy()) toast('Link copied — anyone with it can open this board');
-  else toast('Could not reach the clipboard — the link is in the console', 'error');
+  if (await copy()) toast('Link copied. Anyone with it can open this board');
+  else toast('Could not reach the clipboard. The link is in the console', 'error');
 }
 
 /** The link to a shared file. In the apps, location is app:// or https://app,
@@ -327,7 +327,7 @@ export function fileCommands() {
         const go = await ask({
           title: `Sign in to ${provider.label}?`,
           body: `The board is uploaded to your own ${provider.label} and the link `
-            + 'points there — it never touches a server of ours, and whoever you send '
+            + 'points there. It never touches a server of ours, and whoever you send '
             + 'it to needs no account. A sign-in window opens next.',
           go: 'Sign in',
           cancel: 'Cancel',
@@ -457,7 +457,7 @@ export function fileCommands() {
       const answer = await ask({
         title: `Log out of ${provider.label}?`,
         body: 'Everything already in your Drive stays there, and boards you keep in Drive '
-          + 'stay marked as kept — what stops is the sending, until you connect again. '
+          + 'stay marked as kept. What stops is the sending, until you connect again. '
           + 'This browser forgets the sign-in; your Drive account itself is untouched.',
         go: 'Log out',
         cancel: 'Cancel',
@@ -478,10 +478,10 @@ export function fileCommands() {
       try {
         const out = await startSyncingBoard(provider.id);
         if (!out.ok) {
-          toast('A copy of this board is already in Drive — open it from the cloud instead', 'error');
+          toast('A copy of this board is already in Drive. Open it from the cloud instead', 'error');
           return;
         }
-        toast(`Kept in ${provider.label} — ${out.uploaded} file${out.uploaded === 1 ? '' : 's'} sent`);
+        toast(`Kept in ${provider.label}: ${out.uploaded} file${out.uploaded === 1 ? '' : 's'} sent`);
       } catch (err) {
         console.error(err);
         toast('Could not copy the board: ' + why(err), 'error');
@@ -499,7 +499,7 @@ export function fileCommands() {
     cloudStop: async () => {
       const answer = await ask({
         title: 'Stop keeping this board in Drive?',
-        body: 'The copy already in your Drive stays exactly where it is — nothing is '
+        body: 'The copy already in your Drive stays exactly where it is, and nothing is '
           + 'removed. What stops is the sending: changes from here on stay in this '
           + 'browser until you turn it back on.',
         go: 'Stop syncing',
@@ -508,7 +508,7 @@ export function fileCommands() {
       });
       if (answer !== 'go') return;
       await stopSyncingBoard();
-      toast('No longer syncing — the copy in your Drive is untouched');
+      toast('No longer syncing. The copy in your Drive is untouched');
       paintPanel();
     },
     // Trash every file this app put in Drive. drive.file scope means only
@@ -522,7 +522,7 @@ export function fileCommands() {
 
       const answer = await ask({
         title: `Remove everything from ${provider.label}?`,
-        body: 'Every board this app has put in your Drive goes to your Drive trash — the '
+        body: 'Every board this app has put in your Drive goes to your Drive trash: the '
           + 'synced copies and the files behind any links you have shared, which stop '
           + 'working. Boards stay on this machine and nothing on screen is touched. '
           + 'Nothing else in your Drive can be reached: this app only ever sees what it '
@@ -539,7 +539,7 @@ export function fileCommands() {
         const { forgetAllSyncs } = await import('../storage/cloud/sync.ts');
         await forgetAllSyncs();
         toast(gone
-          ? `Removed ${gone} item${gone === 1 ? '' : 's'} from ${provider.label} — they are in your Drive trash`
+          ? `Removed ${gone} item${gone === 1 ? '' : 's'} from ${provider.label}. They are in your Drive trash`
           : `There was nothing of mbrd's in ${provider.label}`);
       } catch (err) {
         console.error(err);

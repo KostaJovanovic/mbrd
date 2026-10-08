@@ -660,7 +660,7 @@ function showPage(title: string): void {
   const win = current();
   if (!win) return;
   const name = title.replace(/ - mbrd$/, '') || 'mbrd';
-  win.setTitle(`${name} — mbrd`);
+  win.setTitle(`${name} - mbrd`);
   lastSubject = { title: name, dirty: false };
   win.webContents.send('chrome:subject', lastSubject);
   if (!isMac) return;
@@ -1091,7 +1091,7 @@ function showDocument(state: unknown): void {
   const board = typeof title === 'string' && title ? title : 'Untitled board';
   // The star most programs put before an unsaved document's name.
   const mark = dirty === true ? '* ' : '';
-  win.setTitle(mark + (file ? `${file} — ${board}` : board) + ' — mbrd');
+  win.setTitle(mark + (file ? `${file} - ${board}` : board) + ' - mbrd');
 
   // The bar names the board and marks unsaved work.
   lastSubject = { title: board, dirty: dirty === true };

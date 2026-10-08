@@ -27,7 +27,7 @@ export async function connectCloud(id: string): Promise<boolean> {
   const go = await ask({
     title: `Connect ${provider.label}?`,
     body: `Boards you choose are copied into your own ${provider.label} and kept up to `
-      + 'date while this tab is open — never onto a server of ours. Photographs are '
+      + 'date while this tab is open, never onto a server of ours. Photographs are '
       + 'uploaded once each, so only what changes is sent again. A sign-in window opens '
       + 'next, and the connection lasts about an hour, or until this tab or window closes.',
     go: 'Sign in',

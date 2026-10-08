@@ -60,7 +60,7 @@ export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLEleme
       // Never swallowed: a rejected play() is usually the browser refusing,
       // not a broken file, and an empty catch leaves a card silently dead.
       toast(err && err.name === 'NotAllowedError'
-        ? 'Your browser blocked playback — allow media for this site'
+        ? 'Your browser blocked playback. Allow media for this site'
         : 'Could not play this video');
     });
   };

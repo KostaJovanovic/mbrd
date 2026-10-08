@@ -668,7 +668,7 @@ function buildSliders() {
     draft.masterGain = v;
   }));
   draft.layers.forEach((layer, i) => {
-    panel.append(el("div", "sub", `layer ${i + 1} \u2014 ${layer.kind === "tone" ? layer.waveform : layer.filterType + " noise"}`));
+    panel.append(el("div", "sub", `layer ${i + 1}: ${layer.kind === "tone" ? layer.waveform : layer.filterType + " noise"}`));
     for (const field of FIELDS) {
       const bag = layer;
       const value = bag[field.key];
