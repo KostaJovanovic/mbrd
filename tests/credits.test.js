@@ -16,8 +16,9 @@ import { WEB, THIRD_PARTY, read } from './helpers.js';
 const html = read(join(WEB, 'index.html'));
 const manifest = read(THIRD_PARTY);
 
-/** The fold, and nothing else on the page. */
-const fold = html.match(/<details class="credits-more">([\s\S]*?)<\/details>/)?.[1] ?? '';
+/** The fold, and nothing else on the page: up to the sheet's Close, since each
+ *  block inside the fold is a <details> of its own and closes before it does. */
+const fold = html.match(/<details class="credits-more">([\s\S]*?)id="credits-close"/)?.[1] ?? '';
 
 test('the credits sheet has a fold that lists what ships', () => {
   // Guards the guard: a renamed class would make every assertion below vacuous.

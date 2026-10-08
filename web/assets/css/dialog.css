@@ -588,38 +588,80 @@ textarea.lp-url {
   border-top: var(--hairline) solid var(--rule);
   padding-top: 12px;
 }
-/* One dependency per row: name, licence chip, creator. Licence inline with
-   the name so it reads as a label, not a heading for the sentence below. */
+/* What the app is made with: a block each, three to a row. A block opens in
+   its own column, and the row grows with it rather than the others stretching
+   (align-items: start), so a press never moves the block pressed. */
 .credits-deps {
   margin: 10px 0 0;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  align-items: start;
 }
-.credits-deps > li {
+.credits-dep {
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.credits-dep[open] {
+  border-color: var(--accent);
+  background: var(--paper-card);
+}
+.credits-dep > summary {
+  display: block;
+  list-style: none;
+  cursor: pointer;
+  padding: 7px 9px;
+  border-radius: inherit;
+  font-family: var(--font-display);
   font-size: var(--t-small);
+  line-height: 1.25;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.credits-dep > summary::-webkit-details-marker { display: none; }
+@media (hover: hover) {
+  .credits-dep > summary:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+.credits-dep[open] > summary { color: var(--accent-deep); }
+.credits-dep > summary:focus { outline: none; }
+.credits-dep > summary:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+}
+/* What drops: the source, the licence, who, and why - one per line, since a
+   third of the sheet is too narrow to run them together as a sentence. */
+.credits-dep-body {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  padding: 0 9px 9px;
+  font-size: var(--t-tiny);
   line-height: 1.4;
 }
-.credits-deps a {
-  font-family: var(--font-display);
-  color: var(--ink);
+.credits-dep-body a {
+  color: var(--accent-text);
   text-decoration: none;
-  transition: color var(--dur-fast) var(--ease);
 }
 @media (hover: hover) {
-  .credits-deps a:hover { color: var(--accent-text); text-decoration: underline; }
+  .credits-dep-body a:hover { text-decoration: underline; }
 }
-.credits-deps a:focus { outline: none; }
-.credits-deps a:focus-visible {
+.credits-dep-body a:focus { outline: none; }
+.credits-dep-body a:focus-visible {
   outline: var(--sel-line) solid var(--select);
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
-/* A chip, not a word — reads as metadata rather than part of the sentence. */
+/* A chip, not a word — reads as metadata rather than part of the sentence.
+   Allowed to wrap: "Pixabay Content License" is wider than a column. */
 .credits-lic {
   display: inline-block;
-  margin-left: 6px;
   padding: 1px 6px;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--radius-pill);
@@ -627,17 +669,14 @@ textarea.lp-url {
   font-size: var(--t-tiny);
   letter-spacing: calc(0.04em * var(--ls-scale));
   color: var(--ink-3);
-  white-space: nowrap;
 }
 .credits-by {
   color: var(--ink-3);
 }
-.credits-by::before { content: " · "; color: var(--ink-3); }
 .credits-why {
   color: var(--ink-2);
   text-wrap: pretty;
 }
-.credits-why::before { content: " — "; color: var(--ink-3); }
 .credits-why code {
   font-family: var(--font-mono);
   font-size: 0.92em;

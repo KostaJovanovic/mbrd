@@ -1032,161 +1032,228 @@
       </li>
     </ul>
     <h3 class="credits-head credits-head-deps">Made with</h3>
+    <!-- A block each, three to a row, in the order of the names on them. A
+         press drops the block's own details: where it comes from, its licence,
+         who made it, what it does here. One open at a time - `name` makes the
+         <details> an exclusive group, which an engine without it ignores.
+         Every source link stays in here (tests/credits.test.js holds them
+         against THIRD-PARTY.md). -->
     <ul class="credits-deps">
-      <li>
-        <!-- All links point to source repos (must match THIRD-PARTY.md). -->
-        <a href="https://github.com/phosphor-icons/core" target="_blank" rel="noopener noreferrer">Phosphor Icons</a>
-        <span class="credits-lic">MIT</span>
-        <span class="credits-by">Phosphor</span>
-        <span class="credits-why">The sticker shapes.</span>
-      </li>
-      <li>
-        <a href="https://github.com/simple-icons/simple-icons" target="_blank" rel="noopener noreferrer">Simple Icons</a>
-        <span class="credits-lic">CC0-1.0</span>
-        <span class="credits-by">Simple Icons</span>
-        <span class="credits-why">The site logos on link cards.</span>
-      </li>
-      <li>
-        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener noreferrer">file&#8209;analyser</a>
-        <span class="credits-lic">borrowed data</span>
-        <span class="credits-by">valjdakosta</span>
-        <span class="credits-why">File-type names, so a dropped <code>.sldprt</code>
-          reads &ldquo;SolidWorks&rdquo;.</span>
-      </li>
-      <li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>Ambient Piano</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://pixabay.com/music/ambient-ambient-piano-595681/" target="_blank" rel="noopener noreferrer">Ambient Piano</a></span>
+          <span class="credits-lic">Pixabay Content License</span>
+          <span class="credits-by">leberch</span>
+          <span class="credits-why">i like how calm it is, clears my mind</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>Capacitor</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/ionic-team/capacitor" target="_blank" rel="noopener noreferrer">Capacitor</a></span>
+          <span class="credits-lic">MIT</span>
+          <span class="credits-by">Ionic</span>
+          <span class="credits-why">The Android app&rsquo;s shell.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>Cuelume</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/Danilaa1/cuelume" target="_blank" rel="noopener noreferrer">Cuelume</a></span>
+          <span class="credits-lic">MIT</span>
+          <span class="credits-by">Danila</span>
+          <span class="credits-why">The interface sounds, synthesised live.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>Electron</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/electron/electron" target="_blank" rel="noopener noreferrer">Electron</a></span>
+          <span class="credits-lic">MIT</span>
+          <span class="credits-by">OpenJS Foundation</span>
+          <span class="credits-why">The desktop app&rsquo;s window.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <!-- Desktop FFmpeg — GPL (separate from the browser LGPL build, ffmpeg.wasm). -->
+        <summary>FFmpeg</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/FFmpeg/FFmpeg" target="_blank" rel="noopener noreferrer">FFmpeg</a>,
+            <a href="https://github.com/GyanD/codexffmpeg" target="_blank" rel="noopener noreferrer">GyanD</a>,
+            <a href="https://evermeet.cx/ffmpeg/" target="_blank" rel="noopener noreferrer">evermeet.cx</a>
+            and <a href="https://johnvansickle.com/ffmpeg/" target="_blank" rel="noopener noreferrer">John Van Sickle</a> builds</span>
+          <span class="credits-lic">GPL-3.0</span>
+          <span class="credits-by">The FFmpeg authors</span>
+          <span class="credits-why">In the desktop app only: pulls a poster frame
+            straight from a clip, with no download and no network. Its source is
+            published beside each build &mdash; see
+            <a href="https://github.com/KostaJovanovic/mbrd/blob/main/.github/THIRD-PARTY.md#code" target="_blank" rel="noopener noreferrer">THIRD-PARTY.md</a>.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>ffmpeg.wasm</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener noreferrer">ffmpeg.wasm</a></span>
+          <span class="credits-lic">MIT over LGPL-2.1</span>
+          <span class="credits-by">ffmpegwasm</span>
+          <span class="credits-why">Fetched on request to pull a still from a clip
+            this browser cannot open.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>file&#8209;analyser</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener noreferrer">file&#8209;analyser</a></span>
+          <span class="credits-lic">borrowed data</span>
+          <span class="credits-by">valjdakosta</span>
+          <span class="credits-why">File-type names, so a dropped <code>.sldprt</code>
+            reads &ldquo;SolidWorks&rdquo;.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>heic2any</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/alexcorvi/heic2any" target="_blank" rel="noopener noreferrer">heic2any</a>,
+            <a href="https://github.com/strukturag/libheif" target="_blank" rel="noopener noreferrer">libheif</a></span>
+          <span class="credits-lic">MIT, LGPL-3.0</span>
+          <span class="credits-by">Alex Corvi, struktur&#160;AG</span>
+          <span class="credits-why">Draws a HEIC photograph where the browser has
+            no decoder of its own to lend.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>KaTeX</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/KaTeX/KaTeX" target="_blank" rel="noopener noreferrer">KaTeX</a></span>
+          <span class="credits-lic">MIT</span>
+          <span class="credits-by">Khan Academy and contributors</span>
+          <span class="credits-why">Typesets the mathematics in a LaTeX document
+            and in Markdown.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>libarchive.js</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/nika-begiashvili/libarchivejs" target="_blank" rel="noopener noreferrer">libarchive.js</a>,
+            <a href="https://github.com/libarchive/libarchive" target="_blank" rel="noopener noreferrer">libarchive</a></span>
+          <span class="credits-lic">MIT, BSD-2-Clause</span>
+          <span class="credits-by">Nika Begiashvili, the libarchive project</span>
+          <span class="credits-why">Opens 7z and RAR archives, in a worker.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>LibRaw</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/ybouane/LibRaw-Wasm" target="_blank" rel="noopener noreferrer">LibRaw&#8209;Wasm</a>,
+            <a href="https://github.com/LibRaw/LibRaw" target="_blank" rel="noopener noreferrer">LibRaw</a></span>
+          <span class="credits-lic">ISC, LGPL-2.1</span>
+          <span class="credits-by">ybouane, LibRaw LLC</span>
+          <span class="credits-why">Demosaics a camera RAW into a full picture,
+            in a worker.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>occt&#8209;import&#8209;js</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/kovacsv/occt-import-js" target="_blank" rel="noopener noreferrer">occt&#8209;import&#8209;js</a></span>
+          <span class="credits-lic">LGPL-2.1</span>
+          <span class="credits-by">Viktor Kov&#225;cs, Open CASCADE</span>
+          <span class="credits-why">Turns a STEP or IGES file, which holds surfaces
+            rather than triangles, into a model a card can draw.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>ONNX Runtime</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/microsoft/onnxruntime" target="_blank" rel="noopener noreferrer">ONNX Runtime</a></span>
+          <span class="credits-lic">MIT</span>
+          <span class="credits-by">Microsoft</span>
+          <span class="credits-why">Runs the background remover: the web build in
+            a browser and on a phone, the Node build in the desktop app.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>pdf.js</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/mozilla/pdf.js" target="_blank" rel="noopener noreferrer">pdf.js</a></span>
+          <span class="credits-lic">Apache-2.0</span>
+          <span class="credits-by">Mozilla</span>
+          <span class="credits-why">Draws page one of a PDF or <code>.ai</code> as a
+            card picture.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>Phosphor Icons</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/phosphor-icons/core" target="_blank" rel="noopener noreferrer">Phosphor Icons</a></span>
+          <span class="credits-lic">MIT</span>
+          <span class="credits-by">Phosphor</span>
+          <span class="credits-why">The sticker shapes.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>sharp</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/lovell/sharp" target="_blank" rel="noopener noreferrer">sharp</a></span>
+          <span class="credits-lic">Apache-2.0</span>
+          <span class="credits-by">Lovell Fuller, libvips</span>
+          <span class="credits-why">In the desktop app only: opens pictures a
+            browser cannot, such as HEIC.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>Simple Icons</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/simple-icons/simple-icons" target="_blank" rel="noopener noreferrer">Simple Icons</a></span>
+          <span class="credits-lic">CC0-1.0</span>
+          <span class="credits-by">Simple Icons</span>
+          <span class="credits-why">The site logos on link cards.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>Typefaces</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/googlefonts/Playfair" target="_blank" rel="noopener noreferrer">Playfair</a>,
+            <a href="https://github.com/undercasetype/Fraunces" target="_blank" rel="noopener noreferrer">Fraunces</a>,
+            <a href="https://github.com/vercel/geist-font" target="_blank" rel="noopener noreferrer">Geist and Geist&#160;Mono</a>,
+            <a href="https://github.com/cyrealtype/Lora-Cyrillic" target="_blank" rel="noopener noreferrer">Lora</a>,
+            <a href="https://github.com/huertatipografica/piazzolla" target="_blank" rel="noopener noreferrer">Piazzolla</a></span>
+          <span class="credits-lic">OFL 1.1</span>
+          <span class="credits-by">Google Fonts, Undercase Type, Vercel, Cyreal, Huerta Tipográfica</span>
+          <span class="credits-why">The typefaces, and the Cyrillic ones.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>U&#178;&#8209;Net</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/xuebinqin/U-2-Net" target="_blank" rel="noopener noreferrer">U&#178;&#8209;Net (u2netp)</a></span>
+          <span class="credits-lic">Apache-2.0</span>
+          <span class="credits-by">Xuebin Qin and others</span>
+          <span class="credits-why">The model that finds the subject when a
+            picture&rsquo;s background is removed.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
+        <summary>UTIF.js</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://github.com/photopea/UTIF.js" target="_blank" rel="noopener noreferrer">UTIF.js</a>,
+            <a href="https://github.com/nodeca/pako" target="_blank" rel="noopener noreferrer">pako</a></span>
+          <span class="credits-lic">MIT</span>
+          <span class="credits-by">Photopea, Nodeca</span>
+          <span class="credits-why">Decodes TIFF, in a worker.</span>
+        </div>
+      </details></li>
+      <li><details class="credits-dep" name="credits-dep">
         <!-- An inspiration, not a dependency: no code or data taken, so no
              licence chip and no THIRD-PARTY.md entry. -->
-        <a href="https://vomitdraft.com" target="_blank" rel="noopener noreferrer">Vomit Draft</a>
-        <span class="credits-by">vomitdraft.com</span>
-        <span class="credits-why">The inspiration for the text editor&rsquo;s
-          Vomit Mode.</span>
-      </li>
-      <li>
-        <a href="https://github.com/Danilaa1/cuelume" target="_blank" rel="noopener noreferrer">Cuelume</a>
-        <span class="credits-lic">MIT</span>
-        <span class="credits-by">Danila</span>
-        <span class="credits-why">The interface sounds, synthesised live.</span>
-      </li>
-      <li>
-        <a href="https://pixabay.com/music/ambient-ambient-piano-595681/" target="_blank" rel="noopener noreferrer">Ambient Piano</a>
-        <span class="credits-lic">Pixabay Content License</span>
-        <span class="credits-by">leberch</span>
-        <span class="credits-why">i like how calm it is, clears my mind</span>
-      </li>
-      <li>
-        <a href="https://github.com/googlefonts/Playfair" target="_blank" rel="noopener noreferrer">Playfair</a>,
-        <a href="https://github.com/undercasetype/Fraunces" target="_blank" rel="noopener noreferrer">Fraunces</a>,
-        <a href="https://github.com/vercel/geist-font" target="_blank" rel="noopener noreferrer">Geist and Geist&#160;Mono</a>,
-        <a href="https://github.com/cyrealtype/Lora-Cyrillic" target="_blank" rel="noopener noreferrer">Lora</a>,
-        <a href="https://github.com/huertatipografica/piazzolla" target="_blank" rel="noopener noreferrer">Piazzolla</a>
-        <span class="credits-lic">OFL 1.1</span>
-        <span class="credits-by">Google Fonts, Undercase Type, Vercel, Cyreal, Huerta Tipográfica</span>
-        <span class="credits-why">The typefaces, and the Cyrillic ones.</span>
-      </li>
-      <li>
-        <a href="https://github.com/mozilla/pdf.js" target="_blank" rel="noopener noreferrer">pdf.js</a>
-        <span class="credits-lic">Apache-2.0</span>
-        <span class="credits-by">Mozilla</span>
-        <span class="credits-why">Draws page one of a PDF or <code>.ai</code> as a
-          card picture.</span>
-      </li>
-      <li>
-        <a href="https://github.com/photopea/UTIF.js" target="_blank" rel="noopener noreferrer">UTIF.js</a>,
-        <a href="https://github.com/nodeca/pako" target="_blank" rel="noopener noreferrer">pako</a>
-        <span class="credits-lic">MIT</span>
-        <span class="credits-by">Photopea, Nodeca</span>
-        <span class="credits-why">Decodes TIFF, in a worker.</span>
-      </li>
-      <li>
-        <a href="https://github.com/nika-begiashvili/libarchivejs" target="_blank" rel="noopener noreferrer">libarchive.js</a>,
-        <a href="https://github.com/libarchive/libarchive" target="_blank" rel="noopener noreferrer">libarchive</a>
-        <span class="credits-lic">MIT, BSD-2-Clause</span>
-        <span class="credits-by">Nika Begiashvili, the libarchive project</span>
-        <span class="credits-why">Opens 7z and RAR archives, in a worker.</span>
-      </li>
-      <li>
-        <a href="https://github.com/microsoft/onnxruntime" target="_blank" rel="noopener noreferrer">ONNX Runtime</a>
-        <span class="credits-lic">MIT</span>
-        <span class="credits-by">Microsoft</span>
-        <span class="credits-why">Runs the background remover: the web build in
-          a browser and on a phone, the Node build in the desktop app.</span>
-      </li>
-      <li>
-        <a href="https://github.com/xuebinqin/U-2-Net" target="_blank" rel="noopener noreferrer">U&#178;&#8209;Net (u2netp)</a>
-        <span class="credits-lic">Apache-2.0</span>
-        <span class="credits-by">Xuebin Qin and others</span>
-        <span class="credits-why">The model that finds the subject when a
-          picture&rsquo;s background is removed.</span>
-      </li>
-      <li>
-        <a href="https://github.com/kovacsv/occt-import-js" target="_blank" rel="noopener noreferrer">occt&#8209;import&#8209;js</a>
-        <span class="credits-lic">LGPL-2.1</span>
-        <span class="credits-by">Viktor Kov&#225;cs, Open CASCADE</span>
-        <span class="credits-why">Turns a STEP or IGES file, which holds surfaces
-          rather than triangles, into a model a card can draw.</span>
-      </li>
-      <li>
-        <a href="https://github.com/ybouane/LibRaw-Wasm" target="_blank" rel="noopener noreferrer">LibRaw&#8209;Wasm</a>,
-        <a href="https://github.com/LibRaw/LibRaw" target="_blank" rel="noopener noreferrer">LibRaw</a>
-        <span class="credits-lic">ISC, LGPL-2.1</span>
-        <span class="credits-by">ybouane, LibRaw LLC</span>
-        <span class="credits-why">Demosaics a camera RAW into a full picture,
-          in a worker.</span>
-      </li>
-      <li>
-        <a href="https://github.com/alexcorvi/heic2any" target="_blank" rel="noopener noreferrer">heic2any</a>,
-        <a href="https://github.com/strukturag/libheif" target="_blank" rel="noopener noreferrer">libheif</a>
-        <span class="credits-lic">MIT, LGPL-3.0</span>
-        <span class="credits-by">Alex Corvi, struktur&#160;AG</span>
-        <span class="credits-why">Draws a HEIC photograph where the browser has
-          no decoder of its own to lend.</span>
-      </li>
-      <li>
-        <a href="https://github.com/KaTeX/KaTeX" target="_blank" rel="noopener noreferrer">KaTeX</a>
-        <span class="credits-lic">MIT</span>
-        <span class="credits-by">Khan Academy and contributors</span>
-        <span class="credits-why">Typesets the mathematics in a LaTeX document
-          and in Markdown.</span>
-      </li>
-      <li>
-        <a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener noreferrer">ffmpeg.wasm</a>
-        <span class="credits-lic">MIT over LGPL-2.1</span>
-        <span class="credits-by">ffmpegwasm</span>
-        <span class="credits-why">Fetched on request to pull a still from a clip
-          this browser cannot open.</span>
-      </li>
-      <li>
-        <!-- Desktop FFmpeg — GPL (separate from the browser LGPL build above). -->
-        <a href="https://github.com/FFmpeg/FFmpeg" target="_blank" rel="noopener noreferrer">FFmpeg</a>,
-        <a href="https://github.com/GyanD/codexffmpeg" target="_blank" rel="noopener noreferrer">GyanD</a>,
-        <a href="https://evermeet.cx/ffmpeg/" target="_blank" rel="noopener noreferrer">evermeet.cx</a>
-        and <a href="https://johnvansickle.com/ffmpeg/" target="_blank" rel="noopener noreferrer">John Van Sickle</a> builds
-        <span class="credits-lic">GPL-3.0</span>
-        <span class="credits-by">The FFmpeg authors</span>
-        <span class="credits-why">In the desktop app only: pulls a poster frame
-          straight from a clip, with no download and no network. Its source is
-          published beside each build &mdash; see
-          <a href="https://github.com/KostaJovanovic/mbrd/blob/main/.github/THIRD-PARTY.md#code" target="_blank" rel="noopener noreferrer">THIRD-PARTY.md</a>.</span>
-      </li>
-      <li>
-        <a href="https://github.com/electron/electron" target="_blank" rel="noopener noreferrer">Electron</a>
-        <span class="credits-lic">MIT</span>
-        <span class="credits-by">OpenJS Foundation</span>
-        <span class="credits-why">The desktop app&rsquo;s window.</span>
-      </li>
-      <li>
-        <a href="https://github.com/lovell/sharp" target="_blank" rel="noopener noreferrer">sharp</a>
-        <span class="credits-lic">Apache-2.0</span>
-        <span class="credits-by">Lovell Fuller, libvips</span>
-        <span class="credits-why">In the desktop app only: opens pictures a
-          browser cannot, such as HEIC.</span>
-      </li>
-      <li>
-        <a href="https://github.com/ionic-team/capacitor" target="_blank" rel="noopener noreferrer">Capacitor</a>
-        <span class="credits-lic">MIT</span>
-        <span class="credits-by">Ionic</span>
-        <span class="credits-why">The Android app&rsquo;s shell.</span>
-      </li>
+        <summary>Vomit Draft</summary>
+        <div class="credits-dep-body">
+          <span class="credits-src"><a href="https://vomitdraft.com" target="_blank" rel="noopener noreferrer">vomitdraft.com</a></span>
+          <span class="credits-why">The inspiration for the text editor&rsquo;s
+            Vomit Mode.</span>
+        </div>
+      </details></li>
     </ul>
   </details>
   </div>
