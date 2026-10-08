@@ -15,9 +15,9 @@ import {
 } from './strokes.ts';
 import { currentTier } from './drawing.ts';
 
-/** The three sizes of each tool, in screen pixels: a stroke is as wide on the
- *  screen as the size says whatever the zoom, and stored at that width in the
- *  world. */
+/** The three sizes of each tool, in board units: a stroke is as wide on the
+ *  board whatever the zoom it was drawn at, so it scales with the board like
+ *  every card on it. At 100% a unit is a screen pixel. */
 export const SIZES: Record<PenTool, readonly [number, number, number]> = {
   pen: [2, 4, 8],
   highlighter: [12, 22, 36],
@@ -118,7 +118,7 @@ export function beginStroke(at: { x: number, y: number }, pressure: number, onCa
   const card = onCard ? byId(onCard) : null;
   live = {
     tool: s.tool, ink: s.ink,
-    width: SIZES[s.tool][s.size] / vp.zoom,
+    width: SIZES[s.tool][s.size],
     pts: [{ x: at.x, y: at.y, p: pressure }],
     at: now,
     on: card?.type === 'drawing' && !isLocked(card) ? card.id : null,
