@@ -36,6 +36,7 @@ import { embedFor, embedFloor } from './embed.ts';
 import { queryRect, queryAround } from './spatial.ts';
 import { holdRoutes } from './web.ts';
 import { startEdgePan } from './edge-pan.ts';
+import { penOn, setPen, beginStroke, extendStroke, endStroke, dropStroke } from './pen.ts';
 import { isDesktop } from '../platform/platform.ts';
 import { DEFAULT_WHEEL, wheelPrefs } from '../controls.ts';
 import type { WheelPrefs } from '../controls.ts';
@@ -73,7 +74,7 @@ const GRIP_YIELD = 'button, a[href], input, .wave';
 // (carryFloor). Everything else is a card and may not be dragged below three
 // cells across by two down. See the resize floor in onMove().
 const NO_GRID_FLOOR = new Set<string>([
-  'note', 'text', 'title', 'swatch', 'sticker', 'ghost', 'fence',
+  'note', 'text', 'title', 'swatch', 'sticker', 'ghost', 'fence', 'drawing',
 ]);
 
 /** A geometry snapshot as state.ts hands one back. Named off the function
@@ -122,6 +123,13 @@ export function liftWithButtonsHeld(
 ): boolean {
   return e.type === 'pointerup' && (e.pointerType === 'mouse' || e.pointerType === 'pen')
     && e.buttons !== 0;
+}
+
+/** How hard a stroke is pressed. Only a stylus says: a mouse reports 0.5 while
+ *  pressed and a finger whatever its screen likes, so both are read as 0.5,
+ *  which strokes.ts draws at the width the size says. */
+export function pressureOf(e: { pointerType: string, pressure: number }): number {
+  return e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : 0.5;
 }
 
 /** The keys that still work while the Timeline plays: they move the view or
@@ -1038,16 +1046,17 @@ export function nudgeDelta(
 // The gesture machine
 // ---------------------------------------------------------------------------
 //
-// Seven modes: idle, press, pan, pinch, marquee, move, resize.
+// Eight modes: idle, press, pan, pinch, marquee, move, resize, stroke.
 // Table-driven so tests/input.test.js can verify legal transitions
 // without pressing a pointer. A second finger always aborts the live
 // gesture first (landing in idle), then enters pinch from there.
 /** Every gesture mode. String union, not enum (erasableSyntaxOnly). */
-export type GestureMode = 'idle' | 'press' | 'pan' | 'pinch' | 'marquee' | 'move' | 'resize';
+export type GestureMode = 'idle' | 'press' | 'pan' | 'pinch' | 'marquee' | 'move' | 'resize' | 'stroke';
 
 export const GESTURE_MOVES = {
-  // A press decides between five things - see onDown().
-  idle: ['pan', 'marquee', 'move', 'press', 'pinch'],
+  // A press decides between five things - see onDown() - or, in drawing mode,
+  // is a stroke from the moment it lands.
+  idle: ['pan', 'marquee', 'move', 'press', 'pinch', 'stroke'],
   // The slop is crossed and the press becomes what it was waiting to be, or the
   // finger lifts and it was nothing.
   press: ['resize', 'marquee', 'idle'],
@@ -1057,6 +1066,7 @@ export const GESTURE_MOVES = {
   marquee: ['idle'],
   move: ['idle'],
   resize: ['idle'],
+  stroke: ['idle'],
 } satisfies Record<GestureMode, readonly GestureMode[]>;
 
 /**
@@ -1244,10 +1254,14 @@ type ResizeGesture = {
   snap: boolean,
 };
 
+/** A pen stroke (canvas/pen.ts holds its points). `stylus` is whether a
+ *  pen is drawing it, which is when a resting palm is ignored. */
+type StrokeGesture = { mode: 'stroke', pointerId: number, stylus: boolean };
+
 /** The one gesture, whichever mode it is in. */
 type Gesture =
   | IdleGesture | ResizePress | MarqueePress | PanGesture
-  | PinchGesture | MarqueeGesture | MoveGesture | ResizeGesture;
+  | PinchGesture | MarqueeGesture | MoveGesture | ResizeGesture | StrokeGesture;
 
 /** The variant - or, for `press`, the two variants - that answer to `mode`. */
 type GestureOf<M extends GestureMode> = Extract<Gesture, { mode: M }>;
@@ -1343,6 +1357,8 @@ type InputCommands = {
   // menu row or toolbar button already runs.
   addNoteAt?(at: Point | null): void,
   connect?(): void,
+  /** D: drawing mode on or off - the toolbar's Draw button. */
+  draw?(): void,
   toggleAnchor?(): void,
   raise?(): void,
   lower?(): void,
@@ -2226,6 +2242,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // right-click means. Touch is left out because a touch has no aux button to
     // report; `button` is 0 for every finger.
     if (e.button > 1 && (e.pointerType === 'mouse' || e.pointerType === 'pen')) return;
+    // A palm resting on the glass while a stylus draws is not a finger asking
+    // for anything - not even a pinch, which would drop the stroke. Left out of
+    // `pointers` altogether, so its moves and its lift find nothing either.
+    if (e.pointerType === 'touch' && gesture.mode === 'stroke' && gesture.stylus) return;
     // A hand on the board stops the board, before anything else is decided.
     // That is true of a glide let go of a moment ago and of a commanded flight
     // to Home or to Fit alike: catching a moving board has to work the first
@@ -2328,6 +2348,20 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // into is about selection, and while the tool is out this press is not.
     if (!viewOnly && cmds.connectTap?.(id, e.shiftKey)) {
       pointers.delete(e.pointerId);
+      return;
+    }
+    // Drawing mode (canvas/pen.ts), the board's other mode, in the same shape:
+    // one branch here, ahead of the widget and card branches, because while the
+    // pen is out a press anywhere draws. A stroke from the press, with no slop -
+    // a dot is a stroke. Space and the middle button still pan, and two fingers
+    // still pinch (the branch above), so the board can still be moved about.
+    if (!viewOnly && penOn() && e.button === 0 && !spaceDown
+        && !cmds.inTour?.() && !cmds.tourEditing?.()) {
+      e.preventDefault();
+      capturePointerSafely(el, e.pointerId);
+      cmds.clearActiveConnection?.();
+      enter('stroke', { pointerId: e.pointerId, stylus: e.pointerType === 'pen' });
+      beginStroke(vp.toWorld(e.clientX, e.clientY), pressureOf(e), id, e.timeStamp);
       return;
     }
     // The title card's pen. Caught before the generic widget branch below (a
@@ -2739,6 +2773,17 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       el.classList.add('is-panning');
     }
     if (gesture.mode === 'idle') return;
+
+    // Every point the pointer passed through since the last event, not only
+    // where it is now, so a quick stroke is a curve and not a polygon.
+    if (gesture.mode === 'stroke') {
+      if (e.pointerId !== gesture.pointerId) return;
+      const passed = e.getCoalescedEvents?.() ?? [];
+      for (const c of passed.length ? passed : [e]) {
+        extendStroke(vp.toWorld(c.clientX, c.clientY), pressureOf(c));
+      }
+      return;
+    }
 
     // The branches are the modes, in the order they were always tested in. The
     // one that does not end in a return is deliberate: a grip press that crosses
@@ -3345,6 +3390,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     stopEdge?.();
     stopEdge = null;
     lastDrag = null;
+    // A stroke lands or is let go. The pen keeps its own clock for the burst
+    // rule, and performance.now() is the clock event timestamps are on.
+    if (gesture.mode === 'stroke') {
+      if (commit) endStroke(performance.now());
+      else dropStroke();
+    }
     // A drop that found a host is the way back from Unstick, and it is the only
     // way back - there is no "stick to this card" menu entry, because putting it
     // on the card is already how you say that. In front of the commit, not
@@ -3497,7 +3548,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    */
   function cancelGesture() {
     const g = gesture;
-    if (g.mode !== 'move' && g.mode !== 'resize' && g.mode !== 'marquee' && g.mode !== 'press') return false;
+    if (g.mode !== 'move' && g.mode !== 'resize' && g.mode !== 'marquee' && g.mode !== 'press'
+      && g.mode !== 'stroke') return false;
     // A zoom box selected nothing, so there is nothing to hand back.
     const base = g.mode === 'marquee' && !g.zoom ? g.base ?? [] : null;
     abortGesture();
@@ -3873,6 +3925,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         e.preventDefault();
       } break;
       case 'j': case 'J': if (!onlyLooking()) { cmds.connect?.(); e.preventDefault(); } break;
+      // The pen: on, and off again. Canvas only, as its toolbar button is.
+      case 'd': case 'D': if (!onlyLooking() && !vp.isMobile && !e.repeat) { cmds.draw?.(); e.preventDefault(); } break;
       // Every command by name, at the pointer - the S box. With cards selected
       // too: what it offers first is what they can do. Prevented, or the S
       // would be typed into the field the keydown has just focused.
@@ -3928,6 +3982,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // A gesture in progress is the innermost temporary state of all: the
         // cards go back to where the hand picked them up, and nothing records.
         if (cancelGesture()) { markClosed(e); break; }
+        // Drawing mode next: the pen is put down, and only that.
+        if (penOn()) { setPen({ on: false }); markClosed(e); break; }
         // The cleaning simulator is not in this chain: while it is up it owns
         // the keyboard outright and answers Escape above, before the switch.
         // A running tour first: Escape is the way out of every temporary state

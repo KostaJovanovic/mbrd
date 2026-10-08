@@ -28,6 +28,8 @@ import { drawCaptured, captureCards, rootAttrs } from './capture.ts';
 import { boardSvg as boardSvgText } from './capture-css.ts';
 import type { SvgCard } from './capture-css.ts';
 import { tiltOf } from '../canvas/items.ts';
+import { readDrawing, outline, INK_VAR } from '../canvas/strokes.ts';
+import { currentTier } from '../canvas/drawing.ts';
 import { describeExt } from '../import/formats.ts';
 import { extOf, formatBytes, isRecord } from '../util.ts';
 import { STICKER_SPRITE, STICKER_VIEWBOX } from '../stickers/catalogue.ts';
@@ -653,6 +655,7 @@ type Painter = (p: Paint) => void | Promise<void>;
  */
 const PAINTERS: Partial<Record<ItemType, Painter>> = {
   sticker: p => drawSticker(p.ctx, p.it, p.w, p.h),
+  drawing: paintDrawing,
   swatch: paintSwatch,
   fence: paintFence,
   note: paintNote,
@@ -660,6 +663,43 @@ const PAINTERS: Partial<Record<ItemType, Painter>> = {
   link: paintLink,
   text: paintText,
 };
+
+/**
+ * A drawing: the same outlines its card draws (canvas/drawing.ts), through
+ * Path2D, highlighters first and multiplied - screened on a dark board, as
+ * cards.css does it. No card under them, as there is none on the board.
+ */
+function paintDrawing({ ctx, it, w, h }: Paint) {
+  const { strokes, space } = readDrawing(it.meta);
+  const k = Math.min(w / space[0], h / space[1]);
+  const tier = currentTier();
+  const dark = document.documentElement.dataset.scheme === 'dark';
+  ctx.save();
+  ctx.scale(k, k);
+  ctx.translate(-space[0] / 2, -space[1] / 2);
+  for (const pass of ['highlighter', 'pen'] as const) {
+    for (const s of strokes) {
+      if (s.tool !== pass) continue;
+      const o = outline(s, tier);
+      if (!o.d) continue;
+      const ink = readToken(INK_VAR[s.ink]) || '#31261b';
+      ctx.globalAlpha = pass === 'highlighter' ? 0.4 : 1;
+      ctx.globalCompositeOperation = pass === 'highlighter' ? (dark ? 'screen' : 'multiply') : 'source-over';
+      const path = new Path2D(o.d);
+      if (o.kind === 'fill') {
+        ctx.fillStyle = ink;
+        ctx.fill(path);
+      } else {
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = o.width;
+        ctx.lineCap = o.cap;
+        ctx.lineJoin = o.join;
+        ctx.stroke(path);
+      }
+    }
+  }
+  ctx.restore();
+}
 
 /**
  * A card's own face, as items.css draws one: --paper-card, a hairline of

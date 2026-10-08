@@ -1477,6 +1477,12 @@
      upward, absolutely positioned against it, which is what keeps the two in
      step: the tier's own left and right are the container's, so it can never
      drift off the bin at one end or the history pair at the other. */
+  /* The pen bar stands on the handle, where the thumb is, rather than hanging
+     from a top edge the toolbar has left. */
+  #pen-bar {
+    top: auto;
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--dock) + var(--bar-h) + var(--bar-gap));
+  }
   #toolbar {
     top: auto;
     left: calc(max(12px, env(safe-area-inset-left)) + var(--chrome-button-w) + var(--bar-gap));

@@ -522,6 +522,12 @@
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-link"/></svg>
       <span>Link</span>
     </button>
+    <!-- Drawing mode (canvas/pen.ts): pressed while it is on; D or Escape
+         leaves. Its tools are #pen-bar, below. -->
+    <button type="button" data-cmd="draw" data-more aria-pressed="false" title="Draw  D">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-draw"/></svg>
+      <span>Draw</span>
+    </button>
     <!-- Opens the sticker pad (no default sticker — the shape is the choice).
          On both layouts, unlike Join/Arrange/Find. -->
     <button type="button" data-cmd="stickers" data-more title="Stickers">
@@ -555,6 +561,31 @@
       <span>Find</span>
     </button>
   </div>
+</div>
+
+<!-- The pen's tools, inks and sizes, up while drawing mode is on
+     (ui/pen-bar.ts). Not a menu: it stays while you draw. Between #toolbar and
+     #timeline-strip, which `~` rules skip over. -->
+<div id="pen-bar" role="toolbar" aria-label="Pen" hidden>
+  <button type="button" data-pen-tool="pen" aria-pressed="true" title="Pen">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-draw"/></svg>
+  </button>
+  <button type="button" data-pen-tool="highlighter" aria-pressed="false" title="Highlighter">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-highlighter"/></svg>
+  </button>
+  <button type="button" data-pen-tool="eraser" aria-pressed="false" title="Eraser">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-eraser"/></svg>
+  </button>
+  <span class="pen-inks">
+    <button type="button" class="pen-ink" data-pen-ink="ink" aria-pressed="true" title="Ink"><span></span></button>
+    <button type="button" class="pen-ink" data-pen-ink="accent" aria-pressed="false" title="Accent"><span></span></button>
+    <button type="button" class="pen-ink" data-pen-ink="warm" aria-pressed="false" title="Warm"><span></span></button>
+    <button type="button" class="pen-ink" data-pen-ink="leaf" aria-pressed="false" title="Leaf"><span></span></button>
+    <button type="button" class="pen-ink" data-pen-ink="danger" aria-pressed="false" title="Red"><span></span></button>
+  </span>
+  <button type="button" class="pen-size" data-pen-size="0" aria-pressed="false" title="Fine"><span></span></button>
+  <button type="button" class="pen-size" data-pen-size="1" aria-pressed="true" title="Medium"><span></span></button>
+  <button type="button" class="pen-size" data-pen-size="2" aria-pressed="false" title="Broad"><span></span></button>
 </div>
 
 <!-- Timeline, docked along the foot on every width (ui/timeline-view.ts). The

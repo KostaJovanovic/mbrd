@@ -188,7 +188,7 @@ test('a card is still caught by the corner it pokes into a band', () => {
 // transition rule those branches follow instead - the illegal cases matter
 // more than the legal ones, since a bag of booleans had no opinion on them.
 
-const MODES = ['idle', 'press', 'pan', 'pinch', 'marquee', 'move', 'resize'];
+const MODES = ['idle', 'press', 'pan', 'pinch', 'marquee', 'move', 'resize', 'stroke'];
 
 test('the table covers every mode and names no others', () => {
   assert.deepEqual(Object.keys(GESTURE_MOVES).sort(), [...MODES].sort());
@@ -207,6 +207,16 @@ test('a press decides between the five things a press can be', () => {
   assert.equal(gestureTransition('idle', 'move'), 'move');
   assert.equal(gestureTransition('idle', 'press'), 'press');
   assert.equal(gestureTransition('idle', 'pinch'), 'pinch');
+});
+
+test('a pen stroke starts on the press and ends only in idle', () => {
+  // Drawing mode claims the press outright, as the connector tool does: there
+  // is no slop to wait out, and a second finger drops it like any other.
+  assert.equal(gestureTransition('idle', 'stroke'), 'stroke');
+  assert.equal(gestureTransition('stroke', 'idle'), 'idle');
+  assert.equal(gestureTransition('stroke', 'pinch'), null);
+  assert.equal(gestureTransition('stroke', 'pan'), null);
+  assert.equal(gestureTransition('press', 'stroke'), null);
 });
 
 test('a resize only ever begins from a press that crossed the slop', () => {

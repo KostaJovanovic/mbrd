@@ -294,6 +294,7 @@ const KEYS: readonly KeyRow[] = [
   [['S'], 'search every command'],
   [['N'], 'a note at the pointer'],
   [['J'], 'join two cards'],
+  [['D'], 'draw, and put the pen down'],
   [['L'], 'anchor, unanchor'],
   [[']', '['], 'bring to front, send to back'],
   [['ctrl', '+', 'G'], 'fence the selection'],

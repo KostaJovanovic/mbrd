@@ -31,6 +31,7 @@ export const MORE_TOOLS: readonly { label: string, icon: string, cmd: string }[]
   { label: 'Add a colour', icon: 'i-swatch', cmd: 'addSwatch' },
   { label: 'Add a link', icon: 'i-link', cmd: 'addLink' },
   { label: 'New LaTeX document', icon: 'i-pen', cmd: 'newLatex' },
+  { label: 'Draw', icon: 'i-draw', cmd: 'draw' },
   { label: 'Stickers', icon: 'i-sticker', cmd: 'stickers' },
 ];
 

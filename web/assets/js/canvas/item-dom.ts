@@ -40,7 +40,7 @@ export type ItemLike = Item;
 export interface ItemFragment {
   type?: string;
   name?: string;
-  meta?: { ext?: unknown, text?: unknown } | null;
+  meta?: { ext?: unknown, text?: unknown, strokes?: unknown } | null;
 }
 
 /**
@@ -68,8 +68,11 @@ export function itemAccessibleName(item?: ItemFragment | null): string {
   // A note with no name is called by its first line, which is what it says on it.
   const text = item?.type === 'note' && typeof item.meta?.text === 'string' ? item.meta.text : '';
   const said = text.split('\n').map(l => l.replace(/^#+\s*/, '').trim()).find(Boolean)?.slice(0, 80) ?? '';
+  // A drawing with no name is called by what it is made of.
+  const strokes = item?.type === 'drawing' && Array.isArray(item.meta?.strokes) ? item.meta.strokes.length : 0;
   // The title card's words are the board's, not an item name.
   const base = name || (said ? `Note: ${said}` : item?.type === 'title' ? 'The board’s title'
+    : item?.type === 'drawing' ? `Drawing, ${strokes} stroke${strokes === 1 ? '' : 's'}`
     : `Untitled ${TYPE_LABEL[item?.type ?? ''] || 'item'}`);
   // Suffixed rather than announced by a separate element, because what an
   // anchor changes is what this card *is* to somebody driving by keyboard: it
@@ -119,6 +122,7 @@ const NO_HEAD = new Set([
               // headings.
   'card',     // the cleaning simulator's card (canvas/spotless.ts): its own
               // line is printed on it already, in the display face.
+  'drawing',  // a sketch is its own name, as a sticker is: a mark, not a file.
 ]);
 
 export const wantsHead = (item: ItemFragment): boolean => !NO_HEAD.has(item.type ?? '');
@@ -265,8 +269,10 @@ export function resetTilt(): void {
 const TILT_MAX_WIDTH_CELLS = 8;
 const TILT_MAX_HEIGHT_CELLS = 6;
 
-/** Whether an item takes a lean at all - see restingTilt() for the two that do not. */
-const leans = (item: ItemLike) => !isFence(item) && item.type !== 'sticker';
+/** Whether an item takes a lean at all - see restingTilt() for the two that do
+ *  not, and a drawing, which stays level so a sketch annotating the card beside
+ *  it does not drift off it (research/pen-2026-10-07.md). */
+const leans = (item: ItemLike) => !isFence(item) && item.type !== 'sticker' && item.type !== 'drawing';
 
 /**
  * Too large to lean, for the reason a region is: the lean turns about the

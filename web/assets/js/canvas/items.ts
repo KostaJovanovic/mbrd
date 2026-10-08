@@ -1505,7 +1505,7 @@ function build(item: Item) {
  * Archives and folders are drawn as folders, tab and all, and cast their own
  * drop-shadow in cards.css.
  */
-const NO_TWIN = new Set(['title', 'ghost', 'fence', 'sticker', 'archive', 'folder']);
+const NO_TWIN = new Set(['title', 'ghost', 'fence', 'sticker', 'archive', 'folder', 'drawing']);
 
 /**
  * The same question, asked of an item rather than of a type.

@@ -64,7 +64,8 @@ The changelog source is `patch-notes.md` at the repository root, not in here.
   boards and the rest. Being built in its order.
 - `pen-2026-10-07.md` — the design for item 17, the pen, highlighter and
   eraser: a `drawing` card, a `stroke` gesture inside `input.ts`, the dial's
-  three ways of drawing a stroke. Approved 2026-10-08, being built.
+  three ways of drawing a stroke. Built 2026-10-08; its last section says
+  where the build differs.
 - `boards-in-boards-2026-10-07.md` — the design for item 18: children as
   `boards/<id>/` inside the parent `.mbrd`, gated by `requires: ["boards"]`,
   a board card and a breadcrumb. Approved 2026-10-08; follows the pen.

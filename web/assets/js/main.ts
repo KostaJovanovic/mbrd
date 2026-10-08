@@ -79,6 +79,8 @@ import { initScaleBar } from './ui/scalebar.ts';
 import { initDrawer } from './ui/drawer.ts';
 import { initNowPlaying } from './ui/nowplaying.ts';
 import { initToolbar } from './ui/toolbar.ts';
+import { initPenBar } from './ui/pen-bar.ts';
+import { initPen } from './canvas/pen.ts';
 import { initFlyouts } from './ui/flyout.ts';
 import { initPalette } from './ui/palette.ts';
 import { initStickerWindow } from './ui/sticker-window.ts';
@@ -372,6 +374,8 @@ initInventory(vp);
 initTour(vp);
 // After buildPanel(), which creates the slot this fills.
 initTourEdit();
+// The pen's live layer, before the pipeline that draws into it.
+initPen(vp);
 initInput(vp, cmds);
 initMenu(vp, cmds);
 // Fence prompt after rubber-band selection.
@@ -402,6 +406,8 @@ setSpotlessSong(id => { void dealSong(id); });
 initHud(vp, cmds);
 // Toolbar: buttons are data-cmd, needs cmds.
 initToolbar(cmds);
+// The pen's bar, which presses the toolbar's Draw button with it.
+initPenBar();
 // Flyouts behind toolbar buttons. After toolbar + initMenu().
 initFlyouts(cmds);
 // The S box reads every menu above, the toolbar and the panel's schema.

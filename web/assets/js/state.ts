@@ -212,7 +212,7 @@ import {
   itemTags, boardTags, cleanTag,
   normalizeTour, TAGS_PER_ITEM, TAG_MAX, MIN_CROP,
 } from './board-model.ts';
-import type { Connection, Item, MobileHeader, TourStop } from './board-model.ts';
+import type { Connection, Item, ItemMeta, MobileHeader, TourStop } from './board-model.ts';
 import type { MergePlan } from './merge.ts';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
@@ -377,6 +377,9 @@ export function replaceItem(id: string, items: Record<string, unknown>[], label:
  */
 function onLattice(it: Item): Item {
   if (!board.settings.snap) return it;
+  // A drawing lands where it was drawn: snapped, the sketch would jump from
+  // under the pen by up to half a step as the stroke ended.
+  if (it.type === 'drawing') return it;
   if (isSticky(it) && !it.meta?.loose && wouldStick(it, it.id, it)) return it;
   const box = latticeBox(it, baseStep());
   if (box.x === it.x && box.y === it.y && box.w === it.w && box.h === it.h) return it;
@@ -1181,6 +1184,36 @@ export function setItemsLocked(ids: Iterable<string>, locked: boolean) {
   // "Anchor"/"Unanchor" — the menu's word, not the stored key (meta.locked).
   commit((locked ? 'Anchor' : 'Unanchor') + many,
     () => write(locked), () => write(!locked));
+}
+
+/** A drawing's box and meta, which setDrawings() writes together. */
+type DrawingState = { x: number, y: number, w: number, h: number, meta: ItemMeta };
+
+/**
+ * Drawings' strokes and the boxes they grew into, as one undo step: a stroke
+ * added by the pen, or strokes the eraser took off several drawings in one pass
+ * (canvas/pen.ts). The box comes with the strokes because a stroke past the
+ * edge grows the card.
+ */
+export function setDrawings(changes: { id: string, next: DrawingState }[], label: string) {
+  const live = changes.filter(c => byId(c.id)?.type === 'drawing');
+  if (!live.length) return;
+  const prev = live.map(c => {
+    // Non-null: filtered on exactly this a line up.
+    const it = byId(c.id)!;
+    return { id: c.id, next: { x: it.x, y: it.y, w: it.w, h: it.h, meta: it.meta } };
+  });
+  const write = (list: typeof live) => {
+    for (const { id, next: v } of list) {
+      const item = byId(id);
+      if (!item) continue;
+      item.x = v.x; item.y = v.y; item.w = v.w; item.h = v.h;
+      item.meta = v.meta;
+      bus.emit('item', id);
+    }
+    bus.emit('geom', list.map(c => c.id));
+  };
+  commit(label, () => write(live), () => write(prev));
 }
 
 /**

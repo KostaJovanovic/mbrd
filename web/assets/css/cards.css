@@ -581,6 +581,40 @@
    picture that needs cropping to the card it is in. */
 .item[data-type="sticker"] .item-body { overflow: visible; }
 
+/* A drawing: strokes on the board itself, with no card under them - the
+   sticker's three switches, and its caption off too. The far-zoom headline is
+   refused in JS (NO_HEAD), the shadow twin where it is built (NO_TWIN). */
+.item[data-type="drawing"] {
+  background: transparent;
+  --item-shadow: none;
+  --item-border: transparent;
+  box-shadow: none;
+}
+.item[data-type="drawing"] .item-bar { display: none; }
+.item[data-type="drawing"] .item-body { overflow: visible; }
+
+/* Inks are names, coloured here from the board's own tokens, so a drawing
+   follows the palette, the scheme and colourblind mode with nothing stored
+   but the name. Each path paints in currentColor (canvas/drawing.ts). */
+.drawing-art, .pen-live {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.drawing-art [data-ink="ink"], .pen-live [data-ink="ink"] { color: var(--ink); }
+.drawing-art [data-ink="accent"], .pen-live [data-ink="accent"] { color: var(--accent); }
+.drawing-art [data-ink="warm"], .pen-live [data-ink="warm"] { color: var(--accent-warm); }
+.drawing-art [data-ink="leaf"], .pen-live [data-ink="leaf"] { color: var(--leafy); }
+.drawing-art [data-ink="danger"], .pen-live [data-ink="danger"] { color: var(--danger); }
+/* A highlighter is a wash, multiplied into what is under it - which on a dark
+   board would be nothing at all, so there it lightens instead. */
+.stroke-hl { opacity: 0.4; mix-blend-mode: multiply; }
+:root[data-scheme="dark"] .stroke-hl { mix-blend-mode: screen; }
+/* A stroke the eraser has passed over, until the eraser lets go. */
+.drawing-art .is-erasing { opacity: 0.15; }
+
 .sticker-art {
   display: block;
   width: 100%;

@@ -18,6 +18,7 @@ import { ask } from '../ui/dialog.ts';
 import { canvasOnly } from './view.ts';
 import { syncConnChip } from '../ui/conn-chip.ts';
 import { connectArmed, connectTap, setArmed } from '../ui/toolbar.ts';
+import { setPen } from '../canvas/pen.ts';
 
 import type { ConnMeta } from '../board-model.ts';
 
@@ -74,6 +75,8 @@ export function connectionCommands() {
       const picked = joinable(board.items.filter((i: Joinable) => selection.has(i.id)));
       showConnections();
       if (picked.length > 1) { joinAll(picked); return; }
+      // One mode at a time: the pen is put down to pick up the Join tool.
+      setPen({ on: false });
       setArmed(true, picked.length === 1 ? picked[0].id : null);
       toast(picked.length
         ? 'Now pick the card to join that one to. Hold Shift to keep joining.'

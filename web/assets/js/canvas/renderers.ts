@@ -36,6 +36,7 @@ import { landCopy } from './hires.ts';
 import { meshKind } from '../mesh.ts';
 import { faceName, pixelHash, TILE_SWATCHES } from '../style-tile.ts';
 import { buildSpotlessCard, SPOTLESS_SIZE } from './spotless.ts';
+import { drawingArt } from './drawing.ts';
 import { normalizeNoteRich, applyNoteStyle, buildNoteLine, blockRuns, markLang } from './note-model.ts';
 import type { NoteRichInput } from './note-model.ts';
 import {
@@ -1834,6 +1835,13 @@ const RENDERERS = {
 
     card.append(kicker, name, meta);
     return card;
+  },
+
+  /** A drawing: the strokes the pen laid down, and no card under them. Born
+   *  only by the pen (canvas/pen.ts), never by a file, so classify() has no
+   *  branch for it. See canvas/drawing.ts. */
+  drawing(item: Item) {
+    return drawingArt(item);
   },
 
   generic(item: Item) {

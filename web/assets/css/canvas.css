@@ -58,6 +58,11 @@
    or drag began, 32 ms on a Galaxy S22+ that has no cursor to show. `default`
    is what #world inherits the rest of the time, so its style never changes. */
 #viewport:is(.is-panning, .is-moving) > #world { cursor: default; }
+/* Drawing mode (canvas/pen.ts): the nib is the pointer over every card too,
+   since a press anywhere draws. Restyles the lot, but only as the mode turns
+   on or off, never per gesture. Held Space still shows the hand. */
+#viewport.is-drawing:not(.can-pan, .is-panning),
+#viewport.is-drawing:not(.can-pan, .is-panning) * { cursor: crosshair; }
 
 /* The one transformed layer. (0,0) at viewport centre; viewport.ts writes the
    transform and --iz (= 1/zoom) for constant-screen-size item chrome. */
@@ -821,6 +826,14 @@
   background: var(--select-fill);
   border-radius: var(--radius-sm);
   pointer-events: none;
+  z-index: 5;
+}
+
+/* The stroke being drawn, in the window's pixels over everything on the
+   board (canvas/pen.ts). Its inks are coloured beside the drawings' own. */
+.pen-live {
+  position: absolute;
+  inset: 0;
   z-index: 5;
 }
 

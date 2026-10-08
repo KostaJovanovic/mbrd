@@ -15,6 +15,9 @@ import type { ZipEntry } from '../storage/zip.ts';
 import { boardToCanvas, canvasToBoard } from '../storage/json-canvas.ts';
 import type { Resolved } from '../storage/json-canvas.ts';
 import { classify } from '../canvas/renderers.ts';
+import { drawingSvg, readDrawing, INK_VAR } from '../canvas/strokes.ts';
+import { currentTier } from '../canvas/drawing.ts';
+import { readToken } from '../util.ts';
 import type { Item } from '../board-model.ts';
 
 export const looksLikeCanvas = (f: File) => /\.canvas$/i.test(f.name);
@@ -91,19 +94,31 @@ export async function exportCanvas(): Promise<boolean> {
   const entries: ZipEntry[] = [];
   const byHash = new Map<string, string>();
   const taken = new Set<string>();
-  const fileFor = (item: Item): string | null => {
-    const hash = item.asset?.hash;
-    const asset = hash ? getAsset(hash) : null;
-    if (!hash || !asset) return null;
-    const had = byHash.get(hash);
-    if (had) return had;
-    const name = safeName(item.name || asset.name || hash.slice(0, 12));
+  /** A path in the folder no other file has, with a number before the extension if need be. */
+  const claim = (name: string) => {
     let path = `${folder}/${name}`;
     for (let n = 2; taken.has(path.toLowerCase()); n++) {
       const dot = name.lastIndexOf('.');
       path = `${folder}/${dot > 0 ? `${name.slice(0, dot)} ${n}${name.slice(dot)}` : `${name} ${n}`}`;
     }
     taken.add(path.toLowerCase());
+    return path;
+  };
+  const fileFor = (item: Item): string | null => {
+    // A drawing has no file, so one is made: an SVG of it, in the colours the
+    // board shows it in now.
+    if (item.type === 'drawing') {
+      const svg = drawingSvg(readDrawing(item.meta), currentTier(), ink => readToken(INK_VAR[ink]) || '#31261b');
+      const path = claim(`${safeName(item.name || 'Drawing')}.svg`);
+      entries.push({ name: path, data: new Blob([svg], { type: 'image/svg+xml' }) });
+      return path;
+    }
+    const hash = item.asset?.hash;
+    const asset = hash ? getAsset(hash) : null;
+    if (!hash || !asset) return null;
+    const had = byHash.get(hash);
+    if (had) return had;
+    const path = claim(safeName(item.name || asset.name || hash.slice(0, 12)));
     byHash.set(hash, path);
     entries.push({ name: path, data: asset.blob });
     return path;
