@@ -1,6 +1,7 @@
 # Boards inside boards — 7 October 2026
 
-**Status: open.** A design waiting for the maintainer's approval. Nothing built.
+**Status: open.** Approved by the maintainer on 2026-10-08 with every
+recommendation below taken. Nothing built yet; it follows the pen.
 
 Item 18 of `features-2026-10-07.md`. Decided there and not reopened here: a
 child board lives **inside** its parent's `.mbrd`, a board card opens its
@@ -132,6 +133,10 @@ kitchen.mbrd
 6. "Same look as the board above".
 
 ## Questions for the maintainer
+
+Answered on 2026-10-08: the recommendation, in all four. Find stays on the
+board on screen, a tour does not step into a child, the card shows the child's
+thumbnail, and "Move to its own board" waits for a later round.
 
 1. **Find across levels.** Find searches the board on screen. Should it also
    find cards in children and take you there? Recommended: later, as its own
