@@ -574,7 +574,20 @@ textarea.lp-url {
    foot margin is the gap before the fold. */
 .credits-about { margin: -6px 0 18px; }
 /* The second card, inside the fold, sits clear of the summary. */
-.credits-fold-list { margin: 14px 0 18px; }
+.credits-fold-list { margin: 10px 0 18px; }
+/* The fold's two parts, people and what ships, each under a small head; the
+   second also gets a rule, so the cards above do not read as more of the list. */
+.credits-head {
+  margin: 14px 0 0;
+  font-family: var(--font-display);
+  font-size: var(--t-small);
+  font-weight: inherit;
+  color: var(--ink-3);
+}
+.credits-head-deps {
+  border-top: var(--hairline) solid var(--rule);
+  padding-top: 12px;
+}
 /* One dependency per row: name, licence chip, creator. Licence inline with
    the name so it reads as a label, not a heading for the sentence below. */
 .credits-deps {
