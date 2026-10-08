@@ -1034,12 +1034,12 @@
     <h3 class="credits-head credits-head-deps">Made with</h3>
     <!-- A block each, three to a row, in the order of the names on them. A
          press drops the block's own details: where it comes from, its licence,
-         who made it, what it does here. One open at a time - `name` makes the
-         <details> an exclusive group, which an engine without it ignores.
+         who made it, what it does here. One open at a time, and both ways in
+         motion - ui/credits.ts takes the toggle over for both.
          Every source link stays in here (tests/credits.test.js holds them
          against THIRD-PARTY.md). -->
     <ul class="credits-deps">
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>Ambient Piano</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://pixabay.com/music/ambient-ambient-piano-595681/" target="_blank" rel="noopener noreferrer">Ambient Piano</a></span>
@@ -1048,7 +1048,7 @@
           <span class="credits-why">i like how calm it is, clears my mind</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>Capacitor</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/ionic-team/capacitor" target="_blank" rel="noopener noreferrer">Capacitor</a></span>
@@ -1057,7 +1057,7 @@
           <span class="credits-why">The Android app&rsquo;s shell.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>Cuelume</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/Danilaa1/cuelume" target="_blank" rel="noopener noreferrer">Cuelume</a></span>
@@ -1066,7 +1066,7 @@
           <span class="credits-why">The interface sounds, synthesised live.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>Electron</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/electron/electron" target="_blank" rel="noopener noreferrer">Electron</a></span>
@@ -1075,7 +1075,7 @@
           <span class="credits-why">The desktop app&rsquo;s window.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <!-- Desktop FFmpeg — GPL (separate from the browser LGPL build, ffmpeg.wasm). -->
         <summary>FFmpeg</summary>
         <div class="credits-dep-body">
@@ -1091,7 +1091,7 @@
             <a href="https://github.com/KostaJovanovic/mbrd/blob/main/.github/THIRD-PARTY.md#code" target="_blank" rel="noopener noreferrer">THIRD-PARTY.md</a>.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>ffmpeg.wasm</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener noreferrer">ffmpeg.wasm</a></span>
@@ -1101,7 +1101,7 @@
             this browser cannot open.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>file&#8209;analyser</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener noreferrer">file&#8209;analyser</a></span>
@@ -1111,7 +1111,7 @@
             reads &ldquo;SolidWorks&rdquo;.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>heic2any</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/alexcorvi/heic2any" target="_blank" rel="noopener noreferrer">heic2any</a>,
@@ -1122,7 +1122,7 @@
             no decoder of its own to lend.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>KaTeX</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/KaTeX/KaTeX" target="_blank" rel="noopener noreferrer">KaTeX</a></span>
@@ -1132,7 +1132,7 @@
             and in Markdown.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>libarchive.js</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/nika-begiashvili/libarchivejs" target="_blank" rel="noopener noreferrer">libarchive.js</a>,
@@ -1142,7 +1142,7 @@
           <span class="credits-why">Opens 7z and RAR archives, in a worker.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>LibRaw</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/ybouane/LibRaw-Wasm" target="_blank" rel="noopener noreferrer">LibRaw&#8209;Wasm</a>,
@@ -1153,7 +1153,7 @@
             in a worker.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>occt&#8209;import&#8209;js</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/kovacsv/occt-import-js" target="_blank" rel="noopener noreferrer">occt&#8209;import&#8209;js</a></span>
@@ -1163,7 +1163,7 @@
             rather than triangles, into a model a card can draw.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>ONNX Runtime</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/microsoft/onnxruntime" target="_blank" rel="noopener noreferrer">ONNX Runtime</a></span>
@@ -1173,7 +1173,7 @@
             a browser and on a phone, the Node build in the desktop app.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>pdf.js</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/mozilla/pdf.js" target="_blank" rel="noopener noreferrer">pdf.js</a></span>
@@ -1183,7 +1183,7 @@
             card picture.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>Phosphor Icons</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/phosphor-icons/core" target="_blank" rel="noopener noreferrer">Phosphor Icons</a></span>
@@ -1192,7 +1192,7 @@
           <span class="credits-why">The sticker shapes.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>sharp</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/lovell/sharp" target="_blank" rel="noopener noreferrer">sharp</a></span>
@@ -1202,7 +1202,7 @@
             browser cannot, such as HEIC.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>Simple Icons</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/simple-icons/simple-icons" target="_blank" rel="noopener noreferrer">Simple Icons</a></span>
@@ -1211,7 +1211,7 @@
           <span class="credits-why">The site logos on link cards.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>Typefaces</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/googlefonts/Playfair" target="_blank" rel="noopener noreferrer">Playfair</a>,
@@ -1224,7 +1224,7 @@
           <span class="credits-why">The typefaces, and the Cyrillic ones.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>U&#178;&#8209;Net</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/xuebinqin/U-2-Net" target="_blank" rel="noopener noreferrer">U&#178;&#8209;Net (u2netp)</a></span>
@@ -1234,7 +1234,7 @@
             picture&rsquo;s background is removed.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <summary>UTIF.js</summary>
         <div class="credits-dep-body">
           <span class="credits-src"><a href="https://github.com/photopea/UTIF.js" target="_blank" rel="noopener noreferrer">UTIF.js</a>,
@@ -1244,7 +1244,7 @@
           <span class="credits-why">Decodes TIFF, in a worker.</span>
         </div>
       </details></li>
-      <li><details class="credits-dep" name="credits-dep">
+      <li><details class="credits-dep">
         <!-- An inspiration, not a dependency: no code or data taken, so no
              licence chip and no THIRD-PARTY.md entry. -->
         <summary>Vomit Draft</summary>
