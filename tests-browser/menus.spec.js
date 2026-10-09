@@ -70,8 +70,9 @@ test('the empty-board menu and its submenus open', async ({ app }) => {
 test('the menu for a selection of several opens', async ({ app, browserName }) => {
   // In Playwright's Firefox a pointerleave from the whole menu follows the
   // pointerenter on "Select" by 3ms, which cancels the row's 90ms dwell
-  // (ui/menu.ts), so its submenu never opens. Not yet checked in a real Firefox.
-  test.fixme(browserName === 'firefox', 'Select submenu does not open on hover in Firefox');
+  // (ui/menu.ts), so its submenu never opens. A real Firefox opens it: this is
+  // the driver, not the app.
+  test.skip(browserName === 'firefox', "Playwright's Firefox loses the hover on this menu");
   await note(app, -200, -150, 'one');
   await note(app, 200, -150, 'two');
   await app.evaluate(() => window.mbrd.cmds.selectAll());

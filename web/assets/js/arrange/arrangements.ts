@@ -70,6 +70,9 @@ export type ArrangeOpts = {
   obstacles?: Obstacle[],
   /** Masonry only: the width the block should fit, which sets the column count. */
   width?: number,
+  /** Cut the top off the discs (spiral, scatter), so the block has a flat top
+   *  edge to hang under something. The other shapes have one already. */
+  flatTop?: boolean,
 };
 
 /** ArrangeOpts with defaults filled in. */
@@ -88,7 +91,8 @@ type Layout = (items: ArrangeItem[], o: Laying) => Point[];
  * way as a plain shift. Used by Rearrange's "keep cards below the title card",
  * which lays the cards out as if the title were not there and then hangs the
  * block under it: avoiding the title instead pushed cards round its sides and
- * left a cone that narrowed towards it, with a gap above.
+ * left a cone that narrowed towards it, with a gap above. The layout is asked
+ * for a flat top (ArrangeOpts.flatTop), or a disc hangs from its rounded top.
  */
 export function blockUnder(
   items: readonly (ArrangeItem & { rot?: number })[], spots: Point[], x: number, top: number,
@@ -177,6 +181,16 @@ const PAGE_ASPECT = 1.6;
 const SPIRAL_SWEEP = Math.PI / 2;
 const SPIRAL_TRIES = 7;
 
+/** With flatTop, how far above the centre the cut runs, as a share of the
+ *  disc's radius: the top edge is then 80% of the widest row. */
+const FLAT_TOP = 0.6;
+/** Golden angles a spiral card may skip for landing in the cut-off cap, and
+ *  the downward directions tried if every one of them did. */
+const FLAT_SKIPS = 32;
+const FLAT_TRIES = 13;
+/** Draws a scatter card gets to land below the cut before it is mirrored. */
+const FLAT_DRAWS = 16;
+
 const LAYOUTS: Record<string, Layout> = {
   /** Unseeded: identity. Seeded: shake each item off its position. May overlap. */
   free(items, o) {
@@ -205,18 +219,35 @@ const LAYOUTS: Record<string, Layout> = {
     // Variation: rotate the whole spiral.
     const rnd = variation(o);
     const phase = rnd ? rnd() * Math.PI * 2 : 0;
+    const top = o.flatTop ? cutLine(items, o.spacing) : -Infinity;
     const placed: Placed[] = [];
-    return items.map((it, n) => {
+    // The place in the golden sequence. One step per card, plus, with a flat
+    // top, a step for each angle that would land in the cut-off cap: skipped
+    // rather than bent round the cut, so the rest of the disc fills as it would
+    // and the cut row is a chord, not a ledge the cap's cards pile along.
+    let n = 0;
+    return items.map(it => {
       const box = roomFor(it, o.spacing);
-      let best: Point | null = null, near = Infinity;
-      for (let k = 0; k < SPIRAL_TRIES; k++) {
-        const a = n * golden + phase + SPIRAL_SWEEP * (k / (SPIRAL_TRIES - 1) - 0.5);
-        const at = slideOut({ x: Math.cos(a), y: Math.sin(a) }, box, placed);
+      const land = (a: number) => slideOut({ x: Math.cos(a), y: Math.sin(a) }, box, placed);
+      const clear = (at: Point) => at.y - box.hh >= top;
+      const best: { at: Point | null, near: number } = { at: null, near: Infinity };
+      const aim = (a: number) => {
+        const at = land(a);
+        if (!clear(at)) return;
         const r = at.x * at.x + at.y * at.y; // squared distance suffices
-        if (r < near) { near = r; best = at; }
+        if (r < best.near) { best.near = r; best.at = at; }
+      };
+      for (let skips = 0; !best.at && skips < FLAT_SKIPS; skips++) {
+        const a = n++ * golden + phase;
+        if (!clear(land(a))) continue;
+        for (let k = 0; k < SPIRAL_TRIES; k++) aim(a + SPIRAL_SWEEP * (k / (SPIRAL_TRIES - 1) - 0.5));
       }
-      // SAFETY: rays are never axis-aligned here, so slideOut() always lands.
-      const landed = best as Point;
+      // Every angle tried landed in the cap: any way down will do, and one
+      // does, since the cut clears the tallest card standing on the centre line.
+      for (let k = 0; !best.at && k < FLAT_TRIES; k++) aim(Math.PI * (k + 0.5) / FLAT_TRIES);
+      // SAFETY: rays are never axis-aligned here, so slideOut() always lands,
+      // and the downward rays above always clear the cut.
+      const landed = best.at as Point;
       placed.push({ ...box, x: landed.x, y: landed.y });
       return { x: o.center.x + landed.x, y: o.center.y + landed.y };
     });
@@ -284,14 +315,23 @@ const LAYOUTS: Record<string, Layout> = {
     const area = items.reduce((s, i) => s + (i.w + o.spacing) * (i.h + o.spacing), 0);
     const R = Math.sqrt(area / (Math.PI * SCATTER_FILL));
     const rnd = mulberry32(o.seed ?? (items.length * 2654435761 >>> 0));
+    const top = o.flatTop ? cutLine(items, o.spacing) : -Infinity;
     const placed: Placed[] = [];
     return items.map(it => {
-      const a = rnd() * Math.PI * 2;
-      const r = Math.sqrt(rnd()) * R;   // sqrt keeps the density even across the disc
-      const dir = { x: Math.cos(a), y: Math.sin(a) };
       const box = roomFor(it, o.spacing);
+      let a = 0, r = 0;
+      // With a flat top, a spot in the cut-off cap is drawn again, so the cards
+      // spread evenly over what is left of the disc.
+      for (let draws = 0; draws < FLAT_DRAWS; draws++) {
+        a = rnd() * Math.PI * 2;
+        r = Math.sqrt(rnd()) * R;   // sqrt keeps the density even across the disc
+        if (r * Math.sin(a) - box.hh >= top) break;
+      }
+      const dir = { x: Math.cos(a), y: Math.sin(a) };
       // Slide outward only, never back towards the middle.
-      const at = slideOut(dir, box, placed, r);
+      let at = slideOut(dir, box, placed, r);
+      // Slid past the cut: the same spot mirrored below the centre line.
+      if (at.y - box.hh < top) at = slideOut({ x: dir.x, y: Math.abs(dir.y) }, box, placed, r);
       placed.push({ ...box, x: at.x, y: at.y });
       return { x: o.center.x + at.x, y: o.center.y + at.y };
     });
@@ -547,6 +587,18 @@ function spin([col, row]: [number, number], turn: number): [number, number] {
     case 3:  return [row, -col];
     default: return [col, row];
   }
+}
+
+/**
+ * Where a flat top cuts a disc laid out of `items`, in layout space (y runs
+ * down, so the cut is negative): FLAT_TOP of the radius the cards would fill
+ * as a whole disc above the centre, and never so low that a card standing on
+ * the centre would cross it.
+ */
+function cutLine(items: ArrangeItem[], gap: number): number {
+  const area = items.reduce((s, i) => s + (i.w + gap) * (i.h + gap), 0);
+  const tallest = Math.max(...items.map(i => (i.h + gap) / 2));
+  return -Math.max(FLAT_TOP * Math.sqrt(area / Math.PI), tallest);
 }
 
 /** The nth cell of a square spiral: 0 -> (0,0), then outward ring by ring. */

@@ -67,9 +67,12 @@ test('a card culled off screen comes back as it was', async ({ app }) => {
 
 test('Rearrange with "keep cards below the title card" hangs the block under the title', async ({ app }) => {
   await app.evaluate(() => window.mbrd.cmds.setSetting('belowTitle', 'on'));
+  // Spiral, the default: a disc, which hung by its rounded top was a cone.
+  expect(await app.evaluate(() => window.mbrd.board.arrangement)).toBe('spiral');
   for (const [x, y] of [[-500, 300], [400, 400], [-200, -300], [300, -200], [0, 600], [600, 0]]) {
     await note(app, x, y, `card ${x},${y}`);
   }
+  for (let k = 0; k < 14; k++) await sticker(app, -700 + k * 100, -700);
   await cmd(app, 'rearrange');
   const out = await app.evaluate(() => {
     const ext = it => {
@@ -78,15 +81,20 @@ test('Rearrange with "keep cards below the title card" hangs the block under the
       return { hw: (it.w * c + it.h * s) / 2, hh: (it.w * s + it.h * c) / 2 };
     };
     const title = window.mbrd.board.items.find(it => it.type === 'title');
-    const cards = window.mbrd.board.items.filter(it => it.type === 'note');
+    const cards = window.mbrd.board.items.filter(it => it.type === 'note' || it.type === 'sticker');
     const tops = cards.map(it => it.y + ext(it).hh);
     const lefts = cards.map(it => it.x - ext(it).hw);
     const rights = cards.map(it => it.x + ext(it).hw);
+    const top = Math.max(...tops);
+    // The first row: the cards whose top edge is within 80 of the block's.
+    const row = cards.filter((_, k) => tops[k] > top - 80);
     return {
       foot: title.y - ext(title).hh,
       titleX: title.x,
-      top: Math.max(...tops),
+      top,
       middle: (Math.min(...lefts) + Math.max(...rights)) / 2,
+      firstRow: (Math.max(...row.map(it => it.x + ext(it).hw)) - Math.min(...row.map(it => it.x - ext(it).hw)))
+        / (Math.max(...rights) - Math.min(...lefts)),
       step: window.mbrd.board.settings.gridStep || 64,
     };
   });
@@ -94,6 +102,8 @@ test('Rearrange with "keep cards below the title card" hangs the block under the
   expect(out.top).toBeLessThanOrEqual(out.foot);
   // The block starts one grid step under the foot, with no gap beyond that...
   expect(out.foot - out.top).toBeLessThanOrEqual(out.step * 1.5);
-  // ...and is centred under the title.
+  // ...is centred under the title...
   expect(Math.abs(out.middle - out.titleX)).toBeLessThanOrEqual(out.step);
+  // ...and its top is cut flat, not the point of a disc.
+  expect(out.firstRow).toBeGreaterThanOrEqual(0.5);
 });

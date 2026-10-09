@@ -712,9 +712,10 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     placed = placeMobileItems(placed, obstacles, { preserveSize: true, blockers: anchored });
   } else {
     const name = options.name || board.arrangement;
-    // Hung under the title as one block: laid out as though the title card were
-    // not there, then centred under it (blockUnder()). Free alone keeps it as an
-    // obstacle, since Free moves each card only as far as it must.
+    // Hung under the title as one block: laid out flat-topped as though the
+    // title card were not there, then centred under it (blockUnder()). Free
+    // alone keeps it as an obstacle, since Free moves each card only as far as
+    // it must.
     const block = !!title && name !== 'free';
     const avoid = block ? anchored.filter(item => item.id !== title.id) : anchored;
     const lay = (dx: number, dy: number) => arrange(laid, {
@@ -727,6 +728,7 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
       seed,
       obstacles: avoid.map(item => obstacleBox(item, snapDesktop ? step : 0)),
       width: room ? room.x1 - room.x0 : undefined,
+      flatTop: block,
     });
     let spots = lay(0, 0);
     if (room) squeezeInto(laid, spots, room);
