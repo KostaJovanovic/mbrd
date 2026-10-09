@@ -4,14 +4,10 @@
 // `node tools/smoke.mjs` after `npm run build`, with Playwright from desktop/.
 // Not under tests/: npm test needs no install, and this needs a browser.
 
-import { createServer } from 'node:http';
-import { createReadStream, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { extname, join, normalize, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
+import { ROOT, serve } from './web-server.mjs';
 
-const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const WEB = join(ROOT, 'web');
 const TIMEOUT = 30_000;
 
 /** Playwright from the root install CI makes, or from desktop/, which has it already. */
@@ -21,29 +17,6 @@ async function playwright() {
   } catch {
     return createRequire(join(ROOT, 'desktop', 'package.json'))('playwright');
   }
-}
-
-const TYPES = {
-  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript',
-  '.css': 'text/css', '.json': 'application/json', '.webmanifest': 'application/manifest+json',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon',
-  '.woff2': 'font/woff2', '.woff': 'font/woff', '.wasm': 'application/wasm', '.txt': 'text/plain',
-  '.xml': 'application/xml', '.md': 'text/markdown',
-};
-
-/** web/ as the host serves it: a file, or 404.html with a 404, as wrangler.jsonc says. */
-function serve() {
-  const server = createServer((req, res) => {
-    const path = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname);
-    let file = normalize(join(WEB, path));
-    if (!file.startsWith(WEB + sep) && file !== WEB) { res.writeHead(403).end(); return; }
-    try { if (statSync(file).isDirectory()) file = join(file, 'index.html'); } catch { /* checked below */ }
-    let status = 200;
-    try { statSync(file); } catch { file = join(WEB, '404.html'); status = 404; }
-    res.writeHead(status, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
-    createReadStream(file).pipe(res);
-  });
-  return new Promise(ok => server.listen(0, '127.0.0.1', () => ok(server)));
 }
 
 const server = await serve();

@@ -65,6 +65,7 @@ npm test                          # node --test over tests/**/*.test.{js,ts}; no
 node --test tests/state-history.test.js                            # one file
 node --test --test-name-pattern "undo" tests/state-history.test.js # one test
 python tools/serve.py [port]      # dev server on 6273; server.bat on Windows
+npm run test:browser              # the browser suite (tests-browser/), local only; Playwright from desktop/
 ```
 
 Everything below needs `npm install` first (four devDependencies). `npm test`

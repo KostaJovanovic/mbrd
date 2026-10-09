@@ -34,6 +34,8 @@ desktop/out/
 desktop/resources/ffmpeg/
 desktop/test-results/
 desktop/playwright-report/
+# The browser suite's traces and downloads (tests-browser/playwright.config.js).
+test-results/
 
 # The portable copy. `npm run portable` writes it: the unpacked application plus
 # the `portable` marker installer.nsh's Portable branch writes, which is the
