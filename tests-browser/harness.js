@@ -10,8 +10,9 @@ const base = require('@playwright/test');
 
 export const expect = base.expect;
 
-// Headless runners have no audio device, which is not the app's problem.
-const IGNORED = /AudioContext|audio device/i;
+// Headless runners have no audio device, and Windows runs out of socket
+// buffers with a dozen browsers loading at once; neither is the app's problem.
+const IGNORED = /AudioContext|audio device|ERR_NO_BUFFER_SPACE/i;
 
 export const test = base.test.extend({
   app: async ({ page }, use) => {
