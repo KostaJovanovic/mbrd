@@ -162,8 +162,18 @@ back to the board.
 
 ## Releases
 
+## Flat Top
+version: 0.690 - 0.702
+date: 9 October 2026
+
+- **`Rearrange` under the title card gets a proper top edge.**
+- [fix] **With `Keep cards below the title card` on, a spiral or a scatter is a
+  circle with its top cut flat.** The first row of cards sits level under the
+  title, rather than the block hanging from a single card at its point.
+- **Maintenance:** a round of tidying inside the app, with nothing to see.
+
 ## Boards Within
-version: 0.648 - 0.687
+version: 0.648 - 0.689
 date: 7 October 2026
 
 - **A board can hold boards of its own,** and the files of other tools come in:
@@ -230,7 +240,10 @@ date: 7 October 2026
 - [faster] **The Android app is smaller,** and its backup leaves out a
   downloaded update.
 - [new] **Credits says why the app exists,** and lists what it is made with as a
-  block each that opens on its source, licence and maker.
+  block each that opens on its source, licence and maker. Several can be open
+  at once.
+- [new] **The privacy page wears your look,** the whimsy level and the dark
+  sheet both, as the patch notes do.
 - **Drawing is held back for now.** A pen, a highlighter and an eraser were
   built today, behind `Enable drawing` in the Debug fold until they are ready.
 
