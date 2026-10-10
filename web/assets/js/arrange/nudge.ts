@@ -6,9 +6,9 @@
 import type { Point } from './arrangements.ts';
 
 /** A box by its centre, as the board stores one. */
-export type NudgeBox = { x: number, y: number, w: number, h: number, fixed?: boolean };
+type NudgeBox = { x: number, y: number, w: number, h: number, fixed?: boolean };
 
-export type NudgeOpts = {
+type NudgeOpts = {
   /** Edge-to-edge clearance two boxes are pushed to. */
   gap?: number,
   /** Moves are whole multiples of this, so a snapped card stays on its lattice. 0 for none. */

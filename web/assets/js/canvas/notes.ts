@@ -51,7 +51,7 @@ export function setNoteMenu(fn: NoteMenu | null) { openMenu = fn; }
  * opens in the editor, the caret at `caret` (a line and column of `markdown`),
  * growing out of the note's box on screen, `from`.
  */
-export type NoteOpen = {
+type NoteOpen = {
   caret: { line: number, col: number }, from: DOMRect | null, paper?: string,
   /** Typed again in the editor: space ending a title, which a Markdown heading does not keep. */
   typed?: string,
@@ -67,7 +67,7 @@ export type NoteOpen = {
  * `host` is where typing is held meanwhile, since nothing outside a modal can
  * take focus; `go` takes the composer away, and only the first call counts.
  */
-export type NoteStay = { host: HTMLElement, go: () => void };
+type NoteStay = { host: HTMLElement, go: () => void };
 
 /**
  * How the composer comes up over what was on screen - a document going back
@@ -76,7 +76,7 @@ export type NoteStay = { host: HTMLElement, go: () => void };
  * is no composer to go into.
  */
 export type NoteEntrance = (into: { sheet: DOMRect, paper: string, show: () => Promise<void> } | null) => void;
-export type NoteOverflow = (id: string, markdown: string, open?: NoteOpen) => Promise<boolean>;
+type NoteOverflow =(id: string, markdown: string, open?: NoteOpen) => Promise<boolean>;
 
 let overflow: NoteOverflow | null = null;
 export function setNoteOverflow(fn: NoteOverflow | null) { overflow = fn; }

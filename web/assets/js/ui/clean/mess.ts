@@ -32,9 +32,9 @@ export type MessKind =
  *  - `track`  a trail of prints over the board, owned by no card either - the
  *             web's counterpart for the washer, and the reason the jet has
  *             something to do on the bare board between the cards */
-export type MessFamily = 'field' | 'debris' | 'web' | 'track';
+type MessFamily ='field' | 'debris' | 'web' | 'track';
 
-export type MessDef = {
+type MessDef = {
   tool: ToolId,
   family: MessFamily,
   /** How much of a handful one piece takes. Debris only; a field has none. */
@@ -116,7 +116,7 @@ export const peelFor = (kind: MessKind): number => TUNING.peelSwipe[kind] ?? 0;
 
 /** Where a piece of debris is, as the robot vacuum sees it: lying on the bare
  *  board, lying on a card, or in the glove. */
-export type PieceAt = 'loose' | 'card' | 'hand';
+type PieceAt ='loose' | 'card' | 'hand';
 
 /**
  * Whether the robot vacuum eats a piece. Debris only - grime, webs and prints
@@ -144,7 +144,7 @@ export const MOP_INSET = 0.6;
 
 /** The three ways the robot mops a card, one picked at random per card. */
 export const MOP_PATTERNS = ['spiral', 'rows', 'columns'] as const;
-export type MopPattern = typeof MOP_PATTERNS[number];
+type MopPattern =typeof MOP_PATTERNS[number];
 
 /** Where the lanes go across one side: from `inset` to `side - inset`, `lane`
  *  apart or a little closer so the last lands exactly on the far edge. A side
@@ -205,7 +205,7 @@ export function mopPath(
 }
 
 /** What the robot is doing, in the order it does it. */
-export type RobotJob = 'pick' | 'sweep' | 'fit' | 'mop' | 'none';
+type RobotJob ='pick' | 'sweep' | 'fit' | 'mop' | 'none';
 
 /**
  * The robot's next job, from what is left on the board. It works the way the
@@ -266,7 +266,7 @@ type Tuning = {
 
 /** One row of the pressure curve: at this hand speed, this much of the washer's
  *  reach and this much bite per stamp. */
-export type JetRow = { speed: number, radius: number, bite: number };
+type JetRow ={ speed: number, radius: number, bite: number };
 
 export const TUNING: Tuning = {
   /** Cards that get dirty at all, nearest the centre of the board's bounds. A
@@ -608,7 +608,7 @@ function jetRow(speed: number): { radius: number, bite: number } {
  * thing you can see until the pass that takes it, and then it goes quickly,
  * which is also the crisp reveal the edge wants.
  */
-export const WEAR_CURVE = 0.35;
+const WEAR_CURVE =0.35;
 
 /**
  * The most of the visible crust one touch of the jet may take.
@@ -1190,7 +1190,7 @@ export function tally(
 export type Dealt = { debris: number, webs: number };
 
 /** Work outstanding and work dealt, in whatever unit the tool measures in. */
-export type ToolWork = { left: number, total: number };
+type ToolWork ={ left: number, total: number };
 
 /** Which tools have any work at all in each family, read off the table once
  *  rather than written out again here. A denominator is only added for a tool

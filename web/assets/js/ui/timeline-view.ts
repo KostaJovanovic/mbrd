@@ -76,7 +76,7 @@ const PAUSE = { icon: 'i-tl-pause', said: 'Pause' };
  * replay frames the board exactly as the F key does, Mobile's parked title card
  * excluded and all.
  */
-export interface TimelineCommands {
+interface TimelineCommands {
   fit: () => void;
   /** A step's menu: fly to the cards it changed, leaving the selection alone. */
   zoomToItems: (ids: string[]) => void;

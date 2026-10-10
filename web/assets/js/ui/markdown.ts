@@ -94,8 +94,8 @@ function properties(lines: string[]): HTMLElement {
 
 const unquote = (s: string) => s.trim().replace(/^(["'])(.*)\1$/, '$2');
 
-export const LINK_DEF = /^ {0,3}\[([^\]^][^\]]*)\]:\s*<?([^\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$/;
-export const NOTE_DEF = /^ {0,3}\[\^([^\]\s]+)\]:\s?(.*)$/;
+const LINK_DEF =/^ {0,3}\[([^\]^][^\]]*)\]:\s*<?([^\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$/;
+const NOTE_DEF =/^ {0,3}\[\^([^\]\s]+)\]:\s?(.*)$/;
 
 /**
  * The lines with every link definition and footnote taken out into `into`,
@@ -175,9 +175,9 @@ export const ORDERED = /^( *)(\d{1,9})[.)]\s+(.*)$/;
 // tasks too, and every one but a space is ticked.
 export const TASK = /^\[([^\]])\]\s+(.*)$/;
 /** A display-math block's opening line: `$$`, and maybe its first words. */
-export const MATH = /^ {0,3}\$\$/;
+const MATH =/^ {0,3}\$\$/;
 /** A callout's first line, inside the quote: its type, whether it folds, and its title. */
-export const CALLOUT = /^\[!([\w-]+)\]([+-]?)\s*(.*)$/;
+const CALLOUT =/^\[!([\w-]+)\]([+-]?)\s*(.*)$/;
 export const SETEXT = /^ {0,3}(=+|-+)\s*$/;
 export const TABLE_RULE = /^ *\|?[ :|-]+\|[ :|-]*$/;
 
@@ -642,7 +642,7 @@ const INLINE_SRC = [
  * One piece of a line of inline Markdown. `src` is the exact source a token
  * came from, for a reader that has to write it back unchanged (ui/editor/).
  */
-export type InlineToken =
+type InlineToken =
   | { kind: 'text', text: string }
   | { kind: 'code', text: string, src: string }
   | { kind: 'image', alt: string, url: string, src: string }

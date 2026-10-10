@@ -68,17 +68,12 @@ export function childDocs(live: BoardDoc | null = null): Record<string, BoardDoc
   return out;
 }
 
-export const hasChildren = () => children.size > 0;
 export const childCount = () => children.size;
 export const childDoc = (id: string): BoardDoc | undefined => children.get(id);
 
 /** Put a child's document in, new or changed. */
 export function putChild(id: string, doc: BoardDoc) {
   if (CHILD_ID.test(id)) children.set(id, doc);
-}
-
-export function dropChild(id: string) {
-  children.delete(id);
 }
 
 /** The level on screen: the ids from the top, a copy. */

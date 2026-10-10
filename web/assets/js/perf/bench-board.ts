@@ -22,8 +22,8 @@ const COUNTS: readonly (readonly [CardKind, number])[] = [
  * Distinct base encodes: eight photographs, four each way up, and four
  * screenshots. Every card's copy differs from its base by one comment.
  */
-export const PHOTO_BASES = 4;
-export const SHOT_BASES = 4;
+const PHOTO_BASES = 4;
+const SHOT_BASES = 4;
 /** Camera sizes, because the decode of one of these is what a real board pays. */
 const PHOTO_W = 4000, PHOTO_H = 3000;
 const SHOT_W = 1080, SHOT_H = 2340;
@@ -40,7 +40,7 @@ const STICKERS = ['s-star', 's-heart', 's-check', 's-sparkle', 's-eye', 's-aster
 const WORDS = ['light', 'north', 'river', 'paper', 'glass', 'stone', 'amber', 'salt',
   'ember', 'field', 'harbour', 'linen', 'orchard', 'quiet', 'signal', 'tide'];
 
-export type CardKind = 'photo' | 'screenshot' | 'note' | 'swatch' | 'sticker';
+type CardKind ='photo' | 'screenshot' | 'note' | 'swatch' | 'sticker';
 
 export type CardPlan = {
   kind: CardKind,
@@ -252,7 +252,7 @@ async function encodeBase(kind: 'photo' | 'screenshot', portrait: boolean, rand:
 const cardHash = (base: string, role: string, i: number) =>
   sha256(new TextEncoder().encode(`${base}:${role}:${i}`));
 
-export type BuiltBoard = { seed: number, cards: number, assetBytes: number, generationMs: number };
+type BuiltBoard ={ seed: number, cards: number, assetBytes: number, generationMs: number };
 
 /**
  * Build the standard board and load it. Marks it as the benchmark's first, so

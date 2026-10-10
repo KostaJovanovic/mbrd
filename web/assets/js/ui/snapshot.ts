@@ -311,7 +311,7 @@ const fontOf = (name: string, fallback: string) =>
   readToken(name) || fallback;
 
 /** One layer of a CSS box-shadow, lengths in world units. */
-export type ShadowLayer = { color: string, x: number, y: number, blur: number, spread: number };
+type ShadowLayer ={ color: string, x: number, y: number, blur: number, spread: number };
 
 type Shadows = {
   card: ShadowLayer[];

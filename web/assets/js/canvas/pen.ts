@@ -18,7 +18,7 @@ import { currentTier } from './drawing.ts';
 /** The three sizes of each tool, in board units: a stroke is as wide on the
  *  board whatever the zoom it was drawn at, so it scales with the board like
  *  every card on it. At 100% a unit is a screen pixel. */
-export const SIZES: Record<PenTool, readonly [number, number, number]> = {
+const SIZES:Record<PenTool, readonly [number, number, number]> = {
   pen: [2, 4, 8],
   highlighter: [12, 22, 36],
   eraser: [10, 20, 40],
@@ -123,9 +123,6 @@ type Live = {
 let live: Live | null = null;
 /** The drawing the last strokes went to, while a burst is still going. */
 let burst: Burst | null = null;
-
-/** Whether a stroke is being drawn - input.ts's palm rejection asks. */
-export const stroking = () => !!live;
 
 /** A press in drawing mode: start a stroke at a world point. */
 export function beginStroke(at: { x: number, y: number }, pressure: number, onCard: string | null, now: number) {

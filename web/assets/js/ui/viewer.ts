@@ -62,7 +62,7 @@ const IDLE_SAVE_MS = 1500;
  * Where to put the caret, and where a sticky that became this document was on
  * screen and in what colour. `held` is the typing done while it became one.
  */
-export type OpenOptions = {
+type OpenOptions = {
   /** Open a text file in the editor. Without it every file is opened to read. */
   edit?: boolean,
   caret?: EditorOptions['caret'], from?: DOMRect | null, paper?: string, held?: HeldTyping | null,
@@ -82,7 +82,7 @@ export type OpenOptions = {
 };
 
 /** Typing caught between a sticky closing and its document opening. `into` moves the catcher inside a modal. */
-export type HeldTyping = { take: () => string, into: (host: HTMLElement) => void };
+type HeldTyping ={ take: () => string, into: (host: HTMLElement) => void };
 
 /**
  * Catch what is typed while a sticky becomes a document: the note has closed
@@ -172,7 +172,7 @@ let shownId: string | null = null;
 let shownFrom: { id: string, rect: DOMRect } | null = null;
 
 /** The one camera command the right-click needs. Injected: commands.ts imports this module. */
-export interface ViewerCommands {
+interface ViewerCommands {
   zoomToSelection: () => void;
   /** The ids the arrows step through, in order - see step(). */
   viewOrder: () => string[];

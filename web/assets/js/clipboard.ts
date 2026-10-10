@@ -60,7 +60,7 @@ export function linksAmong(ids: readonly string[]): Connection[] {
 }
 
 /** A draft that already has the id it will be added under. */
-export type IdDraft = ItemDraft & { id: string };
+type IdDraft =ItemDraft & { id: string };
 
 /**
  * Copies of a group with fresh ids, and its lines re-pointed at them - what
@@ -118,7 +118,7 @@ export function relink(
  * which for a copied clip is the clip - the same bargain the bin makes for a
  * deleted one, and released at the next Ctrl+C.
  */
-export type ByteCarry = {
+type ByteCarry = {
   /** `more` is hashes past the cards' own: the pictures of a copied board's
    *  boards inside it. */
   hold: (items: readonly ItemDraft[], more?: readonly string[]) => HeldBytes,
@@ -127,10 +127,10 @@ export type ByteCarry = {
 
 /** One file's bytes as the carry keeps them - the registry's own fields,
  *  restated here because storage/ is above this module. */
-export type HeldAsset = { blob: Blob, mime?: string, ext?: string, name?: string };
+type HeldAsset ={ blob: Blob, mime?: string, ext?: string, name?: string };
 
 /** What `hold` answers and `restore` takes: the bytes, by hash. */
-export type HeldBytes = ReadonlyMap<string, HeldAsset>;
+type HeldBytes =ReadonlyMap<string, HeldAsset>;
 
 let carry: ByteCarry | null = null;
 export function setClipboardCarry(c: ByteCarry | null) { carry = c; }

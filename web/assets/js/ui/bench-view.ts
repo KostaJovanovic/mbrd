@@ -11,7 +11,7 @@ import { copyText } from '../perf/view-perf.ts';
 import { benchFileName, summaryLine, parseBenchHash } from '../perf/bench.ts';
 import type { Bench, BenchOptions, BenchResult } from '../perf/bench.ts';
 
-export type BenchViewDeps = {
+type BenchViewDeps = {
   bench: Bench,
   /** Put the file somewhere and say where, or throw. */
   save: (name: string, json: string) => Promise<string>,
@@ -33,8 +33,6 @@ function button(label: string, run: () => void) {
   b.addEventListener('click', run);
   return b;
 }
-
-export type BenchView = ReturnType<typeof initBenchView>;
 
 export function initBenchView({ bench, save, standardPage }: BenchViewDeps) {
   let shield: HTMLDivElement | null = null;

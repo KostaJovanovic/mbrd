@@ -25,7 +25,7 @@ import type { Row } from './palette-match.ts';
 /** Void as ToolbarCommands has it: a command may hand back a promise, which runCommand() reads. */
 type Fn = (...args: never[]) => void;
 /** The command table: the two menus' interfaces, and every other entry by name. */
-export type PaletteCommands = MenuCommands & FlyoutCommands & {
+type PaletteCommands =MenuCommands & FlyoutCommands & {
   [name: string]: Fn | undefined,
   moveTo?: (x?: number, y?: number) => void,
 };

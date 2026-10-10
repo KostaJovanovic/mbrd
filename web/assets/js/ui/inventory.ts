@@ -29,7 +29,7 @@ import type { Item } from '../board-model.ts';
  * (see origName() in util.ts). For everything else there is no source and the
  * dropped file *is* main.
  */
-export type FileRole = 'source' | 'main' | 'display' | 'still' | 'other';
+type FileRole ='source' | 'main' | 'display' | 'still' | 'other';
 
 /** What is keeping a file alive. Null is an orphan: nothing is. */
 export type Holder = 'field' | 'drawer' | 'timeline';
@@ -63,7 +63,7 @@ export type InventoryAsset = {
  * four rows answers a question nobody asked. They add up here instead, and the
  * row opens to show where its weight went.
  */
-export type InventoryFile = {
+type InventoryFile = {
   /** The file the row is named after: the one dropped, when there is one. */
   head: InventoryAsset;
   /** Head first, then its copies, heaviest first. */

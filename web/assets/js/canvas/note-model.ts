@@ -28,7 +28,7 @@ export type NoteStyle = {
 };
 
 /** One styled stretch of a line. */
-export type NoteRun = NoteStyle & { text: string };
+type NoteRun =NoteStyle & { text: string };
 
 /**
  * One line. `runs`, when present, is the truth and the other fields are
@@ -131,7 +131,7 @@ export function normalizeRun(raw: unknown, base: Omit<NoteStyle, 'wash'>): NoteR
 }
 
 /** Whether two runs look the same - what decides that they merge. */
-export const sameStyle = (a: NoteStyle, b: NoteStyle) =>
+const sameStyle =(a: NoteStyle, b: NoteStyle) =>
   a.title === b.title && a.font === b.font && a.size === b.size && a.wash === b.wash;
 
 /** A run's look alone, with no words. */
@@ -462,7 +462,7 @@ export const NOTE_BLANK = '​';
  * the whimsy ornament multiplier. See the block in cards.css for what that
  * collision cost.
  */
-export function buildNoteRun(run: NoteRun): HTMLSpanElement {
+function buildNoteRun(run: NoteRun): HTMLSpanElement {
   const span = document.createElement('span');
   span.className = 'note-run';
   if (run.title) span.dataset.title = '1';

@@ -48,7 +48,7 @@ const FACE_H = PAD + SPOTLESS_FRAME.h + TEXT_H + PAD;
 
 /** What was on the board, as it was dealt: where each card sat in a frame, and
  *  the colour of what was on it. */
-export type SpotlessRect = { x: number, y: number, w: number, h: number, colour: string };
+type SpotlessRect ={ x: number, y: number, w: number, h: number, colour: string };
 
 /** More than any board the mode deals from, and small enough that a crafted
  *  file cannot make one card draw a hundred thousand rectangles. */

@@ -17,7 +17,7 @@ import { readPref, writePref } from './prefs.ts';
  * Chromium on Linux makes impossible to rule out (a hi-res wheel and a pad
  * send the same numbers): every plain scroll zooms, a two-finger swipe too.
  */
-export type WheelMode = 'zoom' | 'scroll' | 'zoom-all';
+type WheelMode ='zoom' | 'scroll' | 'zoom-all';
 
 const MODES: readonly WheelMode[] = ['zoom', 'scroll', 'zoom-all'];
 const asMode = (v: unknown): WheelMode =>

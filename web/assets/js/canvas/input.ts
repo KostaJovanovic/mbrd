@@ -128,7 +128,7 @@ export function liftWithButtonsHeld(
 /** How hard a stroke is pressed. Only a stylus says: a mouse reports 0.5 while
  *  pressed and a finger whatever its screen likes, so both are read as 0.5,
  *  which strokes.ts draws at the width the size says. */
-export function pressureOf(e: { pointerType: string, pressure: number }): number {
+function pressureOf(e: { pointerType: string, pressure: number }): number {
   return e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : 0.5;
 }
 

@@ -9,7 +9,7 @@
 
 import { toast } from '../notify.ts';
 
-export type WebUpdateDeps = {
+type WebUpdateDeps = {
   /** Store the board and reload; false, and nothing done, when it could not be stored. */
   restart: (opts: { quiet: boolean }) => Promise<boolean>,
   /** A tour, its editor, a replay or the cleaning game: the screen is somebody's. */

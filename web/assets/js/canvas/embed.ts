@@ -81,7 +81,7 @@ const YT_START_MAX = 86400;
  * `start`, in the shapes YouTube writes: `90`, `90s`, `1m30s`, `1h2m3s`.
  * Anything else is 0, since this number is written into the player's src.
  */
-export function youTubeStart(u: URL | null | undefined): number {
+function youTubeStart(u: URL | null | undefined): number {
   const raw = u?.searchParams.get('t') ?? u?.searchParams.get('start') ?? '';
   const m = /^(?:(\d{1,2})h)?(?:(\d{1,4})m)?(?:(\d{1,6})s?)?$/.exec(raw);
   if (!raw || !m) return 0;

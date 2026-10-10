@@ -250,10 +250,10 @@ export async function appendZip(
   return { tail: body, layout, waste };
 }
 
-export type ZipOptions = { date?: Date, mime?: string };
+type ZipOptions ={ date?: Date, mime?: string };
 
 /** Where one entry sits in a file already written - what its central record says. */
-export type ZipRecord = {
+type ZipRecord = {
   offset: number, crc: number, csize: number, usize: number,
   method: number, time: number, date: number,
 };

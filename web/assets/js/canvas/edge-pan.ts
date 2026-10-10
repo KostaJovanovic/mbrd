@@ -52,7 +52,7 @@ export function edgeVelocity(p: Point, room: Room, band = EDGE_BAND, max = EDGE_
   };
 }
 
-export type EdgePanOptions = {
+type EdgePanOptions = {
   /** The pointer, in client px, or null to hold still this frame. */
   point: () => Point | null,
   /**

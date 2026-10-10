@@ -13,7 +13,7 @@ import { readZip, LIMITS } from '../storage/zip.ts';
 export type ArchiveFile = { path: string, data: Blob };
 
 /** One thing at one level of a tree, in the order it first appears. */
-export type Child =
+type Child =
   | { kind: 'file', path: string, name: string }
   | { kind: 'folder', path: string, name: string, count: number };
 

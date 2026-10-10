@@ -51,7 +51,7 @@ type Row = { id: string, x: number, y: number, w: number, h: number };
  * Not on the Feed, whose tiles are drawn at their pictures' shape anyway, and
  * never an anchored card, which keeps its size as it does under Reset size.
  */
-export function conformPictures(items: Item[], grid = false) {
+function conformPictures(items: Item[], grid = false) {
   // One pass at a time: two overlapping would each write boxes read before the
   // other's landed.
   queue = queue.then(() => conform(items, grid)).catch(err => {

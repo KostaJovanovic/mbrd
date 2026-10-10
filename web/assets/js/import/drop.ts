@@ -63,7 +63,7 @@ export type Draft = {
 type DiskFile = { path: string, file: File };
 
 /** A folder inside a dropped folder: it lands as one folder card holding every file under it. */
-export type DiskFolder = { name: string, entries: DiskFile[] };
+type DiskFolder ={ name: string, entries: DiskFile[] };
 
 /** What importFiles() takes: files, cards already made (a folder out of an archive), and disk folders. */
 export type Incoming = File | Draft | DiskFolder;
@@ -127,7 +127,7 @@ export function setImportPrompt(fn: ImportPrompt | null | undefined) {
  * sight, and a way to bring it in. Injected because import/ sits below the
  * viewport; unwired, the summary offers no "Show them".
  */
-export type ImportRevealer = {
+type ImportRevealer = {
   offScreen: (items: readonly Item[]) => boolean,
   show: (ids: readonly string[]) => void,
 };

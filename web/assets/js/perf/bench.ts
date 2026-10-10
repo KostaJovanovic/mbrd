@@ -26,7 +26,7 @@ import type { GapSummary } from './frames.ts';
 /** Bumped whenever a reader of the file would misread the new shape. */
 export const BENCH_SCHEMA = 1;
 /** The start of every scenario that is not scored: the panel waking up. */
-export const WARMUP_MS = 150;
+const WARMUP_MS =150;
 /** A long animation frame, as the observer reports them. */
 const LONG_FRAME_MS = 50;
 /** How long the page must go without a long frame to count as idle. */
@@ -38,7 +38,7 @@ const IDLE_MAX_MS = 15000;
 // ---------------------------------------------------------------------------
 
 /** The switches a run may throw, each recorded in the file and in its name. */
-export type BenchSwitches = {
+type BenchSwitches = {
   quality?: 'light' | 'balanced' | 'full',
   whimsy?: 0 | 1 | 2,
   grid?: boolean,
@@ -68,18 +68,18 @@ export type BenchOptions = {
 };
 
 /** Per-frame timings from the window itself, from the Android shell. */
-export type GlassFrames = {
+type GlassFrames = {
   /** The refresh rate the display claims, in Hz. */
   refreshHz: number,
   /** Vsync time in ms (the frame's intended start), total duration and deadline in ms. */
   frames: { vsync: number, total: number, deadline: number }[],
 };
 
-export type GlassPort = { start(): Promise<void>, stop(): Promise<GlassFrames> };
+type GlassPort ={ start(): Promise<void>, stop(): Promise<GlassFrames> };
 
-export type LongFrames = { n: number, scriptMs: number, renderMs: number, styleLayoutMs: number, worstMs: number };
+type LongFrames ={ n: number, scriptMs: number, renderMs: number, styleLayoutMs: number, worstMs: number };
 
-export type ScenarioSummary = GapSummary & {
+type ScenarioSummary =GapSummary & {
   durationMs: number,
   longFrames: LongFrames | null,
   cullAvgMs: number | null,
@@ -92,12 +92,12 @@ export type ScenarioSummary = GapSummary & {
   beatFrom?: 'run',
 };
 
-export type GlassSummary = {
+type GlassSummary = {
   n: number, missed: number, missedPct: number, p95TotalMs: number, worstTotalMs: number,
   vsync: GapSummary,
 };
 
-export type ScenarioRun = {
+type ScenarioRun = {
   summary: ScenarioSummary,
   /** rAF timestamps: the first, then every gap in tenths of a millisecond. */
   frames: { t0: number, d: number[] },
@@ -105,7 +105,7 @@ export type ScenarioRun = {
   glass?: { t0: number, d: number[], total: number[], deadline: number[] },
 };
 
-export type ScenarioResult = {
+type ScenarioResult = {
   id: string, name: string,
   runs: ScenarioRun[],
   /** Across repeats, when there was more than one. */
@@ -113,7 +113,7 @@ export type ScenarioResult = {
   skipped?: string,
 };
 
-export type BoardDescription =
+type BoardDescription =
   | { kind: 'standard', seed: number, generationMs: number, cards: number, assetBytes: number }
   | { kind: 'this', fingerprint: { items: number, byType: Record<string, number>, assets: number, assetBytes: number } };
 
@@ -163,7 +163,7 @@ export type BenchResult = {
 // ---------------------------------------------------------------------------
 
 /** The commands a scenario drives, as `cmds` has them. Whatever they answer is not read. */
-export type BenchCommands = {
+type BenchCommands = {
   fit(): void,
   recenter(): void,
   feed(): void,
@@ -178,7 +178,7 @@ export type BenchCommands = {
   setWhimsy(level: number): void,
 };
 
-export type BenchDeps = {
+type BenchDeps = {
   vp: Viewport,
   cmds: BenchCommands,
   perf: ViewPerf,

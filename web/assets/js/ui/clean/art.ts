@@ -2024,7 +2024,7 @@ const HUB_TURNS = 2;
 /** One drawn side of the frame: where it leaves each card and how far it
  *  droops. The same numbers `webPath()` was given, so the middle is tied to the
  *  curve that is on screen. */
-export type FrameSide = { ax: number, ay: number, bx: number, by: number, sag: number };
+type FrameSide ={ ax: number, ay: number, bx: number, by: number, sag: number };
 
 /**
  * The middle of a web: the radii and the capture spiral, spun inside a frame

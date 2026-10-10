@@ -22,7 +22,7 @@ export type Run = {
 export type Marks = Pick<Run, 'b' | 'i' | 's' | 'code' | 'hl' | 'href'>;
 /** The four marks the toolbar toggles, plus code, which Markdown's backticks give. */
 export type MarkKey = 'b' | 'i' | 's' | 'hl' | 'code';
-export const MARK_KEYS: readonly MarkKey[] = ['b', 'i', 's', 'hl', 'code'];
+const MARK_KEYS:readonly MarkKey[] = ['b', 'i', 's', 'hl', 'code'];
 
 export type ListKind = 'bullet' | 'number' | 'task';
 /** Markdown's six. The ribbon and its keys offer the first three; the rest are typed or read. */
@@ -45,8 +45,8 @@ export type SceneEl = 'scene' | 'action' | 'character' | 'paren' | 'dialogue' | 
   | 'centered' | 'lyric' | 'section' | 'synopsis' | 'note';
 /** One line of a screenplay. `dual` is a character speaking beside the one before; `level` a section's depth. */
 export type Screen = Base & { kind: 'sp', el: SceneEl, dual: boolean, level: number, runs: Run[] };
-export type TextBlock = Para | Heading | ListItem | Quote | Screen;
-export type CodeBlock = Base & { kind: 'code', fence: string, lang: string, text: string };
+type TextBlock = Para | Heading | ListItem | Quote | Screen;
+type CodeBlock = Base & { kind: 'code', fence: string, lang: string, text: string };
 export type Rule = Base & { kind: 'rule' };
 export type Raw = Base & { kind: 'raw', text: string };
 export type Block = TextBlock | CodeBlock | Rule | Raw;
@@ -123,7 +123,7 @@ export const emptyDoc = (plain = false): Doc =>
 // Runs
 // ---------------------------------------------------------------------------
 
-export function marksOf(r: Marks): Marks {
+function marksOf(r: Marks): Marks {
   const m: Marks = {};
   for (const k of MARK_KEYS) if (r[k]) m[k] = true;
   if (r.href) m.href = r.href;

@@ -144,7 +144,7 @@ export type Spline = {
 /** The highest B-spline degree a file may declare. CAD kernels stop at 25; an
  *  evaluation costs the degree squared, and a knot vector is sized by it, so a
  *  degree past this is a corrupt record and never a large model. */
-export const MAX_DEGREE = 32;
+const MAX_DEGREE =32;
 
 /** Whether a declared degree can be evaluated. The readers throw MeshError on
  *  false, never Oversize: no file needs more. */
@@ -154,7 +154,7 @@ export const saneDegree = (d: number) => Number.isSafeInteger(d) && d >= 0 && d 
  *  already capped at 256, so a curve of a few hundred segments is untouched;
  *  past that each segment gets a smaller share instead of the total growing
  *  with the segment count. */
-export const MAX_CURVE_POINTS = 16_384;
+const MAX_CURVE_POINTS =16_384;
 
 /** Samples per segment for a composite of `count` segments. */
 export const compositeShare = (count: number) => Math.max(1, Math.floor(MAX_CURVE_POINTS / Math.max(1, count)));
@@ -492,7 +492,7 @@ const DEGENERATE = 1e-9;
 /** The most boundary points one face is triangulated from, holes included.
  *  Ear clipping costs about the square of this, and a face stops at
  *  MAX_PER_FACE triangles, so a longer boundary never drew whole anyway. */
-export const MAX_LOOP_POINTS = 4_096;
+const MAX_LOOP_POINTS =4_096;
 
 /** Loops with more points than a face can use, sampled evenly down to the
  *  limit. Outer loops are placed first so a face never loses its outline to

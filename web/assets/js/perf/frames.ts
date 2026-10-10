@@ -21,7 +21,7 @@ const OFF_BEAT = 0.25;
 /** Below this a gap is a normal frame and no question is being asked of it. */
 const A_FRAME = 1.15;
 
-export type FrameStats = {
+type FrameStats = {
   sorted: number[], median: number, janks: number,
   base: number, twos: number, overs: number, off: number,
 };

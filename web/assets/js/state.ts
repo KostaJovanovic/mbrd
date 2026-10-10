@@ -2358,7 +2358,7 @@ const BOARD_CARD = { w: 320, h: 240 };
 
 /** Cards move between levels on the canvas only: on the Feed a card's place
  *  is the column's, and there is no beside to put it. */
-export const canMoveAcross = () => board.layoutMode !== 'mobile';
+const canMoveAcross =() => board.layoutMode !== 'mobile';
 
 /** A raw document's list under `key`, made if it has none. Written in place,
  *  so an undo takes back exactly what went in. */

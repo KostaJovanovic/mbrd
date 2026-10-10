@@ -176,7 +176,7 @@ function open(btn: HTMLElement, focus: boolean, delay = 0, instant = false) {
  * it): the spanning tree over the selection or the board, and the two ways to
  * take lines away. Each row only when it has something to act on.
  */
-export function joinEntries(cmds: FlyoutCommands): MenuEntry[] {
+function joinEntries(cmds: FlyoutCommands): MenuEntry[] {
   const picked = cmds.joinableSelected();
   const lines = cmds.selectionLineCount();
   const all = cmds.connectionCount();

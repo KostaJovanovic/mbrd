@@ -15,10 +15,10 @@ const HEADER = 224;
 const TEXT_ITEM = 32;
 const IMAGE_ITEM = 34;
 
-export type PurPicture = { bytes: Uint8Array, mime: 'image/png' | 'image/jpeg', width: number, height: number };
+type PurPicture ={ bytes: Uint8Array, mime: 'image/png' | 'image/jpeg', width: number, height: number };
 
 /** Where a card goes, in PureRef's own space: pixels, y down, centre at (x, y). */
-export type PurPlaced =
+type PurPlaced =
   | { kind: 'image', picture: number, name: string, x: number, y: number, w: number, h: number,
       rot: number, z: number, crop: { x: number, y: number, w: number, h: number } | null,
       flip: { x: boolean, y: boolean } | null }

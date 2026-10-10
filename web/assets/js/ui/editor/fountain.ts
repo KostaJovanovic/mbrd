@@ -55,7 +55,7 @@ export function sp(el: SceneEl, text = '', before: string[] = [''], extra: { dua
 }
 
 /** Whether `el` straight after `prev` is part of one speech, written with no blank line between. */
-export const inSpeech = (prev: Block | undefined, el: SceneEl) =>
+const inSpeech =(prev: Block | undefined, el: SceneEl) =>
   SPEECH.has(el) && prev?.kind === 'sp' && (prev.el === 'character' || SPEECH.has(prev.el));
 
 // ---------------------------------------------------------------------------
@@ -331,7 +331,7 @@ const WIDTH: Record<SceneEl, number> = {
   section: 0, synopsis: 0, note: 0,
 };
 /** Lines on a standard screenplay page. */
-export const LINES_PER_PAGE = 55;
+const LINES_PER_PAGE =55;
 
 /**
  * How long the script would print, as an estimate from the standard layout -

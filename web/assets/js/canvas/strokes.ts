@@ -7,7 +7,7 @@ import { isRecord } from '../util.ts';
 import { MIN_SIZE } from '../geometry.ts';
 
 /** What made a stroke. The eraser is a tool too, but it never leaves one. */
-export type StrokeTool = 'pen' | 'highlighter';
+type StrokeTool ='pen' | 'highlighter';
 export type PenTool = StrokeTool | 'eraser';
 
 /** The five inks, stored by name so a drawing follows the board's palette. */
@@ -41,7 +41,7 @@ export const BURST_MS = 2000;
 /** The least reach round a drawing, in world units, for the burst rule. */
 export const REACH_MIN = 96;
 /** The quarter-unit tolerance strokes are simplified at when they end. */
-export const SIMPLIFY = 0.25;
+const SIMPLIFY =0.25;
 /** A stored `pts` longer than this is cut, so a hand-edited file cannot make
  *  the decoder walk megabytes. Generous: 2000 points at ~20 characters each. */
 const PTS_CHARS = 64_000;
@@ -114,7 +114,7 @@ export function readDrawing(meta: Record<string, unknown> | null | undefined): D
 }
 
 /** The box round some strokes, in their own space, widths included. */
-export function strokesBox(strokes: readonly Stroke[]) {
+function strokesBox(strokes: readonly Stroke[]) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of strokes) {
     const r = s.width / 2;

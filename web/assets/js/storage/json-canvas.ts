@@ -17,7 +17,7 @@ import { flattenNoteRich } from '../canvas/note-model.ts';
 import type { NoteRichInput } from '../canvas/note-model.ts';
 import { isRecord } from '../util.ts';
 
-export type CanvasNode = {
+type CanvasNode = {
   id: string,
   type: 'text' | 'file' | 'link' | 'group',
   x: number,
@@ -31,7 +31,7 @@ export type CanvasNode = {
   label?: string,
 };
 
-export type CanvasEdge = {
+type CanvasEdge = {
   id: string,
   fromNode: string,
   toNode: string,
@@ -41,11 +41,11 @@ export type CanvasEdge = {
   label?: string,
 };
 
-export type JsonCanvas = { nodes: CanvasNode[], edges: CanvasEdge[] };
+type JsonCanvas ={ nodes: CanvasNode[], edges: CanvasEdge[] };
 
 /** More nodes than any canvas a person drew; past it the file is not one. */
 export const MAX_NODES = 5000;
-export const MAX_EDGES = 10000;
+const MAX_EDGES =10000;
 
 /** The six preset colours of the format, by the connection colour nearest each. */
 const EDGE_COLOUR: Record<string, string> = { danger: '1', warm: '2', leaf: '4', accent: '5' };

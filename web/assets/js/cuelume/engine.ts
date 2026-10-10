@@ -792,7 +792,7 @@ export function playRecipe(recipe: SoundRecipe, volume = 1): void {
  * and gains no rows here. The engine gains a capability; the palette does not
  * change.
  */
-export type SustainSpec = {
+type SustainSpec = {
   filterType: BiquadFilterType,
   filterFrequency: number,
   filterQ: number,

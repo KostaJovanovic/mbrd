@@ -15,7 +15,7 @@ export const COLOUR_NAMES = [
 ] as const;
 
 /** What narrows a colour, alone ("pastel") or before a name ("dark green"). */
-export const COLOUR_MODIFIERS = ['dark', 'light', 'pastel', 'muted', 'warm', 'cool'] as const;
+const COLOUR_MODIFIERS =['dark', 'light', 'pastel', 'muted', 'warm', 'cool'] as const;
 
 /** Below this chroma a colour is a grey, whatever its hue says. */
 const NEUTRAL = 0.04;

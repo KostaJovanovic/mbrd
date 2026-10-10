@@ -17,7 +17,7 @@ import type { Item, ItemType } from '../board-model.ts';
 
 /** Kinds the painters keep: a model is a WebGL frame no capture can read. */
 const PAINTED: ReadonlySet<ItemType> = new Set<ItemType>(['model', 'ghost', 'gone']);
-export const capturable = (it: Item) => !PAINTED.has(it.type);
+const capturable =(it: Item) => !PAINTED.has(it.type);
 
 /** How long a card is given to finish drawing itself before it is taken as it is. */
 const SETTLE_MS = 2500;

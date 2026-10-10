@@ -16,7 +16,7 @@ export function currentTier(): Tier {
 }
 
 /** One stroke's path, or null when it has no points. */
-export function strokePath(s: Stroke, tier: Tier): SVGPathElement | null {
+function strokePath(s: Stroke, tier: Tier): SVGPathElement | null {
   const o = outline(s, tier);
   if (!o.d) return null;
   const path = document.createElementNS(NS, 'path');

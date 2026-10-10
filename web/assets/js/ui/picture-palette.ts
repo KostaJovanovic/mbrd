@@ -14,7 +14,7 @@ import { autoOn } from './look.ts';
 import type { Look } from './appearance-controls.ts';
 
 /** What the look model lends. `current` is a getter: a board load replaces the look. */
-export type PaletteDeps = {
+type PaletteDeps = {
   current: () => Look,
   setPigments: (vars: Record<string, string>) => void,
   dropPigments: () => boolean,

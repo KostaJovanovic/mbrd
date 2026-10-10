@@ -10,7 +10,7 @@ import { linkURL } from '../canvas/renderers.ts';
 import { typeset } from './math.ts';
 import type { Macros } from './math.ts';
 
-export type LatexOptions = {
+type LatexOptions = {
   /** The picture \includegraphics names, as an address to draw, or null to show its name. */
   picture?: (name: string) => string | null,
   /** Today, as \today writes it. A parameter so a test reads the same every day. */
