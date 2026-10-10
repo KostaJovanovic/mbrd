@@ -54,10 +54,10 @@ test('a flat top cuts the discs into a block with a flush first row, without ove
     for (const seed of [1, 3, 7]) {
       const all = arrange(cards, { name, seed, spacing: 12, flatTop: true })
         .map(p => ({ x0: p.x - 50, x1: p.x + 50, y0: p.y - 40, y1: p.y + 40 }));
-      // Board space: y runs down, so the top is the smallest y. Uncut, one card
+      // Board space: y runs up, so the top is the largest y. Uncut, one card
       // or two stand at the top of a disc; cut, the row along the cut has several.
-      const top = Math.min(...all.map(b => b.y0));
-      const flush = all.filter(b => b.y0 < top + 1).length;
+      const top = Math.max(...all.map(b => b.y1));
+      const flush = all.filter(b => b.y1 > top - 1).length;
       assert.ok(flush >= 3, `${name} ${seed}: only ${flush} cards stand at the top`);
       for (let i = 0; i < all.length; i++) {
         for (let j = i + 1; j < all.length; j++) {

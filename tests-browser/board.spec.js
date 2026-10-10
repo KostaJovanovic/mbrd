@@ -85,9 +85,13 @@ test('Rearrange with "keep cards below the title card" hangs the block under the
     const lefts = cards.map(it => it.x - ext(it).hw);
     const rights = cards.map(it => it.x + ext(it).hw);
     const top = Math.max(...tops);
-    // The first row: the cards whose top edge is within a sticker's height of the block's.
-    const row = cards.filter((_, k) => tops[k] > top - 72);
+    // The cards flush with the block's top, and with its bottom: the cut edge
+    // has a row, the round one a card or two.
+    const row = cards.filter((_, k) => tops[k] > top - 2);
+    const feet = cards.map(it => it.y - ext(it).hh);
+    const bottom = Math.min(...feet);
     return {
+      lastRow: feet.filter(f => f < bottom + 2).length,
       foot: title.y - ext(title).hh,
       titleX: title.x,
       top,
@@ -103,5 +107,7 @@ test('Rearrange with "keep cards below the title card" hangs the block under the
   // ...is centred under the title...
   expect(Math.abs(out.middle - out.titleX)).toBeLessThanOrEqual(out.step);
   // ...and its top is cut flat: a row of cards, not the one at a disc's point.
-  expect(out.firstRow).toBeGreaterThanOrEqual(2);
+  // The bottom row is checked too, because a cut on the wrong edge passed this once.
+  expect(out.firstRow).toBeGreaterThanOrEqual(3);
+  expect(out.firstRow).toBeGreaterThan(out.lastRow);
 });

@@ -314,7 +314,7 @@ const LAYOUTS: Record<string, Layout> = {
       placed.push({ ...box, x: at.x, y: at.y });
     }
     if (cut < Infinity) liftToCut(placed, cut);
-    return placed.map(p => ({ x: o.center.x + p.x, y: o.center.y + p.y }));
+    return placed.map(p => ({ x: o.center.x + p.x, y: o.center.y + flatSide(cut) * p.y }));
   },
 };
 
@@ -575,8 +575,8 @@ const tallestHalf = (items: ArrangeItem[], gap: number) =>
   Math.max(...items.map(i => (i.h + gap) / 2));
 
 /**
- * The spiral's body. `cut` is the flat top in layout space, where y runs up
- * (arrange() flips it for the board), or Infinity for none.
+ * The spiral's body. `cut` is the flat edge at +y, or Infinity for none; see
+ * flatSide() for how it ends up on top.
  *
  * `n` is the place in the golden sequence: one step per card, plus a step for
  * each angle that would land in the cut-off cap. Skipped rather than bent
@@ -612,8 +612,15 @@ function phyllotaxis(items: ArrangeItem[], o: Laying, phase: number, cut: number
     placed.push({ ...box, x: landed.x, y: landed.y });
   }
   if (cut < Infinity) liftToCut(placed, cut);
-  return placed.map(p => ({ x: o.center.x + p.x, y: o.center.y + p.y }));
+  return placed.map(p => ({ x: o.center.x + p.x, y: o.center.y + flatSide(cut) * p.y }));
 }
+
+/**
+ * The cut is worked out at +y, and layout space runs the board's y the other
+ * way (arrange() negates it), so a cut layout is mirrored to put it on top.
+ * An uncut one is left as it always was.
+ */
+const flatSide = (cut: number) => (cut < Infinity ? -1 : 1);
 
 /**
  * Square the top row against the cut. A skipped angle leaves the cards under
