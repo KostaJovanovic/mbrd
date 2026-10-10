@@ -99,7 +99,7 @@ command that needs it is used and none of them in `SHELL`.
 
 **onnxruntime-web** runs **u2netp**, the model behind the background remover,
 in a worker (`web/assets/js/canvas/matte-worker.js`). `canvas/matte.ts` pins
-both, and `tests/matte-vendor.test.js` holds the pin to the files. The obvious
+both, and `tests/vendor.test.js` holds the pin to the files. The obvious
 larger models are CC BY-NC or AGPL and cannot ship here; u2netp is Apache-2.0.
 
 **pdf.js** renders page one of a PDF (and of an `.ai`, which is a PDF) to a
@@ -107,12 +107,12 @@ raster the card draws. It is carried rather than fetched for a reason worth
 keeping written down: `script-src 'self'` refused the CDN copy outright on the
 deployed site while working perfectly on the dev server, so the feature was dead
 exactly where anybody else would see it. `web/assets/js/import/pdf.ts` argues it
-at length and pins the version, and `tests/pdf-vendor.test.js` holds the pin to
+at length and pins the version, and `tests/vendor.test.js` holds the pin to
 the bytes actually in the directory.
 
 **KaTeX** typesets the mathematics in a `.tex` document's preview and the
 `$…$` in Markdown. `web/assets/js/ui/math.ts` loads it on the first formula and
-pins the version, and `tests/katex-vendor.test.js` holds the pin to the bytes.
+pins the version, and `tests/vendor.test.js` holds the pin to the bytes.
 Its fonts are its own and travel under its licence. It runs with `trust`
 off, so a document cannot reach `\href` or `\htmlClass`, and with HTML output
 only, because its MathML writes `style` attributes the policy refuses.
@@ -143,7 +143,7 @@ it may be loaded. STEP and IGES contain no triangles - they describe a solid as
 trimmed surfaces and the topology between them - so drawing one means running a
 geometry kernel. `web/assets/js/mesh/occt-worker.js` runs this one, off the main
 thread and with the site's Content-Security-Policy removed for that file alone;
-`web/assets/js/mesh/occt.ts` pins the version and `tests/occt-vendor.test.js`
+`web/assets/js/mesh/occt.ts` pins the version and `tests/vendor.test.js`
 holds the pin to the bytes in the directory.
 
 Both the wrapper and the kernel are LGPL-2.1. This project is GPL-3.0-or-later,
@@ -163,7 +163,7 @@ WebAssembly with Little CMS 2.19.1 and Emscripten's libjpeg and zlib ports. It
 develops a camera RAW: the Demosaic row on a RAW card, and Optimize, which
 develops a RAW before it shrinks it like any photograph.
 `web/assets/js/optimize/demosaic.ts` pins the version and
-`tests/libraw-vendor.test.js` holds the pin to the files. The wrapper is ISC.
+`tests/vendor.test.js` holds the pin to the files. The wrapper is ISC.
 LibRaw is offered under LGPL-2.1 or CDDL-1.0 and is taken here under LGPL-2.1,
 on the argument made for OCCT above: the four files are loaded at run time by a
 module worker the wrapper spawns, with the site policy removed for that file

@@ -43,8 +43,7 @@ function resolveSpec(mod, spec) {
  * that climbs out of web/assets/js names a vendored library (e.g.
  * canvas/matte-worker.js importing ONNX Runtime) with no layer of its own,
  * excluded from the graph rather than held to a naming convention. Vendor
- * presence, pin and licence are checked separately, by matte-vendor.test.js
- * and pdf-vendor.test.js.
+ * presence, pin and licence are checked separately, by vendor.test.js.
  */
 const ours = target => !target.startsWith('vendor/') && !target.startsWith('../');
 

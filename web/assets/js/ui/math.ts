@@ -4,7 +4,7 @@
 // on the patch page - a formula stays the TeX it was written in, which is
 // what the readers draw first anyway. Nothing touches the document at import.
 
-/** Exported for tests/katex-vendor.test.js, which holds it to the bytes on disk. */
+/** Exported for tests/vendor.test.js, which holds it to the bytes on disk. */
 export const KATEX_VERSION = '0.19.0';
 const KATEX_DIR = './assets/vendor/katex/';
 

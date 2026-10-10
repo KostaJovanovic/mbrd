@@ -360,7 +360,7 @@ function spawnedWorkers() {
   assert.ok(archive, 'import/archive.ts no longer names a worker - is the exemption still needed?');
 
   // Same: libraw's index.js spawns worker.js from beside itself, and
-  // tests/libraw-vendor.test.js holds the constant to that.
+  // tests/vendor.test.js holds the constant to that.
   const raw = /WORKER_URL = '([^']+)'/.exec(read(join(JS, 'optimize', 'demosaic.ts')));
   assert.ok(raw, 'optimize/demosaic.ts no longer names a worker - is the exemption still needed?');
 

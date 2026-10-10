@@ -2,7 +2,7 @@
 // colouring, missing colour, oversized files - none of which need seven
 // megabytes of WebAssembly to check. Run here as the classic script it
 // is, with a fake `occtimportjs` and canned kernel output. The vendored
-// build itself is occt-vendor.test.js's business.
+// build itself is vendor.test.js's business.
 //
 // The only way to test the file at all: a classic worker installs
 // `self.onmessage` at the top level and exports nothing, which is why

@@ -251,7 +251,7 @@ async function readGzip(file: Blob, name: string, lift: boolean): Promise<Archiv
 // 7z and RAR, through libarchive.js
 // ---------------------------------------------------------------------------
 
-// Exported for tests/archive-vendor.test.js to hold against the shipped files.
+// Exported for tests/vendor.test.js to hold against the shipped files.
 export const LIBARCHIVE_VERSION = '2.0.2';
 const LIB_DIR = './assets/vendor/libarchive/';
 // Named here rather than in a Worker() call so tests/csp.test.js reads the one

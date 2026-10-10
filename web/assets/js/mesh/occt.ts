@@ -5,7 +5,7 @@
 import { oversize } from '../consent.ts';
 import { MeshError, type Mesh, tooBig } from './shared.ts';
 
-/** The vendored build, pinned. tests/occt-vendor.test.js checks this against
+/** The vendored build, pinned. tests/vendor.test.js checks this against
  *  the directory and that the licence files are present. */
 export const OCCT_VERSION = '0.0.23';
 

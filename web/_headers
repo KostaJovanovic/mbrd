@@ -141,7 +141,7 @@
 
 # pdf.js JPEG 2000 decoder (Emscripten OpenJPEG, wasm compile).
 # One file only — pdf.min.mjs in the document keeps the document's policy.
-# Pinned by import/pdf.ts and tests/pdf-vendor.test.js.
+# Pinned by import/pdf.ts and tests/vendor.test.js.
 /assets/vendor/pdfjs/pdf.worker.min.mjs
   ! Content-Security-Policy
 

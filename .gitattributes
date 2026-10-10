@@ -19,6 +19,6 @@
 # Vendored WebAssembly, and the one entry here that is not about a diff. The
 # rule at the top is text=auto, which decides by sniffing - and a build that
 # sniffed wrong would be checked out with its line endings rewritten and would
-# no longer be a wasm module. tests/occt-vendor.test.js checks the magic number
+# no longer be a wasm module. tests/vendor.test.js checks the magic number
 # for that reason; this is what stops it happening.
 *.wasm binary

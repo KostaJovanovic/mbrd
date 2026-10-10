@@ -7,7 +7,7 @@
 import { canvasReads, surface, type Surface } from './surface.ts';
 import { platform, isDesktop } from '../platform/platform.ts';
 
-/** Pinned versions — tests/matte-vendor.test.js checks these against the vendored files. */
+/** Pinned versions — tests/vendor.test.js checks these against the vendored files. */
 export const ORT_VERSION = '1.23.0';
 export const MODEL_NAME = 'u2netp';
 

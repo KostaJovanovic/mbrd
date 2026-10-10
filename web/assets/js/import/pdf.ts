@@ -10,7 +10,7 @@
 import { noPreview, canvasBlocked } from '../notify.ts';
 import { canvasReads } from '../canvas/surface.ts';
 
-// Exported for tests/pdf-vendor.test.js to verify against the shipped build.
+// Exported for tests/vendor.test.js to verify against the shipped build.
 export const PDF_VERSION = '4.7.76';
 const PDF_DIR = './assets/vendor/pdfjs/';
 

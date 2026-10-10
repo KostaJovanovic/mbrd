@@ -113,7 +113,8 @@ async function viaWebCodecs(file: File): Promise<Blob | null> {
 // ---------------------------------------------------------------------------
 
 /** The vendored heic2any release in web/assets/vendor/heic2any/, which wraps
- *  libheif and libde265 compiled to JavaScript. */
+ *  libheif and libde265 compiled to JavaScript. tests/vendor.test.js holds it
+ *  to THIRD-PARTY.md. */
 export const HEIC2ANY_VERSION = '0.0.4';
 
 /** Named here, and not inside the worker, so tests/csp.test.js reads the one
