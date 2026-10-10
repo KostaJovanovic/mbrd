@@ -4,9 +4,10 @@
 // All parsers must stay synchronous — the ceiling/lift mechanism depends on it.
 
 import { oversize, mb } from './consent.ts';
+import { extOf } from './util.ts';
 import {
   CAPS, MeshError, MAX_BUFFER_BYTES, MAX_ELEMENTS, MAX_TRIANGLES,
-  clamp01, extOf, fillFacetGaps, finish, fixFacet, fixFacetArrays,
+  clamp01, fillFacetGaps, finish, fixFacet, fixFacetArrays,
   grow, liftCaps, newBox, resetCaps, tooBig,
   type Mesh, type MeshBounds,
 } from './mesh/shared.ts';

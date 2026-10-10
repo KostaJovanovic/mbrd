@@ -273,9 +273,3 @@ export function hexRGB(raw: string | undefined | null): number[] | null {
   if (s.length === 6 || s.length === 8) return [at(0, 2), at(2, 2), at(4, 2)];
   return null;
 }
-
-// Lowercase extension without dot. Empty if none (dotfiles excluded).
-export function extOf(name: string) {
-  const i = name.lastIndexOf('.');
-  return i > 0 ? name.slice(i + 1).toLowerCase() : '';
-}

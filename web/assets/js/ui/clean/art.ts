@@ -6,6 +6,7 @@
 
 import type { MessKind, Rng, DebrisPlan } from './mess.ts';
 import { rand, randInt } from './mess.ts';
+import { clamp } from '../../util.ts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -784,8 +785,6 @@ function lightOf() {
   const hn = Math.hypot(lx, ly, lz + 1);
   return { lx, ly, lz, hx: lx / hn, hy: ly / hn, hz: (lz + 1) / hn, ambient: clamp01(LOOK.light.ambient) };
 }
-
-const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
 /**
  * Paint a card's crust onto its canvas.
