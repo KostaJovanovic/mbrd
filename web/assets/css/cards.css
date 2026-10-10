@@ -160,7 +160,7 @@
    property is substituted where it is declared. A `--note-gap` declared on the
    item would read the scale off the item, where it is not set, and inherit the
    answer down already multiplied by 1. The 8px is the old box-keyed 9px gap at
-   the 240px default, put on the spacing rhythm (tests/spacing.test.js). */
+   the 240px default, put on the spacing rhythm (tests/css-tokens.test.js). */
 .item[data-type="note"] .note-rich {
   flex: 1;
   min-height: 0;
