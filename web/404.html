@@ -725,6 +725,13 @@
   </div>
 </div>
 
+<!-- The way out of the multi-select mode, and the only chrome .is-picking
+     leaves standing (chrome.css). main.ts wires it. -->
+<button type="button" id="pick-done" title="Done selecting  Esc">
+  <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-check"/></svg>
+  <span>Done selecting</span>
+</button>
+
 <div id="drop-overlay" hidden><div>let it fall</div></div>
 
 <!-- Progress strip (top of window). Driven by busy() in util.js. Pinned

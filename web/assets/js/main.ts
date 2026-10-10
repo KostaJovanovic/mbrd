@@ -501,6 +501,7 @@ bus.on('selection', () => {
 bus.on('selection', () => {
   document.documentElement.classList.toggle('is-picking', isMultiSelect());
 });
+el('pick-done')!.addEventListener('click', () => { if (isMultiSelect()) cmds.toggleMultiSelect(); });
 bus.on('items', syncMobileBoardBounds);
 bus.on('geom', syncMobileBoardBounds);
 

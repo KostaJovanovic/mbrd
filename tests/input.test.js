@@ -943,6 +943,15 @@ test('a press on bare board clears and pans; a modified one bands', () => {
   assert.deepEqual(pressIntent(press({ additive: true })), { kind: 'marquee' });
 });
 
+test('the multi-select mode pans bare board; the double-tap swipe still bands', () => {
+  const picking = { additive: true, picking: true };
+  assert.deepEqual(pressIntent(press(picking)), { kind: 'empty' });
+  assert.deepEqual(pressIntent(press({ ...picking, pointerType: 'touch', doubleTapDrag: true })), { kind: 'marqueeDrag' });
+  // A card is still picked into the group.
+  assert.deepEqual(pressIntent(press({ ...picking, onCard: 'a' })),
+    { kind: 'move', id: 'a', additive: true, wasSelected: false });
+});
+
 test('a widget inside a card owns the press, unless the press means pan', () => {
   // Capturing on a scrubber would redirect every following move to #viewport
   // and leave the scrubber dead.

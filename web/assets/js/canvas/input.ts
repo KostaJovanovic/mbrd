@@ -171,6 +171,11 @@ export type PressFacts = {
    *  identically. A fact here, not a call inside the cascade, so pressIntent()
    *  stays a function of its argument alone. */
   additive: boolean;
+  /** `additive` comes from the multi-select mode alone, with no key held. A
+   *  drag on bare board then pans rather than bands: the mode is for picking
+   *  across a board bigger than the screen, and the double-tap swipe still
+   *  draws the band. */
+  picking?: boolean;
   spaceDown: boolean;
   /** Z held on a canvas board: a primary press draws the box to zoom into. */
   zoomBox?: boolean;
@@ -243,7 +248,7 @@ export function pressIntent(f: PressFacts): PressIntent {
     const carried = { id: f.onCard, additive: f.additive, wasSelected: f.wasSelected };
     return f.locked ? { kind: 'lockedPan', ...carried } : { kind: 'move', ...carried };
   }
-  if (f.additive) return { kind: 'marquee' };
+  if (f.additive && !f.picking) return { kind: 'marquee' };
   return { kind: 'empty' };
 }
 
@@ -2447,6 +2452,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // facts and not in pressIntent(), which reads no state and is testable
       // for exactly that reason.
       additive: e.shiftKey || e.ctrlKey || e.metaKey || isMultiSelect(),
+      picking: isMultiSelect() && !(e.shiftKey || e.ctrlKey || e.metaKey),
       spaceDown,
       zoomBox: zoomArmed() && e.pointerType !== 'touch',
       onWidget: !!widget,
@@ -2842,11 +2848,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     if (gesture.mode === 'press' && gesture.intent === 'marquee') {
       if (Math.hypot(e.clientX - gesture.clientX, e.clientY - gesture.clientY) <= DRAG_SLOP) return;
       const p = vp.toWorld(e.clientX, e.clientY);
+      // Additive only in the multi-select mode, where nothing on bare board
+      // may drop the group - a swipe adds to it, the way Shift's band does.
+      const picking = isMultiSelect();
       const band = enter('marquee', {
-        // `base` null and not absent: this band is never additive, so nothing
-        // reads it - but a mode's fields are laid down whole by enter(), and a
-        // marquee with no `base` at all would be the one exception.
-        x0: gesture.x0, y0: gesture.y0, x1: p.x, y1: p.y, additive: false, base: null,
+        x0: gesture.x0, y0: gesture.y0, x1: p.x, y1: p.y,
+        additive: picking, base: picking ? [...selection] : null,
       });
       marquee.hidden = false;
       drawMarquee(band);

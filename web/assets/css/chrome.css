@@ -1122,8 +1122,10 @@
    in ui/tour.ts for both. */
 /* .is-cleaning joins the two tour states here rather than repeating the list:
    the cleaning simulator (ui/clean/) hides exactly the same furniture and for
-   the same reason. Its own bar is not on the list, so it stays. */
-:root:is(.is-touring, .is-tour-edit, .is-cleaning) :is(
+   the same reason. Its own bar is not on the list, so it stays.
+   .is-picking too: the multi-select mode is picking cards and nothing else,
+   and #pick-done, below, is its one way out. */
+:root:is(.is-touring, .is-tour-edit, .is-cleaning, .is-picking) :is(
   #menu-btn,
   #mobile-header-edit-btn,
   #mobile-find-btn,
@@ -1138,6 +1140,60 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--dur-base) var(--ease);
+}
+
+:root.is-picking :is(#board-path, #pen-bar) {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease);
+}
+
+/* Done selecting: top centre, at the top row's one height, in #clean-top's ✕
+   idiom - paper, hairline and leaf, with the whimsy dial's lift and press. */
+#pick-done {
+  position: fixed;
+  z-index: calc(var(--z-overlay) + 2);
+  top: max(14px, env(safe-area-inset-top));
+  left: 50%;
+  translate: -50% 0;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--chrome-button-h);
+  padding: 0 14px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--shade) 12%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-base) var(--ease-back),
+    color var(--dur-fast) var(--ease);
+}
+:root.is-picking #pick-done { display: inline-flex; }
+@media (hover: hover) {
+  #pick-done:hover {
+    background: var(--paper-2);
+    border-color: var(--accent-text);
+    color: var(--accent-deep);
+    transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
+  }
+}
+#pick-done:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
+#pick-done:active {
+  transform: scale(var(--btn-press));
+  background: var(--paper-3);
+  transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+#pick-done .ico {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
 }
 
 /* And the three rules that move the tour bar out of something's way, undone -
