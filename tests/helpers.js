@@ -4,6 +4,8 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative, sep } from 'node:path';
 
+import { linkedSheets } from '../tools/gen-shell.mjs';
+
 /** Repo root, from tests/ */
 export const ROOT = resolve(import.meta.dirname, '..');
 export const WEB = join(ROOT, 'web');
@@ -31,18 +33,10 @@ export function walk(dir, exts, from = WEB) {
 
 export const read = path => readFileSync(path, 'utf8');
 
-/** App stylesheets in cascade order (index.html's order). Excludes tokens.css
- * and fonts.css — those are the property table and @font-face set.
- * tests/css-order.test.js holds this list, index.html and SHELL in step. */
-export const APP_CSS_ORDER = [
-  'base.css', 'canvas.css',
-  'items.css', 'ghosts.css', 'fences.css', 'media.css', 'cards.css',
-  'item-chrome.css',
-  'sidebar.css', 'chrome.css',
-  'drawer.css', 'menu.css', 'library.css', 'status.css', 'dialog.css',
-  'viewer.css', 'editor.css', 'color-picker.css', 'sticker-pad.css',
-  'mobile.css', 'timeline.css', 'clean.css', 'quality.css',
-];
+/** App stylesheets in cascade order, read from index.html's links. Excludes
+ * tokens.css and fonts.css, the property table and the @font-face set. */
+export const APP_CSS_ORDER = linkedSheets(readFileSync(join(WEB, 'index.html'), 'utf8'))
+  .filter(name => name !== 'tokens.css' && name !== 'fonts.css');
 
 export const appCss = () => APP_CSS_ORDER
   .map(name => readFileSync(join(WEB, 'assets', 'css', name), 'utf8'))

@@ -335,13 +335,13 @@ included, because `tests/sw.test.js` reads that list by pulling out single-quote
 - **An icon** → a `<symbol>` in `web/assets/icons.svg`, referenced by name. A
   misspelled id fails *silently* on screen; `tests/icons.test.js` is what
   catches it, in both directions.
-- **A stylesheet** → a `<link>` in `index.html`, the same place in `SHELL`
-  (`web/sw.js`), and the same place in `APP_CSS_ORDER` (`tests/helpers.js`):
-  one list written three times, because **document order is the cascade** and
-  `quality.css` wins on it rather than on specificity. Miss the third and
-  every CSS test stops reading that sheet, which is why
-  `tests/css-order.test.js` compares the three lists name for name and in
-  order. `patch.html` is generated and needs no edit.
+- **A stylesheet** → a `<link>` in `index.html`, and nothing else by hand.
+  **Document order is the cascade** and `quality.css` wins on it rather than
+  on specificity. `APP_CSS_ORDER` (`tests/helpers.js`) reads the links, and
+  `tools/gen-shell.mjs`, which `save.bat` runs, writes them into `SHELL`
+  (`web/sw.js`) between its two markers, along with `404.html`.
+  `tests/css-order.test.js` fails when a commit went round it. `patch.html` is
+  generated too.
 - **An id**, written in `index.html` or handed to a node at runtime by a
   module, is how the sheets address the furniture. A rename fails *silently*:
   the selector stays valid CSS and matches nothing. `tests/element-ids.test.js`

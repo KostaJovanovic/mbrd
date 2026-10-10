@@ -4,7 +4,7 @@
 
 // Namespaced: activate only deletes its own PREFIX caches.
 // VERSION is literal because save.bat bumps it by regex.
-const VERSION = 'mbrd-v696';
+const VERSION = 'mbrd-v697';
 const PREFIX = 'mbrd-';
 
 // Local dev: pass-through so a refresh always shows the latest edit. 169.254 is
@@ -22,12 +22,13 @@ const SHELL = [
   // The site pages, precached so they work offline.
   './privacy.html',
   './manifest.json',
+  // Stylesheets: begin. Written by tools/gen-shell.mjs from the links in
+  // index.html, in cascade order, so edit those and not these.
+  './assets/css/fonts.css',
   './assets/css/tokens.css',
-  // Subsystem sheets, in cascade order (quality.css last).
   './assets/css/base.css',
   './assets/css/canvas.css',
   './assets/css/items.css',
-  // The five sheets items.css was split into, in cascade order.
   './assets/css/ghosts.css',
   './assets/css/fences.css',
   './assets/css/media.css',
@@ -48,6 +49,7 @@ const SHELL = [
   './assets/css/timeline.css',
   './assets/css/clean.css',
   './assets/css/quality.css',
+  // Stylesheets: end.
   // Document-page sheets (not in the cascade above).
   './assets/css/patch.css',
   './assets/css/privacy.css',
@@ -83,7 +85,6 @@ const SHELL = [
   './assets/app.js',
   // Outside the bundle: fetched by URL at runtime (see optimize/media.ts).
   './assets/js/optimize/media-worker.js',
-  './assets/css/fonts.css',
   // All font files; tests/sw.test.js asserts this list against the directory.
   './assets/fonts/playfair-latin.woff2',
   './assets/fonts/playfair-latin-ext.woff2',

@@ -2054,11 +2054,11 @@ drawing, that every menu entry carries one, and that nothing new has been writte
 inline. A misspelled id is otherwise not an error anywhere: the browser finds no
 such fragment and draws nothing.
 
-A new rule goes next to the subsystem it styles. A new *file* has to be added to
-`index.html`, to `SHELL` in `web/sw.js`, and to `APP_CSS_ORDER` in
-`tests/helpers.js`. `tests/sw.test.js` walks `assets/css` and will fail until
-the second of those is done. The banner at the top of `base.css` repeats this
-list, which is where somebody opening the stylesheets will look first.
+A new rule goes next to the subsystem it styles. A new *file* is a `<link>` in
+`index.html`, and nothing else by hand: `APP_CSS_ORDER` in `tests/helpers.js`
+reads the links, and `tools/gen-shell.mjs` (run by `save.bat`) writes them into
+`SHELL` in `web/sw.js`. `tests/sw.test.js` walks `assets/css` and fails on a
+sheet nothing precaches.
 
 ---
 
