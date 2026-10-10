@@ -4,6 +4,7 @@
 // stepped over using their declared types. Not read: textures, range grids,
 // material_index. Point clouds (no face element) are rejected.
 
+import { latin1 } from '../bytes.ts';
 import { oversize } from '../consent.ts';
 import {
   CAPS, MeshError, type Mesh, clamp01, fanInto, fromIndexed, tooBig,
@@ -126,8 +127,6 @@ const matches = (u8: Uint8Array, at: number, word: string) => {
   for (let k = 0; k < word.length; k++) if (u8[at + k] !== word.charCodeAt(k)) return false;
   return true;
 };
-
-const latin1 = (b: Uint8Array) => new TextDecoder('latin1').decode(b);
 
 // ---------------------------------------------------------------------------
 // What the reader is looking for

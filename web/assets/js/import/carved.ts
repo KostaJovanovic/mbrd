@@ -4,25 +4,14 @@
 import { surface, surfaceToBlob } from '../canvas/surface.ts';
 import { embeddedPreview } from './preview.ts';
 import { dibToBmp, isPng } from './winimage.ts';
-
-type Bytes = Uint8Array<ArrayBuffer>;
+import { ascii, be32, bytes, le32 } from '../bytes.ts';
+import type { Bytes } from '../bytes.ts';
 
 const HEAD = 4 * 1024 * 1024;
 
 const MAX_PICTURE = 64 * 1024 * 1024;
 const MIN_IMAGE = 256;
 
-const le32 = (b: Bytes, i: number) =>
-  ((b[i] | (b[i + 1] << 8) | (b[i + 2] << 16)) + b[i + 3] * 0x1000000) >>> 0;
-const be32 = (b: Bytes, i: number) =>
-  ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
-const tag = (b: Bytes, i: number, n = 4) =>
-  i + n <= b.length ? String.fromCharCode(...b.subarray(i, i + n)) : '';
-
-async function bytes(file: Blob, start: number, length: number): Promise<Bytes> {
-  if (start < 0 || length <= 0 || start >= file.size) return new Uint8Array(0);
-  return new Uint8Array(await file.slice(start, start + length).arrayBuffer());
-}
 
 const CARVED = new Set(['icns', 'dwg', 'eps', 'epsf', 'epsi', 'blend', 'vcf']);
 export const isCarved = (ext: string) => CARVED.has(ext);
@@ -50,13 +39,13 @@ const ICNS_SKIP = new Set(['TOC ', 'icnV', 'info', 'name', 'sbtp', 'slct']);
 // Largest PNG chunk from an .icns (smallest-first order, so "first" would be a smudge).
 async function fromIcns(file: Blob): Promise<Bytes | null> {
   const head = await bytes(file, 0, Math.min(HEAD, file.size));
-  if (head.length < 16 || tag(head, 0) !== 'icns') return null;
+  if (head.length < 16 || ascii(head, 0) !== 'icns') return null;
 
   const total = Math.min(be32(head, 4) || head.length, head.length);
   let best: Bytes | null = null;
   let at = 8;
   for (let guard = 0; at + 8 <= total && guard < 4096; guard++) {
-    const type = tag(head, at);
+    const type = ascii(head, at);
     const size = be32(head, at + 4);
     if (size < 8 || at + size > total) break;
     if (!ICNS_SKIP.has(type)) {
@@ -87,7 +76,7 @@ const DWG_PNG = 3;
 // DWG preview: seeker at 0x0D points to sentinel + preview records. Works R13+.
 async function fromDwg(file: Blob): Promise<Bytes | null> {
   const head = await bytes(file, 0, 64);
-  if (head.length < 32 || tag(head, 0, 2) !== 'AC') return null;
+  if (head.length < 32 || ascii(head, 0, 2) !== 'AC') return null;
 
   const seeker = le32(head, 0x0D);
   if (!seeker || seeker + 20 > file.size) return null;
@@ -151,7 +140,7 @@ const BLEND_MAX_BLOCKS = 64;
 // every block header. Compressed .blend files are skipped (header not readable).
 async function fromBlend(file: Blob): Promise<Bytes | null> {
   const head = await bytes(file, 0, Math.min(HEAD, file.size));
-  if (head.length < 12 || tag(head, 0, 7) !== 'BLENDER') return null;
+  if (head.length < 12 || ascii(head, 0, 7) !== 'BLENDER') return null;
 
   const pointer = head[7] === 0x2D ? 8 : head[7] === 0x5F ? 4 : 0;
   if (!pointer) return null;
@@ -161,7 +150,7 @@ async function fromBlend(file: Blob): Promise<Bytes | null> {
   const headerLen = 16 + pointer;
   let at = 12;
   for (let n = 0; n < BLEND_MAX_BLOCKS && at + headerLen <= head.length; n++) {
-    const code = tag(head, at);
+    const code = ascii(head, at);
     const length = le32(head, at + 4);
     if (code === 'ENDB') break;
     if (length > head.length) break;

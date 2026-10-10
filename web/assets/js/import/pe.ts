@@ -5,10 +5,9 @@
 // No RT_VERSION, no .NET, no NE: picture only.
 
 import { wrapAsIco, isPng, isDrawablePng } from './winimage.ts';
+import { le16, le32 } from '../bytes.ts';
+import type { Bytes } from '../bytes.ts';
 import { oversize, isOversize, mb } from '../consent.ts';
-
-/** A view whose buffer is named, so a subarray of it stays a legal BlobPart. */
-type Bytes = Uint8Array<ArrayBuffer>;
 
 /** The extensions worth looking inside. Every one of these is a PE container. */
 const PE_EXTS = new Set(['exe', 'dll', 'scr', 'cpl', 'ocx', 'mun', 'ax', 'efi']);
@@ -50,10 +49,6 @@ const MIN_EDGE = 16;
 
 /** A PNG member at least this wide is taken in preference to any bitmap. */
 const PNG_ENOUGH = 48;
-
-const le16 = (b: Bytes, i: number) => b[i] | (b[i + 1] << 8);
-const le32 = (b: Bytes, i: number) =>
-  ((b[i] | (b[i + 1] << 8) | (b[i + 2] << 16)) + b[i + 3] * 0x1000000) >>> 0;
 
 /** A leaf's bytes, as the resource tree addresses them. */
 type Leaf = { rva: number, size: number };

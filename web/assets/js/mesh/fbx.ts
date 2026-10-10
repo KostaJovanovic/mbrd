@@ -8,6 +8,7 @@ import {
   CAPS, MAX_ELEMENTS, MAX_TRIANGLES, MeshError, MeshBuild, type Mesh, clamp01, tooBig,
 } from './shared.ts';
 import { inflateZlib } from './zip.ts';
+import { latin1 } from '../bytes.ts';
 import { oversize } from '../consent.ts';
 
 const BIN_MAGIC = 'Kaydara FBX Binary';
@@ -134,8 +135,6 @@ function binary(u8: Uint8Array): Mesh {
 
   return assemble(roots);
 }
-
-const latin1 = (b: Uint8Array) => new TextDecoder('latin1').decode(b);
 
 /** How many times the per-array ceiling one parse may unpack in total. A model
  *  at the triangle ceiling with normals and colours, each indexed, needs about

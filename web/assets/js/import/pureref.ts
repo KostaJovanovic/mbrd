@@ -4,6 +4,7 @@
 // (MIT), which reverse-engineered the 1.10 format PureRef 1.11 still writes.
 // A file whose layout cannot be read gives up its pictures as a grid instead.
 
+import { be32 } from '../bytes.ts';
 import { oversize, mb } from '../consent.ts';
 
 /** The whole file is held, then every picture is copied out of it. */
@@ -86,20 +87,18 @@ type Matrix = [number, number, number, number];
 
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const at = (b: Uint8Array, p: number, sig: number[]) => p + sig.length <= b.length && sig.every((s, i) => b[p + i] === s);
-const u32at = (b: Uint8Array, p: number) => ((b[p] << 24) | (b[p + 1] << 16) | (b[p + 2] << 8) | b[p + 3]) >>> 0;
-
 /** The end of a PNG starting at `p`, walked chunk by chunk to IEND, or -1. */
 function pngEnd(b: Uint8Array, p: number): { end: number, width: number, height: number } | -1 {
   if (!at(b, p, PNG)) return -1;
   let q = p + 8, width = 0, height = 0;
   while (q + 12 <= b.length) {
-    const len = u32at(b, q);
+    const len = be32(b, q);
     if (len > b.length - q - 12) return -1;
     const type = String.fromCharCode(b[q + 4], b[q + 5], b[q + 6], b[q + 7]);
     if (q === p + 8) {
       if (type !== 'IHDR' || len < 8) return -1;
-      width = u32at(b, q + 8);
-      height = u32at(b, q + 12);
+      width = be32(b, q + 8);
+      height = be32(b, q + 12);
     }
     q += 12 + len;
     if (type === 'IEND') return width && height ? { end: q, width, height } : -1;
@@ -144,7 +143,7 @@ const pictureAt = (b: Uint8Array, p: number): (PurPicture & { end: number }) | n
 /** Whether an item record starts at `p`: an offset, then 32 or 34, then "G" in UTF-16. */
 const itemAt = (b: Uint8Array, p: number) => {
   if (p + 14 > b.length) return false;
-  const kind = u32at(b, p + 8);
+  const kind = be32(b, p + 8);
   return (kind === TEXT_ITEM || kind === IMAGE_ITEM) && b[p + 12] === 0 && b[p + 13] === 0x47;
 };
 
@@ -280,7 +279,7 @@ function readLayout(b: Uint8Array): PurRead {
       const found = byStart.get(ref.start);
       if (found !== undefined) return found;
       if (ref.end - ref.start !== 4) return -1;
-      want = u32at(b, ref.start);
+      want = be32(b, ref.start);
       if (want === 0xffffffff) return -1;
     }
     return -1;

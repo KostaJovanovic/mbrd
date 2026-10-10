@@ -5,9 +5,9 @@
 // declined (no browser draws them); DIB and PNG are returned.
 
 import { dibToBmp, isPng } from './winimage.ts';
+import { le16, le32 } from '../bytes.ts';
+import type { Bytes } from '../bytes.ts';
 import { oversize, mb } from '../consent.ts';
-
-type Bytes = Uint8Array<ArrayBuffer>;
 
 const MAGIC = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
 
@@ -31,10 +31,6 @@ export type Compound = {
   sizes(): { name: string, size: number }[];
   head(name: string, n: number): Bytes | null;
 };
-
-const le16 = (b: Bytes, i: number) => b[i] | (b[i + 1] << 8);
-const le32 = (b: Bytes, i: number) =>
-  ((b[i] | (b[i + 1] << 8) | (b[i + 2] << 16)) + b[i + 3] * 0x1000000) >>> 0;
 
 export const isCompound = (b: Uint8Array) =>
   b.length >= 8 && MAGIC.every((v, i) => b[i] === v);

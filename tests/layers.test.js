@@ -215,6 +215,8 @@ const BASE = new Set([
   // A picture's dimensions from its header, importing nothing: import/ asks
   // before a decode, canvas/display.ts before deciding a copy is worth it.
   'image-header.ts',
+  // The byte readers every hand-written parser shares, importing nothing.
+  'bytes.ts',
   // The interface's own sounds: read from four tiers, so must sit under all
   // of them. recipes.ts imports nothing; the engine touches `document` only
   // inside a function. ui/sound-lab.ts, the bench, stays in ui/.

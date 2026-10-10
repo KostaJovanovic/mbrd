@@ -4,6 +4,7 @@
 // directory. Fallback: bounded SOI/EOI marker scan. All offsets validated;
 // malformed files return null (grey card, same as before).
 
+import { ascii, bytes, le32 } from '../bytes.ts';
 import { oversize, isOversize, mb } from '../consent.ts';
 
 // Ceilings — "file is lying" backstops, not correctness bounds.
@@ -59,15 +60,6 @@ export async function embeddedPreview(file: Blob, lift = false): Promise<File | 
   }
 }
 
-// ---------------------------------------------------------------------------
-// Reading
-// ---------------------------------------------------------------------------
-
-async function bytes(file: Blob, start: number, length: number): Promise<Uint8Array> {
-  if (start < 0 || length <= 0 || start >= file.size) return new Uint8Array(0);
-  const end = Math.min(start + length, file.size);
-  return new Uint8Array(await file.slice(start, end).arrayBuffer());
-}
 
 /** JPEG by its own first bytes, the one format this module ever returns. */
 const isJpeg = (b: Uint8Array) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
@@ -233,11 +225,6 @@ async function fromX3f(file: Blob, lift = false): Promise<Blob | null> {
 
 /** X3F is little-endian throughout, unlike the TIFF walk above which reads
  *  whichever order the file declares. */
-const le32 = (b: Uint8Array, i: number) =>
-  (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16)) + b[i + 3] * 0x1000000;
-
-const ascii = (b: Uint8Array, i: number, n: number) =>
-  i + n <= b.length ? String.fromCharCode(...b.subarray(i, i + n)) : '';
 
 // ---------------------------------------------------------------------------
 // Marker scan  -  the fallback

@@ -4,8 +4,7 @@
 // Single module so the logic is not duplicated across callers with subtle
 // differences (edge normalisation, colour count). All fields bounds-checked.
 
-/** A view whose buffer is named, so a subarray of it stays a legal BlobPart. */
-type Bytes = Uint8Array<ArrayBuffer>;
+import type { Bytes } from '../bytes.ts';
 
 /** Second fence (callers already bound their reads). 64 MB far exceeds any
  * real icon/clipboard bitmap. */

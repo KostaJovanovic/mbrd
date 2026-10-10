@@ -7,9 +7,7 @@
 import { readZip } from '../storage/zip.ts';
 import { isDrawablePng } from './winimage.ts';
 import { byLocal, resolveFrom, xmlPart, type Entries } from './ooxml.ts';
-
-/** A view whose buffer is named, so a subarray of it stays a legal BlobPart. */
-type Bytes = Uint8Array<ArrayBuffer>;
+import type { Bytes } from '../bytes.ts';
 
 /** Max inflated size. Higher than documents — apps are legitimately larger. */
 const MAX_INFLATED = 320 * 1024 * 1024;

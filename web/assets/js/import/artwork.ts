@@ -4,6 +4,8 @@
 // Every path returns null on failure; a card with no cover is the normal case.
 
 import { extOf } from '../util.ts';
+import { ascii, be24, be32, bytes, syncsafe } from '../bytes.ts';
+import type { Bytes } from '../bytes.ts';
 import { oversize, isOversize, mb } from '../consent.ts';
 
 /** A Vorbis-comment pair: `['ARTIST', 'Talk Talk']`. */
@@ -14,9 +16,6 @@ type ImageType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 
 /** Payload bounds of one MP4 atom. */
 type AtomRange = { start: number, end: number };
-
-/** Uint8Array backed by ArrayBuffer - required because SharedArrayBuffer is not a BlobPart. */
-type Bytes = Uint8Array<ArrayBuffer>;
 
 // Liftable ceiling - a cover past this is offered, not refused.
 const MAX_ART = 12 * 1024 * 1024;
@@ -93,19 +92,6 @@ function clean(pairs: TagPair[] | null): TagPair[] {
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------
-
-async function bytes(file: Blob, start: number, length: number): Promise<Bytes> {
-  if (start < 0 || length <= 0 || start >= file.size) return new Uint8Array(0);
-  return new Uint8Array(await file.slice(start, start + length).arrayBuffer());
-}
-
-const be32 = (b: Bytes, i: number) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
-const be24 = (b: Bytes, i: number) => (b[i] << 16) | (b[i + 1] << 8) | b[i + 2];
-const ascii = (b: Bytes, i: number, n: number) => String.fromCharCode(...b.subarray(i, i + n));
-
-// Synchsafe integer: 7 bits per byte, avoids 0xFF that looks like a frame header.
-const syncsafe = (b: Bytes, i: number) =>
-  (b[i] << 21) | (b[i + 1] << 14) | (b[i + 2] << 7) | b[i + 3];
 
 // Identify picture format by magic bytes.
 function sniff(b: Bytes): ImageType | '' {

@@ -5,6 +5,8 @@
 // never an import error. All counts from the file are bounds-checked.
 
 import { streamDuration } from './artwork.ts';
+import { ascii, be16, be24, be32, bytes, le16, le32, syncsafe } from '../bytes.ts';
+import type { Bytes } from '../bytes.ts';
 
 /** Optional fields — absent means "not stated", not "unknown". */
 export type MediaFacts = {
@@ -42,20 +44,20 @@ export async function mediaFacts(file: Blob, ext = ''): Promise<MediaFacts | nul
 }
 
 async function read(file: Blob, head: Bytes, ext: string): Promise<MediaFacts | null> {
-  if (tag(head, 0) === 'RIFF') {
-    const form = tag(head, 8);
+  if (ascii(head, 0) === 'RIFF') {
+    const form = ascii(head, 8);
     if (form === 'WAVE') return riffWave(head);
     if (form === 'AVI ') return riffAvi(head);
     return null;
   }
-  if (tag(head, 0) === 'FORM') {
-    const form = tag(head, 8);
+  if (ascii(head, 0) === 'FORM') {
+    const form = ascii(head, 8);
     if (form === 'AIFF' || form === 'AIFC') return aiff(head);
     return null;
   }
-  if (tag(head, 0) === 'fLaC') return flac(head);
-  if (tag(head, 0) === 'OggS') return await ogg(file, head);
-  if (tag(head, 0, 3) === 'FLV') return flv(head);
+  if (ascii(head, 0) === 'fLaC') return flac(head);
+  if (ascii(head, 0) === 'OggS') return await ogg(file, head);
+  if (ascii(head, 0, 3) === 'FLV') return flv(head);
   if (isEbml(head)) return matroska(head);
   if (isAsf(head)) return asf(head);
   if (isMp4(head)) return mp4(head);
@@ -68,7 +70,7 @@ async function read(file: Blob, head: Bytes, ext: string): Promise<MediaFacts | 
   // AC-3/DTS: sync word too short, confirmed by extension.
   if ((ext === 'ac3' || ext === 'eac3') && head[0] === 0x0b && head[1] === 0x77) return ac3(file, head);
   if (ext === 'dts' || ext === 'dtshd') return dts(file, head);
-  if (tag(head, 0, 5) === '#!AMR') return await amr(file, head);
+  if (ascii(head, 0, 5) === '#!AMR') return await amr(file, head);
   if (head[0] === 0x47 || isMpegPs(head)) return await mpegStream(file, head);
   if (findStart(head, 0) >= 0) return bitstream(head, ext);
   return null;
@@ -102,28 +104,12 @@ const isSpan = (n: unknown): n is number =>
 // Reading
 // ---------------------------------------------------------------------------
 
-type Bytes = Uint8Array<ArrayBuffer>;
-
-async function bytes(file: Blob, start: number, length: number): Promise<Bytes> {
-  if (start < 0 || length <= 0 || start >= file.size) return new Uint8Array(0);
-  return new Uint8Array(await file.slice(start, start + length).arrayBuffer());
-}
-
-const le16 = (b: Bytes, i: number) => b[i] | (b[i + 1] << 8);
-const le32 = (b: Bytes, i: number) => ((b[i] | (b[i + 1] << 8) | (b[i + 2] << 16)) + b[i + 3] * 0x1000000);
-const be16 = (b: Bytes, i: number) => (b[i] << 8) | b[i + 1];
-const be24 = (b: Bytes, i: number) => (b[i] << 16) | (b[i + 1] << 8) | b[i + 2];
-const be32 = (b: Bytes, i: number) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
-
 // 64-bit as double — all values here are well under 2^53.
 const be64 = (b: Bytes, i: number) => be32(b, i) * 0x100000000 + be32(b, i + 4);
 const le64 = (b: Bytes, i: number) => le32(b, i) + le32(b, i + 4) * 0x100000000;
 
-const tag = (b: Bytes, i: number, n = 4) =>
-  i + n <= b.length ? String.fromCharCode(...b.subarray(i, i + n)) : '';
-
-const isID3 = (h: Bytes) => tag(h, 0, 3) === 'ID3' && h[3] < 5;
-const isMp4 = (h: Bytes) => tag(h, 4) === 'ftyp' || tag(h, 4) === 'moov' || tag(h, 4) === 'mdat';
+const isID3 = (h: Bytes) => ascii(h, 0, 3) === 'ID3' && h[3] < 5;
+const isMp4 = (h: Bytes) => ascii(h, 4) === 'ftyp' || ascii(h, 4) === 'moov' || ascii(h, 4) === 'mdat';
 const isEbml = (h: Bytes) => h[0] === 0x1a && h[1] === 0x45 && h[2] === 0xdf && h[3] === 0xa3;
 const isAsf = (h: Bytes) => h[0] === 0x30 && h[1] === 0x26 && h[2] === 0xb2 && h[3] === 0x75
   && h[4] === 0x8e && h[5] === 0x66 && h[6] === 0xcf && h[7] === 0x11;
@@ -146,12 +132,12 @@ function walkChunks(
   const u32 = little ? le32 : be32;
   let at = from;
   for (let n = 0; n < MAX_CHUNKS && at + 8 <= to; n++) {
-    const name = tag(b, at);
+    const name = ascii(b, at);
     const len = u32(b, at + 4);
     const body = at + 8;
     if (!(len >= 0) || body > to) return;
     if (name === 'LIST' || name === 'RIFF' || name === 'FORM') {
-      if (visit(tag(b, body), body + 4, Math.max(0, len - 4))) return;
+      if (visit(ascii(b, body), body + 4, Math.max(0, len - 4))) return;
       walkChunks(b, body + 4, Math.min(to, body + len), little, visit);
     } else if (visit(name, body, len)) {
       return;
@@ -322,11 +308,11 @@ async function ogg(file: Blob, head: Bytes): Promise<MediaFacts | null> {
   // segment table, whose length is the byte before it.
   const segs = head[26];
   const body = 27 + segs;
-  if (tag(head, body, 7) === '\x01vorbis') {
+  if (ascii(head, body, 7) === '\x01vorbis') {
     rate = le32(head, body + 12);
     out.channels = head[body + 11];
     out.container = 'Ogg Vorbis';
-  } else if (tag(head, body, 8) === 'OpusHead') {
+  } else if (ascii(head, body, 8) === 'OpusHead') {
     rate = 48000;                                   // granules are always 48 kHz
     preSkip = le16(head, body + 10);
     out.channels = head[body + 9];
@@ -335,7 +321,7 @@ async function ogg(file: Blob, head: Bytes): Promise<MediaFacts | null> {
     // what the granule counts in.
     const input = le32(head, body + 12);
     if (input > 0) out.sampleRate = input;
-  } else if (tag(head, body, 7) === '\x80theora') {
+  } else if (ascii(head, body, 7) === '\x80theora') {
     out.container = 'Ogg Theora';
     // Three version bytes, the frame size in macroblocks, and then the picture
     // itself as two 24-bit fields. The picture is the one to read: the frame is
@@ -468,7 +454,7 @@ function mp3(file: Blob, head: Bytes): MediaFacts | null {
  */
 function xingFrames(b: Bytes, h: number, verBits: number, mono: boolean): number {
   const xingAt = h + 4 + (verBits === 3 ? (mono ? 17 : 32) : (mono ? 9 : 17));
-  const name = tag(b, xingAt);
+  const name = ascii(b, xingAt);
   if (name === 'Xing' || name === 'Info') {
     const flags = be32(b, xingAt + 4);
     // Bit 0 is "frames field present", and it is the only field this wants -
@@ -477,13 +463,10 @@ function xingFrames(b: Bytes, h: number, verBits: number, mono: boolean): number
     if (flags & 0x01) return be32(b, xingAt + 8);
     return 0;
   }
-  if (tag(b, h + 4 + 32) === 'VBRI') return be32(b, h + 4 + 32 + 14);
+  if (ascii(b, h + 4 + 32) === 'VBRI') return be32(b, h + 4 + 32 + 14);
   return 0;
 }
 
-/** ID3's synchsafe integer - seven bits a byte. See import/artwork.ts. */
-const syncsafe = (b: Bytes, i: number) =>
-  (b[i] << 21) | (b[i + 1] << 14) | (b[i + 2] << 7) | b[i + 3];
 
 // ---------------------------------------------------------------------------
 // MP4  -  .mp4, .m4v, .mov, .m4a, .m4b, .3gp
@@ -572,7 +555,7 @@ function eachAtom(
       size = to - at;
     }
     if (size < headLen || at + size > to) return;
-    if (tag(b, at + 4) === type && visit({ start: at + headLen, end: at + size })) return;
+    if (ascii(b, at + 4) === type && visit({ start: at + headLen, end: at + size })) return;
     at += size;
   }
 }
@@ -714,7 +697,7 @@ function asf(head: Bytes): MediaFacts | null {
   // Header object: GUID(16) + size(8) + object count(4) + two reserved bytes.
   let at = 30;
   for (let n = 0; n < MAX_CHUNKS && at + 24 <= head.length; n++) {
-    const guid = tag(head, at, 16);
+    const guid = ascii(head, at, 16);
     const size = le64(head, at + 16);
     if (!(size >= 24)) break;
     const body = at + 24;
@@ -728,7 +711,7 @@ function asf(head: Bytes): MediaFacts | null {
       // with the encoded picture size - two 32-bit fields ahead of the
       // BITMAPINFOHEADER, which states the same thing again and sometimes
       // disagrees with it after a crop.
-      if (tag(head, body, 16) === ASF_VIDEO_MEDIA) {
+      if (ascii(head, body, 16) === ASF_VIDEO_MEDIA) {
         out.width = le32(head, body + 54);
         out.height = le32(head, body + 58);
       }
@@ -765,7 +748,7 @@ function flv(head: Bytes): MediaFacts | null {
     const len = be16(head, i);
     if (len < 5 || len > 8) continue;               // duration/width/height only
     if (i + 11 + len > head.length) continue;
-    const name = tag(head, i + 2, len);
+    const name = ascii(head, i + 2, len);
     if ((name !== 'duration' && name !== 'width' && name !== 'height') || found.has(name)) continue;
     if (head[i + 2 + len] !== 0x00) continue;       // AMF0 number
     const dv = new DataView(head.buffer, head.byteOffset + i + 2 + len + 1, 8);
@@ -887,10 +870,10 @@ const AMR_WB_BYTES = [18, 24, 33, 37, 41, 47, 51, 59, 61, 6, 0, 0, 0, 0, 1, 1];
  * which are small.
  */
 async function amr(file: Blob, head: Bytes): Promise<MediaFacts | null> {
-  const wide = tag(head, 0, 9) === '#!AMR-WB\n';
+  const wide = ascii(head, 0, 9) === '#!AMR-WB\n';
   const table = wide ? AMR_WB_BYTES : AMR_NB_BYTES;
   let at = wide ? 9 : 6;
-  if (!wide && tag(head, 0, 6) !== '#!AMR\n') return null;
+  if (!wide && ascii(head, 0, 6) !== '#!AMR\n') return null;
   let chunk = head;
   let base = 0;
   let frames = 0;
