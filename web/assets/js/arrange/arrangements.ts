@@ -182,8 +182,8 @@ const SPIRAL_SWEEP = Math.PI / 2;
 const SPIRAL_TRIES = 7;
 
 /** With flatTop, how far above the centre the cut runs, as a share of the
- *  disc's radius: the top edge is then 60% of the widest row. */
-const FLAT_TOP = 0.8;
+ *  disc's radius: the top edge is then 76% of the widest row. */
+const FLAT_TOP = 0.65;
 /** Golden angles a spiral card may skip for landing in the cut-off cap, and
  *  the downward directions tried if every one of them did. */
 const FLAT_SKIPS = 32;
@@ -218,12 +218,12 @@ const LAYOUTS: Record<string, Layout> = {
     // Variation: rotate the whole spiral.
     const rnd = variation(o);
     const phase = rnd ? rnd() * Math.PI * 2 : 0;
-    if (!o.flatTop) return phyllotaxis(items, o, phase, -Infinity);
+    if (!o.flatTop) return phyllotaxis(items, o, phase, Infinity);
     // Cut against the disc this spiral actually makes, which packs looser than
     // its cards' area says, so an estimate put the cut too low and the top too wide.
-    const whole = phyllotaxis(items, { ...o, center: { x: 0, y: 0 } }, phase, -Infinity);
+    const whole = phyllotaxis(items, { ...o, center: { x: 0, y: 0 } }, phase, Infinity);
     const reach = Math.max(...whole.map((p, k) => Math.hypot(p.x, p.y) + roomFor(items[k], o.spacing).hh));
-    return phyllotaxis(items, o, phase, -Math.max(FLAT_TOP * reach, tallestHalf(items, o.spacing)));
+    return phyllotaxis(items, o, phase, Math.max(FLAT_TOP * reach, tallestHalf(items, o.spacing)));
   },
 
   /** Columns, each item dropped into the currently shortest one. */
@@ -286,28 +286,35 @@ const LAYOUTS: Record<string, Layout> = {
   /** Loose scatter in a disc whose area grows with item count. */
   scatter(items, o) {
     const area = items.reduce((s, i) => s + (i.w + o.spacing) * (i.h + o.spacing), 0);
-    const R = Math.sqrt(area / (Math.PI * SCATTER_FILL));
+    // With a flat top, the disc grows by the cap it loses, so the cards fit below the cut.
+    const t = FLAT_TOP;
+    const kept = o.flatTop ? 1 - (Math.acos(t) - t * Math.sqrt(1 - t * t)) / Math.PI : 1;
+    const R = Math.sqrt(area / (Math.PI * SCATTER_FILL * kept));
     const rnd = mulberry32(o.seed ?? (items.length * 2654435761 >>> 0));
-    const top = o.flatTop ? -Math.max(FLAT_TOP * R, tallestHalf(items, o.spacing)) : -Infinity;
+    const cut = o.flatTop ? Math.max(FLAT_TOP * R, tallestHalf(items, o.spacing)) : Infinity;
     const placed: Placed[] = [];
-    return items.map(it => {
+    for (const it of items) {
       const box = roomFor(it, o.spacing);
-      let a = 0, r = 0;
-      // With a flat top, a spot in the cut-off cap is drawn again, so the cards
-      // spread evenly over what is left of the disc.
+      let r = 0;
+      let dir = { x: 1, y: 0 };
+      let at = dir;
+      // With a flat top, a spot that lands in the cut-off cap, or slides into
+      // it, is drawn again, so the cards spread evenly over what is left.
       for (let draws = 0; draws < FLAT_DRAWS; draws++) {
-        a = rnd() * Math.PI * 2;
+        const a = rnd() * Math.PI * 2;
         r = Math.sqrt(rnd()) * R;   // sqrt keeps the density even across the disc
-        if (r * Math.sin(a) - box.hh >= top) break;
+        if (r * Math.sin(a) + box.hh > cut) continue;
+        dir = { x: Math.cos(a), y: Math.sin(a) };
+        // Slide outward only, never back towards the middle.
+        at = slideOut(dir, box, placed, r);
+        if (at.y + box.hh <= cut) break;
       }
-      const dir = { x: Math.cos(a), y: Math.sin(a) };
-      // Slide outward only, never back towards the middle.
-      let at = slideOut(dir, box, placed, r);
-      // Slid past the cut: the same spot mirrored below the centre line.
-      if (at.y - box.hh < top) at = slideOut({ x: dir.x, y: Math.abs(dir.y) }, box, placed, r);
+      // Still past the cut: the last spot mirrored below the centre line.
+      if (at.y + box.hh > cut) at = slideOut({ x: dir.x, y: -Math.abs(dir.y) }, box, placed, r);
       placed.push({ ...box, x: at.x, y: at.y });
-      return { x: o.center.x + at.x, y: o.center.y + at.y };
-    });
+    }
+    if (cut < Infinity) liftToCut(placed, cut);
+    return placed.map(p => ({ x: o.center.x + p.x, y: o.center.y + p.y }));
   },
 };
 
@@ -568,22 +575,22 @@ const tallestHalf = (items: ArrangeItem[], gap: number) =>
   Math.max(...items.map(i => (i.h + gap) / 2));
 
 /**
- * The spiral's body. `top` is the cut in layout space (y runs down, so it is
- * negative), or -Infinity for none.
+ * The spiral's body. `cut` is the flat top in layout space, where y runs up
+ * (arrange() flips it for the board), or Infinity for none.
  *
  * `n` is the place in the golden sequence: one step per card, plus a step for
  * each angle that would land in the cut-off cap. Skipped rather than bent
  * round the cut, so the rest of the disc fills as it would and the cut row is
  * a chord, not a ledge the cap's cards pile along.
  */
-function phyllotaxis(items: ArrangeItem[], o: Laying, phase: number, top: number): Point[] {
+function phyllotaxis(items: ArrangeItem[], o: Laying, phase: number, cut: number): Point[] {
   const golden = Math.PI * (3 - Math.sqrt(5));
   const placed: Placed[] = [];
   let n = 0;
   for (const it of items) {
     const box = roomFor(it, o.spacing);
     const land = (a: number) => slideOut({ x: Math.cos(a), y: Math.sin(a) }, box, placed);
-    const clear = (at: Point) => at.y - box.hh >= top;
+    const clear = (at: Point) => at.y + box.hh <= cut;
     const best: { at: Point | null, near: number } = { at: null, near: Infinity };
     const aim = (a: number) => {
       const at = land(a);
@@ -598,13 +605,43 @@ function phyllotaxis(items: ArrangeItem[], o: Laying, phase: number, top: number
     }
     // Every angle tried landed in the cap: any way down will do, and one does,
     // since the cut clears the tallest card standing on the centre line.
-    for (let k = 0; !best.at && k < FLAT_TRIES; k++) aim(Math.PI * (k + 0.5) / FLAT_TRIES);
+    for (let k = 0; !best.at && k < FLAT_TRIES; k++) aim(-Math.PI * (k + 0.5) / FLAT_TRIES);
     // SAFETY: rays are never axis-aligned here, so slideOut() always lands,
     // and the downward rays above always clear the cut.
     const landed = best.at as Point;
     placed.push({ ...box, x: landed.x, y: landed.y });
   }
+  if (cut < Infinity) liftToCut(placed, cut);
   return placed.map(p => ({ x: o.center.x + p.x, y: o.center.y + p.y }));
+}
+
+/**
+ * Square the top row against the cut. A skipped angle leaves the cards under
+ * the cap short of it, each at its own height. Each card in the chord's span
+ * within half its height of the cut rises straight up to the cut or the card
+ * above. Only inside the chord, since lifting the flanks grew shoulders, and
+ * only half a card, since a whole one left a hole under the row.
+ */
+function liftToCut(placed: Placed[], cut: number): void {
+  const reach = Math.max(...placed.map(p => Math.hypot(p.x, p.y) + p.hh));
+  const chord = Math.sqrt(Math.max(0, reach * reach - cut * cut));
+  const rose = new Map<Placed, number>();
+  // Highest first, so a card rises to rest under one that already has.
+  for (const c of [...placed].sort((a, b) => (b.y + b.hh) - (a.y + a.hh))) {
+    if (Math.abs(c.x) > chord) continue;
+    let y = cut - c.hh;
+    let most = 2 * c.hh;
+    let under = false;
+    for (const p of placed) {
+      if (p === c || p.y <= c.y || Math.abs(p.x - c.x) >= p.hw + c.hw) continue;
+      y = Math.min(y, p.y - p.hh - c.hh);
+      if (!under) most = 0;
+      under = true;
+      most = Math.max(most, rose.get(p) ?? 0);
+    }
+    y = Math.min(y, c.y + most);
+    if (y > c.y) { rose.set(c, y - c.y); c.y = y; }
+  }
 }
 
 /** The nth cell of a square spiral: 0 -> (0,0), then outward ring by ring. */
