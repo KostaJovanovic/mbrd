@@ -45,14 +45,12 @@ const DRAG_SLOP = 3;      // screen px before a press becomes a drag
 const DOUBLE_TAP_MS = 350;
 const DOUBLE_TAP_SLOP = 28;
 const TAP_MOVE_SLOP = 12;
-/** Cards per drop worth a sound of their own. Seven is what cuelume/engine.ts
- *  can lay out in its 80ms lookahead at 12ms apart; beyond that, transients
- *  would share an instant and one sample, so the cap costs nothing audible
- *  and saves Web Audio nodes on a drop that can be 500 cards. */
+/** Cards per drop worth a sound of their own: what cuelume/engine.ts fits in
+ *  its 80ms lookahead at 12ms apart. More would share an instant, inaudibly,
+ *  and cost Web Audio nodes on a 500-card drop. */
 const TAP_BURST = 7;
-// How long a finger has to rest before the press means "show me the menu".
-// Long enough not to fire on a slow tap, short enough to feel deliberate;
-// it is the interval both mobile platforms use for the same gesture.
+// A resting finger means "show me the menu" after this; both mobile platforms
+// use the same interval.
 const LONG_PRESS_MS = 480;
 // How long a held card waits before it starts to shrink: past a quick tap, so
 // a tap never twitches. .item.is-pressing's 360ms scale is the rest of the hold.
@@ -60,32 +58,23 @@ const PRESS_SHOW_MS = 120;
 const LONG_PRESS_CONTEXT_GUARD_MS = 900;
 const LONG_PRESS_CONTEXT_GUARD_PX = 24;
 
-// Controls a straddling corner hitbox can cover and must hand the press back
-// to, rather than resize over: buttons (play, mute, the big video play), a
-// link's anchor, the audio card's waveform, a text field. *Not* the full-card
-// surfaces - a model stage, a picture, a note's editable body fill the card
-// corner to corner, and a corner over those is meant to resize. See onDown().
+// Controls a corner grip may overlap but must hand the press back to rather
+// than resize over. Not full-card surfaces (a model stage, a picture, a note's
+// body): a corner over those is meant to resize. See onDown().
 const GRIP_YIELD = 'button, a[href], input, .wave';
 
-// Item types the card grid floor (CARD_FLOOR_CELLS) does not bind: a note and a
-// text card are walls of words sized by their content, a title is a masthead
-// with its own aspect, a swatch is a colour chip, a sticker is a mark, a ghost
-// is a drag preview with no grips, and a fence carries its own floor
-// (carryFloor). Everything else is a card and may not be dragged below three
-// cells across by two down. See the resize floor in onMove().
+// Types the three-by-two cell floor (CARD_FLOOR_CELLS) does not bind: sized by
+// content (note, text), their own aspect (title, swatch, sticker, drawing), no
+// grips (ghost), or their own floor (fence, carryFloor). See onMove().
 const NO_GRID_FLOOR = new Set<string>([
   'note', 'text', 'title', 'swatch', 'sticker', 'ghost', 'fence', 'drawing',
 ]);
 
-/** A geometry snapshot as state.ts hands one back. Named off the function
- *  rather than imported from layout.ts, since state.ts re-exports
- *  snapshotGeom only as a value - reaching past the one door for the type
- *  alone would add a second edge in the graph for a single idea. */
+/** A geometry snapshot, typed off the function so the type does not need a
+ *  second import edge past state.ts. */
 type GeomSnap = ReturnType<typeof snapshotGeom>[number];
 
-/** A place the pointer was, and when. The shape every timing window in this
- *  file compares: a double tap, the native context menu repeating a hold,
- *  a tap that may still be the first half of something. */
+/** A place the pointer was, and when: what every timing window here compares. */
 export type TapPoint = { x: number, y: number, at: number };
 
 /** Whether two touch points form the two taps of one deliberate gesture. */
@@ -104,10 +93,8 @@ export function needsSelectionBeforeMove(selected: ReadonlySet<string>, id: stri
   return !selected.has(id);
 }
 
-/** Whether a global canvas shortcut must stand down for this keystroke: the
- *  event was already handled (context menu's capture listener preventDefault-s
- *  its keys) or an overlay owns the keyboard (modal, open menu). Out of the
- *  keydown handler so it's testable without a DOM. See AUD-08. */
+/** Whether a canvas shortcut must stand down: the event was already handled
+ *  (the context menu's capture listener) or an overlay owns the keyboard. */
 export function shortcutsSuppressed(
   defaultPrevented: boolean,
   overlayOwnsKeyboard: boolean,
@@ -115,9 +102,8 @@ export function shortcutsSuppressed(
   return !!(defaultPrevented || overlayOwnsKeyboard);
 }
 
-/** A mouse or pen pointerup that leaves a button down ends nothing - see
- *  endPointer. Asks `buttons` only, never `button`: the last release of a chord
- *  can be the right or an aux button. Out of the handler so a test can state it. */
+/** A mouse or pen pointerup that leaves a button down ends nothing (endPointer).
+ *  Asks `buttons`, never `button`: a chord's last release can be any button. */
 export function liftWithButtonsHeld(
   e: { type: string, pointerType: string, buttons: number },
 ): boolean {
@@ -139,9 +125,8 @@ const VIEW_KEYS = new Set(['0', '1', 'f', 'F', '+', '=', '-', '_', 'z', 'Z', 'Ho
 /** Ctrl with one of these is the board's zoom, not the page's - see the keydown handler. */
 const ZOOM_KEYS = new Set(['+', '=', '-', '_', '0']);
 
-/** How long a pause ends a run of nudges. A key held down repeats every 30-50
- *  ms; somebody tapping an arrow to place a card exactly taps well inside a
- *  second. A press later than this starts a step of its own. */
+/** A pause this long ends a run of nudges, so a run is one undo step. Key
+ *  repeat is 30-50ms, and careful tapping stays well inside a second. */
 const NUDGE_RUN_MS = 1000;
 
 // ---------------------------------------------------------------------------
@@ -167,14 +152,11 @@ export type PressIntent =
 export type PressFacts = {
   pointerType: string;
   button: number;
-  /** shift, ctrl, meta, or multi-select mode - the four the cascade treats
-   *  identically. A fact here, not a call inside the cascade, so pressIntent()
-   *  stays a function of its argument alone. */
+  /** shift, ctrl, meta, or multi-select mode, which the cascade treats alike. */
   additive: boolean;
-  /** `additive` comes from the multi-select mode alone, with no key held. A
-   *  drag on bare board then pans rather than bands: the mode is for picking
-   *  across a board bigger than the screen, and the double-tap swipe still
-   *  draws the band. */
+  /** `additive` comes from multi-select mode alone, no key held. A drag on bare
+   *  board then pans rather than bands, so picking works across a big board;
+   *  the double-tap swipe still draws the band. */
   picking?: boolean;
   spaceDown: boolean;
   /** Z held on a canvas board: a primary press draws the box to zoom into. */
@@ -187,11 +169,9 @@ export type PressFacts = {
   onCard: string | null;
   /** Is that card's geometry pinned - `meta.locked`? */
   locked: boolean;
-  /** Is it a sticky fixed to a host, stuck and past its settle? A pinned
-   *  note/sticker's place and size are already its host's, so this is a
-   *  different refusal than `locked`: a locked card is immovable and the
-   *  press pans like bare board; a pinned sticky moves with its host, so a
-   *  grip press on one falls through to mean what any other press means. */
+  /** A sticky stuck to a host and past its settle. Unlike `locked` (immovable,
+   *  the press pans), it moves with its host, so only a grip press is refused
+   *  and falls through to mean what any other press means. */
   pinned: boolean;
   /** Is it unpicked, so a drag would have to select it first? */
   needsTapFirst: boolean;
@@ -201,9 +181,8 @@ export type PressFacts = {
   /** The second tap of a touch double tap on empty board. */
   doubleTapDrag: boolean;
   isMobile: boolean;
-  /** Is a tour running? The board is being shown, not worked on: nothing
-   *  moves, resizes, is picked up, or drives the view (see branch below). A
-   *  fact here for the same reason as `additive`. */
+  /** A tour is running: the board is shown, not worked on, so nothing moves,
+   *  resizes or drives the view. */
   touring: boolean;
   /** Is the Timeline playing? The board is read-only then, and a press pans. */
   viewOnly: boolean;
@@ -219,18 +198,12 @@ export type PressFacts = {
 export function pressIntent(f: PressFacts): PressIntent {
   const middle = f.button === 1;
   if (f.zoomBox && f.button === 0 && !f.touring) return { kind: 'zoomBox' };
-  // While the Timeline plays, the board changes under the replay and nothing
-  // else may change it: every press pans, a control in a card included. Pan,
-  // not frozen, because unlike a tour the view is the reader's.
+  // The Timeline replay owns the board: every press pans, card controls
+  // included. Pan rather than frozen, because the view is still the reader's.
   if (f.viewOnly) return { kind: 'pan', middle };
   if (f.onWidget && !f.spaceDown && !middle) return { kind: 'widget' };
-  // While a tour runs the board is frozen: a press takes hold of nothing and
-  // drives nothing. Above the grip branch as well as the move one, so a card
-  // selected when the tour started cannot be resized by its corners either -
-  // and above the space-and-middle pan, because the stops are framed shots and
-  // a viewer who has panned off one has no way back but the next stop. Not a
-  // lockedPan: that says cards may not move and leaves the view to whoever
-  // pressed hardest.
+  // A tour freezes everything, view included: its stops are framed shots, and
+  // panning off one leaves no way back. Above the grip and pan branches for that.
   if (f.touring) return { kind: 'frozen' };
   if (f.spaceDown || middle) return { kind: 'pan', middle };
   if (f.onGrip && f.onCard && f.selectionSize <= 1 && !f.locked && !f.pinned) {
@@ -241,10 +214,7 @@ export function pressIntent(f: PressFacts): PressIntent {
     return { kind: 'tapGate', id: f.onCard, additive: f.additive };
   }
   if (f.onCard) {
-    // The four card branches carry the id rather than leaving the caller to
-    // reach for it again - the same string the facts arrived with. A branch
-    // that only exists because there *was* a card says so in its own type, so
-    // nothing downstream has to assert it.
+    // The card branches carry the id in their type, so nothing downstream asserts it.
     const carried = { id: f.onCard, additive: f.additive, wasSelected: f.wasSelected };
     return f.locked ? { kind: 'lockedPan', ...carried } : { kind: 'move', ...carried };
   }
@@ -263,14 +233,10 @@ export function repeatsLongPressContextMenu(
     && Math.hypot(event.x - opened.x, event.y - opened.y) <= LONG_PRESS_CONTEXT_GUARD_PX;
 }
 
-// Screen pixels of diagonal before a rubber band counts as a rectangle somebody
-// drew, rather than a click that happened to be modified. A shift-click on
-// empty board starts a marquee of zero size (startMarquee runs on the press,
-// not on the first movement), and that gesture means "clear the selection", not
-// "here is a region" - so the offer that follows a band has to tell them apart.
-// Comfortably above DRAG_SLOP: crossing the slop makes it a drag, this makes it
-// a rectangle, and the gap is the band where a wobbly click selects things
-// without also being asked about fencing them.
+// Screen pixels of diagonal before a band counts as a drawn rectangle rather
+// than a modified click (which starts a zero-size marquee and means "clear the
+// selection"). Above DRAG_SLOP, so a wobbly click selects without being offered
+// a fence.
 const MARQUEE_DRAWN = 16;
 
 /** Did this marquee draw a rectangle, or was it a modified click? */
@@ -286,20 +252,11 @@ export function drewRectangle(
 /**
  * Is this item caught by a band over `[x0,x1] x [y0,y1]`?
  *
- * A card by overlap, a fence only by being covered outright. The asymmetry is
- * the fence's own: it is the one item whose face takes no presses - items.css
- * hands them through to whatever is underneath - so a band swept across that
- * face is drawn *inside* the region rather than aimed at it. A fence is always
- * larger than what is drawn inside it, so under one rule for both, every band
- * within a region caught the region: the offer that follows counted it, the
- * fence it drew was unioned out to swallow the parent it was drawn inside, and
- * dragging what the band caught towed the whole region. To take a fence, put
- * the band round it - or press its name.
+ * A card by overlap, a fence only when covered outright. A fence's face takes
+ * no presses, so a band across it is drawn inside the region, not aimed at it;
+ * by overlap, every band inside a region would catch the region too.
  */
 export function marqueeHit(
-  // A box and which kind of thing it is - the whole of what the two rules read,
-  // the same bargain commands/fences.ts's `Boxed` makes, and what lets a test
-  // hand this a rectangle rather than a whole board item.
   it: Box & { type?: string },
   x0: number, y0: number, x1: number, y1: number,
 ): boolean {
@@ -382,13 +339,8 @@ export function carryFloor(
   return { w: Math.min(box.w, w), h: Math.min(box.h, h) };
 }
 
-/**
- * Decide whether a press on a resize grip is still a tap or has become a drag.
- *
- * A grip waits for real movement before a resize starts, which keeps a plain
- * tap from snapping or committing geometry. A tap that never crosses the slop
- * does nothing; the context menu is reached by right-click or long-press.
- */
+/** Whether a grip press has moved far enough to resize. A tap on a grip does
+ *  nothing, so it never snaps or commits geometry. */
 export function resizeHandleAction(
   start: Point | null | undefined,
   current: Point | null | undefined,
@@ -410,49 +362,31 @@ export function resizeHandleAction(
 /** Pixels one line of a deltaMode 1 event is taken to be. */
 const WHEEL_LINE = 16;
 
-/**
- * How large a single step has to be before it is taken for a wheel notch.
- *
- * Under every mouse in use: 100 in Chrome and Safari, 120 with some Windows
- * drivers, 3 lines in Firefox (which is deltaMode 1 and never reaches this).
- * Over anything a swipe opens with.
- */
+/** A single step at least this large is a wheel notch: under every mouse (100
+ *  in Chrome and Safari, 120 on some Windows drivers; Firefox uses deltaMode 1),
+ *  over anything a swipe opens with. */
 export const WHEEL_NOTCH = 40;
 
 /** How long after one wheel event another still belongs to the same gesture. */
 export const WHEEL_STREAM_MS = 200;
 
-/**
- * How much of a zoom one unit of delta is worth, per source.
- *
- * Two numbers because the devices count in different units. A wheel notch is a
- * hundred at a time and wants a small coefficient; a pinch is a stream of
- * single figures describing how far the fingers moved, and at the wheel's rate
- * it would take a pinch across the whole pad to change anything.
- */
+/** Zoom per unit of delta. A notch is ~100 at once; a pinch is a stream of
+ *  single figures and would barely move at the wheel's rate. */
 const WHEEL_ZOOM_RATE = 0.0016;
 const PINCH_ZOOM_RATE = 0.01;
 
-/**
- * The most one event may be worth, so a flung pad cannot jump the view.
- *
- * One notch and a little. A window that is not focused gets its notches
- * coalesced into one large delta (seen on Linux), and at 400 that was 1.9x an
- * event; at this it is about 1.2x, the same as a single Windows notch.
- */
+/** The most one event may be worth, so a flung pad cannot jump the view. An
+ *  unfocused window on Linux coalesces notches into one delta; at this cap that
+ *  is about 1.2x, a single Windows notch. */
 const WHEEL_MAX_STEP = 120;
 
 /**
- * How soon a hi-res wheel has to deliver a detent for it to be read as one.
- *
- * Chromium on Linux (Wayland, or X11 with libinput 1.19 or later) breaks one
- * detent into several fractional deltas of the same size, 53 * v/120 px each,
- * which classifyWheel() cannot tell from a pad. The run of identical deltas is
- * the tell. This was 24ms, which only a fast spin met: a hand turning one notch
- * takes tens of milliseconds, so a slow turn panned and a quick one zoomed, and
- * the wheel read as random. Long enough for a deliberate notch, short enough
- * that a pad crawling at one quantised step never reaches a notch inside it.
- * **Reasoned, not measured.**
+ * How soon a hi-res wheel must complete a detent to be read as one. Chromium on
+ * Linux (Wayland, or libinput 1.19+) splits a detent into equal fractional
+ * deltas (53 * v/120 px), which classifyWheel() cannot tell from a pad; the run
+ * of identical deltas is the tell. 24ms was too short for a slow hand. Long
+ * enough for a deliberate notch, short enough that a crawling pad never makes
+ * one. Reasoned, not measured.
  */
 const HIRES_DETENT_MS = 250;
 
@@ -460,50 +394,26 @@ const HIRES_DETENT_MS = 250;
 const HIRES_MAX_COALESCED = 4;
 
 /**
- * How much of the lean is handed back when the platform rails a swipe.
- *
- * Measured, not picked. A swipe down this board with a curve in it arrived as
- * 5257px of vertical and 973px of sideways, the sideways half present in only
- * 75 of its 349 events - the fingers went one way and the platform reported a
- * fifth of it. Three brings that back to roughly half: a swipe that goes where
- * it was aimed without the board sliding out from under the hand.
- *
- * It only touches an axis the platform is *withholding* - see unrail() - so a
- * swipe delivered whole is left alone however lopsided it is. It cannot rescue
- * one railed outright: straight sideways reports vertical of exactly zero, and
- * no multiple of zero is a lean.
- *
- * This is the one number to turn if it feels wrong.
+ * How much of a lean is handed back when the platform rails a swipe. Measured:
+ * a curved swipe arrived as 5257px down and 973px across, the across in only 75
+ * of 349 events. Three brings it back to about half. Only touches an axis the
+ * platform is withholding (unrail()), and cannot rescue one railed outright,
+ * which reports exactly zero. The one number to turn if it feels wrong.
  */
 const UNRAIL_GAIN = 3;
 
-/**
- * The most one event may be *boosted* by, in pixels.
- *
- * Not a cap on the movement - what the platform reported passes through
- * untouched, so this can never take away a step the fingers earned. It bounds
- * the invention on top: a delta the driver held back and released in one lump
- * (48px against a 15px-per-event swipe, in the recording) would otherwise be
- * multiplied into a visible sideways jerk.
- */
+/** The most one event may be boosted by, in pixels. What the platform reported
+ *  passes untouched; this bounds the addition, so a delta the driver released
+ *  in one lump does not become a sideways jerk. */
 const UNRAIL_CAP = 40;
 
 /** How quickly the running measures of a gesture follow it. */
 const AXIS_EASE = 0.15;
 
-/**
- * The two devices one wheel event can be coming from, and so the two things it
- * can be asking for. See readWheel(), which is where the guess is made.
- */
+/** The two devices a wheel event may come from: a pad pans, a wheel zooms. */
 export type WheelKind = 'pan' | 'zoom';
 
-/**
- * The little of a WheelEvent any of this reads.
- *
- * Structural rather than `WheelEvent`, for the pure helpers' reason: the
- * classification is the one part of this module a runner with no browser can
- * exercise, and it is exercised by handing it six numbers.
- */
+/** The part of a WheelEvent this reads, structural so a test can pass six numbers. */
 export type WheelSample = {
   deltaX: number,
   deltaY: number,
@@ -513,13 +423,8 @@ export type WheelSample = {
   timeStamp: number,
 };
 
-/**
- * What one wheel event is asking for - see readWheel().
- *
- * `undo` is the pan this burst already made before it turned out to be a hi-res
- * wheel, in the same sign as `dx` / `dy`. The caller gives it back before the
- * zoom, in the same frame, so the board never shows the in-between position.
- */
+/** What one wheel event asks for. `undo` is the pan a burst made before it
+ *  turned out to be a hi-res wheel; the caller gives it back in the same frame. */
 export type WheelAction = {
   kind: WheelKind, dx: number, dy: number, factor: number, undo?: Delta,
 };
@@ -528,14 +433,9 @@ export type WheelAction = {
 let wheelKind: WheelKind = 'zoom';
 let wheelAt = -Infinity;
 
-/**
- * What the burst looks like to the hi-res detent rule - see detent().
- *
- * `step` is the fragment every event so far has carried a whole number of, or
- * NaN once one did not or anything else ruled the burst out. `panX` / `panY`
- * are what the plain events of the burst actually panned, which is what `undo`
- * hands back.
- */
+/** The burst as detent() sees it. `burstStep` is the fragment every event has
+ *  carried a whole number of, NaN once ruled out; `panX`/`panY` are what the
+ *  burst panned, which `undo` hands back. */
 let burstAt = -Infinity;
 let burstDy = 0;
 let burstCount = 0;
@@ -543,38 +443,21 @@ let burstStep = NaN;
 let panX = 0;
 let panY = 0;
 
-/**
- * The fragment of the last detent recognised, so the next burst that opens
- * with it is a wheel from its first event rather than after a notch of pan.
- * NaN until a detent has been seen. A module value, so it lasts the session.
- */
+/** The last recognised detent's fragment, so the next burst opening with it is
+ *  a wheel from its first event. NaN until seen; lasts the session. */
 let hiresStep = NaN;
 
 /** How much each axis has been moving, over this burst alone. */
 let axisX = 0;
 let axisY = 0;
 
-/**
- * How often each axis arrives at all, over this burst alone.
- *
- * Both start at 1 - honest until proven otherwise - so a swipe is never lifted
- * on its first event or two, where the evidence is thinnest and a wrong answer
- * is most visible. A gated axis falls away from 1 within about a tenth of a
- * second and stays down; an axis the platform reports properly never leaves it.
- */
+/** How often each axis arrives at all, over this burst. Start at 1 so a swipe
+ *  is never lifted on thin evidence; a gated axis falls within ~0.1s. */
 let seenX = 1;
 let seenY = 1;
 
-/**
- * Forget the current burst.
- *
- * **Nothing under web/ calls this** - it exists for tests, which need a known
- * starting point between cases and cannot reach four module-level numbers any
- * other way. The alternative is each case opening with a synthetic gap in
- * `timeStamp`, the same reset written less legibly forty times over. Said out
- * loud because it has been mistaken twice for the live way out of a burst. The
- * live way is the gap: WHEEL_STREAM_MS with no event.
- */
+/** Forget the current burst. For tests only: the live way a burst ends is
+ *  WHEEL_STREAM_MS with no event. */
 export function resetWheelKind(): void {
   wheelKind = 'zoom';
   wheelAt = -Infinity;
@@ -588,30 +471,16 @@ export function resetWheelKind(): void {
 /**
  * Give back the part of a lean the platform kept.
  *
- * The measure that decides this is *how often the minor axis arrives*, and not
- * how big it is when it does. Those are two different questions and only the
- * first one is evidence of a rail. Recorded on this machine, from the same pad
- * within a minute of each other:
+ * Decided by how often the minor axis arrives, not by its size, because a rail
+ * zeroes events. Recorded from one pad:
  *
  *   railed   5257px down, 973px across, the across in  75 of 349 events
  *   free      791px down, 1147px across, the across in  58 of  59 events
  *
- * The second is a swipe the platform is reporting faithfully - every event
- * carries both axes, and a hand on that gesture must feel nothing added. Reading
- * the *ratio* cannot tell it from the first: a sideways flick with a little
- * drift in it looks as lopsided as a vertical swipe with the sideways half
- * confiscated, and lifting the drift is the board sliding out from under you.
- * Reading how often the axis shows up tells them apart exactly, because that is
- * the thing the rail actually does - it zeroes events.
- *
- * So the gain rides on the gaps: none, and nothing happens; four events in five
- * missing, and the axis is lifted by nearly UNRAIL_GAIN. What the platform
- * reported is always added to, never replaced - this may hand back movement the
- * driver kept, and can never take away a step the fingers earned.
- *
- * A measure of the burst rather than of one event, necessarily: a single event
- * carrying no sideways is what four out of five look like from inside a rail and
- * also what a perfectly straight moment of a free swipe looks like.
+ * By ratio the two look alike, and lifting a free swipe's drift slides the
+ * board from under the hand. The gain rides on the gaps: none missing, nothing
+ * added; four in five missing, nearly UNRAIL_GAIN. Measured over the burst, as
+ * one event cannot tell a rail from a straight moment.
  */
 /** A drag delta after the rail has taken its share of it. */
 type Delta = { dx: number, dy: number };
@@ -644,12 +513,8 @@ function fragments(v: number, step: number): boolean {
   return whole >= 1 && whole <= HIRES_MAX_COALESCED && Math.abs(k - whole) < 1e-6;
 }
 
-/**
- * Fractional, straight down or up, and nothing held: the only shape a hi-res
- * detent's fragment comes in. Fractional too: 53 * v/120 is whole only at a
- * full detent, which classifyWheel() already reads as a notch, and a pad at a
- * steady speed can repeat a whole number of pixels.
- */
+/** The only shape a hi-res detent fragment comes in: fractional, straight up
+ *  or down, nothing held. A whole fragment is a full detent, already a notch. */
 function fragmentLike(e: WheelSample, dx: number, dy: number): boolean {
   return e.deltaMode === 0 && !e.shiftKey && !e.ctrlKey && dx === 0 && !Number.isInteger(dy);
 }
@@ -667,15 +532,12 @@ function classifyWheel(e: WheelSample, dx: number, dy: number): WheelKind {
 }
 
 /**
- * Whether this event completes a hi-res wheel detent in a burst read as a pad.
- *
- * All four at once: the burst is fresh (HIRES_DETENT_MS), it has never moved
- * sideways or carried a modifier, it is two or more events that are each a
- * whole number of one fractional step (the browser coalesces fragments when it
- * is busy, so 6.625 can arrive as 13.25), and together they are past a notch.
- * A finger does not hold to multiples of one fraction to the bit, so a touchpad
- * never satisfies all four. If Chromium delivers a detent some other way the
- * rule simply never fires, and the 'zoom-all' preference is what carries the fix.
+ * Whether this event completes a hi-res detent in a burst read as a pad. All
+ * four: fresh (HIRES_DETENT_MS), never sideways or modified, two or more events
+ * each a whole number of one fractional step (a busy browser coalesces 6.625
+ * into 13.25), and past a notch together. No finger holds to one fraction, so a
+ * pad never qualifies. If Chromium changes, this stops firing and 'zoom-all' is
+ * the way out.
  */
 function detent(e: WheelSample, dx: number, dy: number, at: number): boolean {
   const first = burstCount === 0;
@@ -699,39 +561,20 @@ function detent(e: WheelSample, dx: number, dy: number, at: number): boolean {
 /**
  * What a wheel event is asking for: `pan` by (dx, dy), or `zoom` by `factor`.
  *
- * Deltas come out in pixels whatever the event counted in, so the caller never
- * has to know about deltaMode. A pinch is always a zoom and never latches the
- * device. Every engine reports a pinch as a wheel event with ctrlKey set and
- * no key pressed, and `ctrlHeld` is what tells the two apart: the caller
- * watches the Control key itself, and a Control that is really held pans up
- * and down, the vertical twin of Shift below.
+ * Deltas come out in pixels whatever the deltaMode. Engines report a pinch as
+ * a wheel event with ctrlKey and no key down; `ctrlHeld` (the caller watches the
+ * key) tells a real Control apart, which pans vertically as Shift does sideways.
+ * A pinch always zooms and never latches the device.
  *
- * A two-finger scroll is *railed*, and the rail comes in two strengths. A swipe
- * committed to one axis has the other suppressed outright - straight sideways
- * arrives with `deltaY` of exactly zero, and nothing here can invent a movement
- * the page was never told about. A swipe that merely *leans* is only attenuated,
- * and that one unrail() gives back.
+ * A two-finger scroll is railed: committed to one axis, the other arrives as
+ * exactly zero and cannot be recovered; merely leaning, it is attenuated and
+ * unrail() gives it back. Shift moves the whole delta sideways, the way out of
+ * a hard rail and the old mouse convention in one rule.
  *
- * Shift is the way out of the hard case: it moves the whole delta onto the
- * horizontal whichever axis the pad is willing to report on, so there is one way
- * across that works from inside a vertical rail without changing grip.
- *
- * It is the same key that has always panned a mouse wheel sideways, and reading
- * both here rather than at the call site is what makes them one rule.
- *
- * Applied *after* the device is latched, never as part of it: a mouse user
- * holding Shift is asking for a pan and is still holding a mouse, and letting
- * that answer stand would zoom-lock into pan for the next notch after they let
- * go of the key. Control is applied at the same point for the same reason.
- *
- * `prefs` is the person's answer to what the wheel is *for* (controls.ts), and
- * it is read as late as possible - after the device, after the modifiers. The
- * device question has one right answer and the preference cannot change it: a
- * pad two-finger swipe pans in `zoom` and `scroll`, because a swipe that zoomed
- * would be a setting that broke a gesture nobody asked about. `zoom-all` is the
- * one that asks: it exists for a wheel that cannot be told from a pad, and it is
- * the person saying which it is. Defaulted, so every caller
- * that does not care, tests included, gets the board's own convention.
+ * Modifiers apply after the device is latched, so holding Shift on a mouse does
+ * not latch the burst into pan. `prefs` (controls.ts) is read last: in `zoom`
+ * and `scroll` a pad swipe still pans; `zoom-all` overrides the device, for a
+ * wheel that cannot be told from a pad.
  */
 export function readWheel(
   e: WheelSample, pageHeight = 800, ctrlHeld = false, prefs: WheelPrefs = DEFAULT_WHEEL,
@@ -739,10 +582,8 @@ export function readWheel(
   const scale = e.deltaMode === 1 ? WHEEL_LINE : e.deltaMode === 2 ? pageHeight : 1;
   const dx = (e.deltaX || 0) * scale;
   const dy = (e.deltaY || 0) * scale;
-  // `reverse` is the wheel's own, never a pinch's: which way a notch turns is a
-  // convention somebody disagrees with, and which way fingers move apart is a
-  // fact about the hand. Reversing both would make the preference unusable on a
-  // laptop that has each.
+  // `reverse` is the wheel's only: a notch's direction is a convention, a
+  // pinch's is a fact about the hand.
   const zoom = (rate: number, reverse = false, d = dy) =>
     Math.exp(-clamp(d, -WHEEL_MAX_STEP, WHEEL_MAX_STEP) * (reverse ? -rate : rate));
 
@@ -760,24 +601,16 @@ export function readWheel(
   // the wheel - see detent().
   const relatched = kind === 'pan' && detent(e, dx, dy, at);
   if (relatched) kind = 'zoom';
-  // Both pairs, not just the magnitudes. seenX/seenY are the presence measures
-  // the unrail gain reads, and they are the half that persists: a burst the
-  // platform railed drives the gated axis down to near zero, and leaving it
-  // there meant the *next* free swipe on the same pad opened amplified by up to
-  // UNRAIL_CAP per event until the ease walked it back. Both measures start at
-  // "delivered whole", which is what fresh means.
+  // The presence measures too, or a railed burst's low seenX/seenY would
+  // amplify the next free swipe until the ease caught up.
   if (fresh) { axisX = axisY = 0; seenX = seenY = 1; }
   wheelKind = kind;
   wheelAt = at;
 
-  // `dx || dy`, so this is right whether or not the browser did it already -
-  // several of them turn Shift+scroll into a horizontal delta on the way past,
-  // and swapping a second time would put it back where it started.
+  // `dx || dy`: some browsers already turn Shift+scroll sideways.
   if (e.shiftKey) return { kind: 'pan', dx: dx || dy, dy: 0, factor: 1 };
-  // A held Control, and not a pinch, which returned above. In `scroll` mode it
-  // is the zoom - the whole point of that mode - and at whichever rate the
-  // device is being read as, since Control on a pad still arrives as a stream
-  // of single figures and the wheel's coefficient would move almost nothing.
+  // A held Control (a pinch returned above). In `scroll` mode it zooms, at the
+  // rate of the device the burst is read as.
   if (e.ctrlKey) {
     return prefs.mode === 'scroll'
       ? { kind: 'zoom', dx, dy,
@@ -785,10 +618,7 @@ export function readWheel(
       : { kind: 'pan', dx: 0, dy: dy || dx, factor: 1 };
   }
 
-  // `kind` is the device; what it is taken to mean is the preference. In
-  // `scroll` mode a notch pans the board instead - a pad was already panning
-  // and keeps doing exactly that, unrail and all. `zoom-all` is the other place
-  // the two come apart: it overrides the device, which is all it is for.
+  // `kind` is the device; the preference decides what it means.
   if (prefs.mode === 'zoom-all') {
     return { kind: 'zoom', dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
   }
@@ -855,17 +685,9 @@ export function nearestCard<T extends { id: string, x: number, y: number }>(
   return best;
 }
 
-/**
- * Release capture without trusting a separate hasPointerCapture() check.
- *
- * Capture is implicitly released when a pointer ends. Some engines can report
- * it as held and then invalidate the pointer before releasePointerCapture()
- * runs, so the check and release are necessarily one guarded operation.
- */
+/** Release capture as one guarded step: some engines report it held, then
+ *  invalidate the pointer before releasePointerCapture() runs. */
 export function releasePointerSafely(
-  // Structural, and only the two methods this actually calls: what the pipeline
-  // hands it is #viewport, and what the suite hands it is a stub that throws on
-  // release, which is the whole case being covered.
   element: {
     hasPointerCapture?: (pointerId: number) => boolean,
     releasePointerCapture?: (pointerId: number) => void,
@@ -887,19 +709,9 @@ export function releasePointerSafely(
   }
 }
 
-/**
- * Take capture without letting a refusal take the press down with it.
- *
- * The other half of releasePointerSafely() above, and it exists for the same
- * reason: `setPointerCapture` throws `NotFoundError` for a pointer that is no
- * longer active, which is a race nothing in here can rule out - a finger that
- * left the glass between the event being queued and the handler running. It was
- * called bare, so that race threw out of `pointerdown` before the gesture was
- * entered, leaving a press that selected a card and then did nothing at all.
- *
- * Structural for the same reason as its partner: the pipeline hands it
- * #viewport and the suite hands it a stub.
- */
+/** Take capture without a refusal taking the press down: `setPointerCapture`
+ *  throws for a finger already lifted, and thrown out of `pointerdown` that
+ *  left a press that selected a card and did nothing else. */
 export function capturePointerSafely(
   element: { setPointerCapture?: (pointerId: number) => void } | null | undefined,
   pointerId: number,
@@ -916,71 +728,27 @@ export function capturePointerSafely(
   }
 }
 
-/**
- * How many cells shift+arrow covers on a snapped board.
- *
- * Shift has to keep meaning "further", and on a snapped board one cell is
- * already what a bare arrow does - so it becomes a decade of them rather than
- * the grid step it means when nothing is snapped.
- */
+/** Cells shift+arrow covers on a snapped board, where a bare arrow is already one. */
 const NUDGE_LEAP = 10;
 
-/**
- * How close to a grid line still counts as being on it, in cells.
- *
- * A board's coordinates come out of divisions and accumulated drags, so an item
- * sitting exactly on a line is routinely at 3.9999999 cells rather than 4. That
- * matters here and nowhere else: the direction logic below asks "which line is
- * the next one along", and without a tolerance the answer for 3.9999999 going
- * right is the line it is already on, which reads as an arrow key that did
- * nothing.
- */
+/** How close to a grid line counts as on it, in cells. Coordinates drift to
+ *  3.9999999, and without this the "next line along" is the one it is on. */
 const ON_LINE = 1e-6;
 
 /**
- * One axis of a resize: the extent it should end up with, given the box the
- * gesture started from and how far the pointer has travelled along that axis.
+ * One axis of a resize: the extent to end up with, given the start box and the
+ * pointer's travel along the axis. `sign` is +1 for the high edge (east, or
+ * north: world y points up), -1 for the low, 0 for an untouched axis. `snap` is
+ * the grip's, not the board's (startResize()).
  *
- * Up here with the other pure rules, and for the same reason. Every other rule
- * in this file that is a function of its arguments alone - isDoubleTap,
- * drewRectangle, marqueeHit, carryFloor, resizeHandleAction, gestureTransition,
- * readWheel, releasePointerSafely - was deliberately hoisted so tests/input.test.js
- * could reach it. These two were the exceptions, and they were the two riskiest
- * pieces of arithmetic in the file: the anchor derivation below and the "flush
- * already" branch in nudgeDelta() had no coverage at all while every trivial
- * predicate around them had plenty. `step` and `inset` are passed in rather than
- * read, which is the whole of what kept them inside the closure.
+ * Snapping rounds the moving edge's world position, not the extent, since the
+ * pinned edge may be off the lattice; the extent is the distance back to it.
+ * `inset` is the seam: a high edge sits a seam short of its line, a low edge a
+ * seam past, so an item centres in its cells.
  *
- * `sign` is +1 when the handle drags the high edge (east, or north - world y
- * points up), -1 for the low one, and 0 for an axis the handle does not touch,
- * whose extent comes back untouched.
- *
- * `snap` is the *grip's*, not the board's: a sticky lying on something is sized
- * off the lattice however the board is set - see startResize().
- *
- * Snapping quantises the *moving edge's world position*, not the extent.
- * Rounding a width to the step would leave both edges off the lattice, since
- * the pinned edge was never on it to begin with; it is the edge the pointer is
- * actually holding that has to land on a grid line for the result to sit flush
- * against the dots on screen. The extent then falls out of the distance back to
- * the edge that stayed put, which is why the anchor is derived here rather than
- * the size being adjusted afterwards.
- *
- * `inset` is the seam, and its sign is what makes the two directions different.
- * A high edge belongs a seam short of its line, so the seam is added before the
- * rounding and taken off after; a low edge belongs a seam past its line, so the
- * same happens the other way about. Both by half the old seam, so two
- * neighbours stand exactly as far apart as they always did while a single item
- * now sits centred in its cells instead of shoved into a corner of them.
- *
- * The limits are applied before the snap so the rounding is handed an edge that
- * is already legal, and repaired after it by stepping one grid line the other
- * way: rounding can only move the edge by half a step, so one line always
- * brings it back inside, and the answer is still on the lattice rather than
- * parked at a bare limit that no grid line passes through. The closing clamp is
- * what actually guarantees the range - it has to hold even where the step is
- * coarser than the whole band between floor and ceiling, and a floor that only
- * usually holds is the same collapsed item it exists to prevent.
+ * Limits apply before the snap and are repaired after by one line the other way
+ * (rounding moves at most half a step). The closing clamp holds even where a
+ * step is coarser than the whole floor-to-ceiling band.
  */
 export function resizeAxisOn(
   sign: number, centre: number, extent: number, travel: number,
@@ -1001,26 +769,11 @@ export function resizeAxisOn(
 }
 
 /**
- * How far one press of an arrow key moves the selection.
- *
- * Snapped and unsnapped are two different questions rather than one question
- * with a different step size, which is the thing this used to get wrong: it
- * added a fixed distance either way, so on a snapped board every arrow key took
- * the item straight off the lattice that dragging it had just put it on, and
- * the only way to line it up again was to pick it up with the mouse.
- *
- * Snapped, the answer is a grid line rather than a distance - the next one
- * along in the direction pressed. An item that is already flush moves exactly
- * one cell; one that is not is pulled onto the lattice by the first press and
- * then moves a cell at a time like everything else. Deriving it from lines
- * rather than from a delta is also what makes the two agree at any zoom: the
- * lattice on screen coarsens as you pull back, and a distance computed from the
- * old step would land between the dots you are looking at.
- *
- * One delta for the whole selection, taken from `lead` - the same bargain the
- * drag makes. Snapping each item to its own nearest line would collapse a
- * carefully spaced group onto the grid the first time somebody tapped an arrow
- * key, which is a rearrangement rather than a nudge.
+ * How far one arrow press moves the selection. Unsnapped, a distance. Snapped,
+ * the next grid line along: a flush item moves one cell, an adrift one comes
+ * onto the lattice first. A fixed distance would knock a snapped item off the
+ * lattice. One delta for the whole selection, from `lead`, as the drag does, so
+ * a spaced group is not collapsed onto the grid.
  */
 export function nudgeDelta(
   sx: number, sy: number, far: boolean, lead: { x: number, y: number, w: number, h: number },
@@ -1031,10 +784,8 @@ export function nudgeDelta(
     return { dx: sx * by, dy: sy * by };
   }
   const cells = far ? NUDGE_LEAP : 1;
-  // The item's *low edges* land on the lattice, not its centre - see the move
-  // gesture for why, and snapAll() in state.ts for the arrangement this is
-  // keeping rather than imposing. Measured from the seam rather than from the
-  // line, so "flush already" means the same thing here as it does there.
+  // Low edges land on the lattice, measured from the seam, as in the move
+  // gesture and snapAll().
   const axis = (sign: number, low: number) => {
     if (!sign) return 0;
     const k = (low - inset) / step;
@@ -1075,63 +826,35 @@ export const GESTURE_MOVES = {
 } satisfies Record<GestureMode, readonly GestureMode[]>;
 
 /**
- * The mode a gesture in `from` reaches by being asked for `to`, or null when
- * that is not a move this pipeline makes.
- *
- * Total, and total on rubbish too: an unknown mode name on either side is not a
- * legal move rather than a throw, because the one caller is a pointer handler
- * and a wedged pointer is a worse failure than a wrong one. hasOwn rather than a
- * bare lookup for exactly that reason - `GESTURE_MOVES['toString']` is a
- * function off the prototype, and calling .includes on it would be the throw
- * this promises not to do.
+ * The mode `from` reaches when asked for `to`, or null if that is not a legal
+ * move. Total even on junk names, since a wedged pointer is worse than a wrong
+ * one; hasOwn, because `GESTURE_MOVES['toString']` is a prototype function.
  */
 export function gestureTransition(
   from: string | undefined,
   to: string | undefined,
 ): GestureMode | null {
-  // Two casts, and the two lookups are what make them hold. Nothing here trusts
-  // either name: hasOwn decides whether `from` is one of the seven keys, and
-  // includes decides whether `to` is one of the modes on that key's list, so a
-  // string that is neither takes the null branch like any other non-mode. An
-  // absent argument goes the same way - Object.hasOwn(table, undefined) is
-  // false, which is the totality this promises without a check of its own.
-  // SAFETY: both assertions in this function are the paragraph above - neither
-  // name is trusted. `key` is asked of the table through hasOwn and `want` is
-  // looked for in the list that answered, so a string that is not a mode takes
-  // the null. The casts are only what lets a string be looked up at all.
+  // SAFETY: neither name is trusted: `key` is checked with hasOwn and `want` is
+  // looked for in the list that answered, so a non-mode takes the null.
   const key = from as GestureMode;
-  // Annotated because GESTURE_MOVES keeps its literal rows: a lookup on it
-  // answers a union of seven tuples, and asking that union whether it includes
-  // an arbitrary mode narrows the argument to `never`. The list is read here as
-  // what it is for - the modes reachable from one state.
+  // Annotated: the literal rows' union would narrow includes()'s argument to never.
   const legal: readonly GestureMode[] | null =
     hasOwn(GESTURE_MOVES, key) ? GESTURE_MOVES[key] : null;
-  // SAFETY: as at `key` above - `want` is looked for in the list `key` answered,
-  // and a string that is not on it takes the null.
+  // SAFETY: as at `key`.
   const want = to as GestureMode;
   return legal?.includes(want) ? want : null;
 }
 
-// MIN_SIZE and MAX_SIZE are the resize limits, in world units, and they live in
-// geometry.ts - a resize handle stopped being the only thing that sets a size
-// when snapping learned to lay the whole board onto the lattice. The reasoning
-// behind both numbers is written there. The floor's job here is the one it has
-// always had: the eight grips are sized in screen pixels, so as an item shrinks
-// they crowd it rather than shrinking with it. The ceiling's is the drag that
-// leaves the window at high zoom - without a stop, one flick could carry an
-// item to a size that makes Fit frame the board at nothing.
+// MIN_SIZE and MAX_SIZE (geometry.ts) are the resize limits: the grips are
+// screen-sized and crowd a tiny item, and an unbounded drag at high zoom could
+// make Fit frame the board at nothing.
 
 // ---------------------------------------------------------------------------
 // What each mode carries
 // ---------------------------------------------------------------------------
 //
-// One variant per mode, discriminated on `mode`. This is the type-level half of
-// what the table above says in prose: the fields a gesture has are the fields of
-// the mode it is in, and no branch can read one belonging to a mode it is not -
-// which is the same promise "entering a mode replaces the whole object" makes at
-// runtime, made twice. `press` is two variants rather than one, told apart by
-// `intent` a level further down, for exactly the reason the table gives: both
-// are a press waiting out the slop to find out what it is.
+// One variant per mode, so no branch can read a field of another mode. `press`
+// is two variants, told apart by `intent`.
 
 /** Nothing is happening - and still an object. See `gesture` in initInput(). */
 type IdleGesture = { mode: 'idle' };
@@ -1177,9 +900,8 @@ type MarqueeGesture = {
   mode: 'marquee',
   x0: number, y0: number, x1: number, y1: number,
   additive: boolean,
-  // The selection the band started from, frozen. Non-null exactly when
-  // `additive` is - startMarquee() is the one place that makes both, off the
-  // same shift key - which the type cannot say and applyMarquee() relies on.
+  // The selection the band started from. Non-null exactly when `additive` is
+  // (startMarquee() sets both); applyMarquee() relies on it.
   base: string[] | null,
   // Drawn with Z held: a box to zoom into, which selects nothing - see zoomInto().
   zoom?: boolean,
@@ -1196,21 +918,15 @@ type MoveGesture = {
   before: GeomSnap[],
   start: Point,
   origin: MoveOrigin[],
-  // The lead's start geometry, resolved once from `origin` when the drag is
-  // taken. Neither `origin` nor `lead` is reassigned after that, so the snap
-  // arithmetic reads this rather than re-finding it every frame.
+  // The lead's start geometry, found once from `origin`.
   leadOrigin: MoveOrigin,
   moved: boolean,
   driven: string[],
-  // Whether this drag lands on the lattice, decided once when it is taken - the
-  // same freeze a resize grip makes, and for the same reason. It was read live
-  // every frame, so toggling snapping mid-drag changed the rule under the hand
-  // and the cards already placed by this drag disagreed with the ones still
-  // moving. See snapLowFor().
+  // Whether this drag lands on the lattice, frozen at the press so toggling
+  // snapping mid-drag cannot split the drag's cards. See snapLowFor().
   snap: boolean,
-  // What the press that started this found, written on once by that press and
-  // read by the lift - see `unpick` in endPointer(). Optional because they are
-  // the only two fields of a mode that enter() does not lay down.
+  // What the press found, read at the lift (`unpick` in endPointer()). The only
+  // fields enter() does not lay down.
   additive?: boolean,
   wasSelected?: boolean,
   // Alt held at the press, on a mouse: the drag carries a copy and leaves the
@@ -1247,15 +963,12 @@ type ResizeGesture = {
   carried: number[] | null,
   plate: number,
   lockAspect: boolean,
-  // A picture card's own proportion, which the grip holds whatever Shift says;
-  // null on everything else, and on a picture not yet measured, whose box is
-  // held instead.
+  // A picture card's own proportion, held whatever Shift says; null otherwise,
+  // or before the picture is measured (its box is held instead).
   picture: number | null,
   // The lattice size a held proportion last landed on, null until it has.
   cells: { w: number, h: number } | null,
-  // Whether this grip lands on the lattice at all. The board setting, less the
-  // one exception - a sticky lying on something - decided once when the grip is
-  // taken. See the note at startResize().
+  // Whether this grip snaps, frozen at the press. See startResize().
   snap: boolean,
 };
 
@@ -1271,22 +984,12 @@ type Gesture =
 /** The variant - or, for `press`, the two variants - that answer to `mode`. */
 type GestureOf<M extends GestureMode> = Extract<Gesture, { mode: M }>;
 
-/**
- * The fields a gesture carries, without the `mode` that names it: what enter()
- * is handed. Distributive on purpose - a plain Omit over a union keeps only the
- * keys every member shares, which for `press` would be `intent` and nothing
- * else.
- */
+/** A gesture's fields without `mode`, as enter() takes them. Distributive,
+ *  since Omit over a union keeps only the shared keys. */
 type GestureData<G> = G extends Gesture ? Omit<G, 'mode'> : never;
 
-/**
- * The three pieces of pointer state that are not a gesture.
- *
- * Named up here with the gesture types rather than left inline at their
- * bindings, because that is the distinction they exist to draw: a Gesture is
- * one at a time and is replaced wholesale, and each of these outlives one. See
- * the paragraphs above each binding in initInput() for what they are for.
- */
+/** Pointer state that is not a gesture: each outlives one. See their bindings
+ *  in initInput(). */
 type MidPaste = { down: boolean, at: Point | null, dragged: boolean };
 
 type Hold = {
@@ -1305,16 +1008,8 @@ type Taps = {
   lastTitle: TapPoint | null,
 };
 
-/**
- * The commands this pipeline reaches for, handed in rather than imported.
- *
- * canvas/ may not import ui/ (tests/layers.test.js), and half of what a gesture
- * ends in - the menu, the fence offer, the note editor, the viewer - lives up
- * there. main.ts owns the one command surface and hands it down, which is the
- * same move ghosts.ts and every ui/ module makes. Optional members are the ones
- * this file already calls with `?.`: a board with no connections, no viewer and
- * no player is a board this module still drives.
- */
+/** The commands this pipeline uses, handed in by main.ts because canvas/ may
+ *  not import ui/. Optional members are called with `?.`. */
 type InputCommands = {
   selectAll(): void,
   undo(): void,
@@ -1336,8 +1031,7 @@ type InputCommands = {
     opts?: { touch?: boolean }): void,
   /** The S box (ui/palette.ts), at a point in the window or the board's middle. */
   palette?(x?: number, y?: number): void,
-  // Read straight from state.ts on the pointer path - the flag is state, not a
-  // command - so what is wanted here is only the way *out*, for Escape.
+  // The flag is read from state.ts; this is only Escape's way out.
   toggleMultiSelect?(): void,
   /** Turn the multi-select mode on with this card added - a hold on a second card. */
   holdToPick?(id: string): void,
@@ -1377,27 +1071,19 @@ type InputCommands = {
   fenceSelection?(): void,
   /** Ctrl+Shift+G: ungroup - the fence round the selection taken away. */
   unfenceSelection?(): void,
-  // The tour's two keys, in the shape the three above use: the command answers
-  // whether it took the press. See the Escape and arrow cases below.
+  // The tour's keys, answering whether they took the press.
   tourStop?(): boolean,
   tourStep?(delta: number): boolean,
-  // And the mode that *builds* a tour, which Escape ends in the same shape and
-  // one layer in from a running one.
   tourEditStop?(): boolean,
-  // And whether one is running, which the *pointer* half needs rather than the
-  // keys: a click on bare board means the next stop while a tour is up and
-  // means deselect the rest of the time - see tourClick.
+  // A click on bare board is the next stop while a tour runs (tourClick).
   inTour?(): boolean,
-  // The editor's two: whether it is up (cards hold still and nothing is
-  // written on), and Delete, which there takes the picked stop off the tour
-  // and never bins a card. Answers whether it took the key.
+  // The tour editor: cards hold still, and Delete takes the picked stop off
+  // the tour rather than binning a card.
   tourEditing?(): boolean,
   tourEditDelete?(): boolean,
-  // The konami easter egg (ui/clean/), reached only through here because this
-  // module may not import ui/. cleanFeed takes every key and answers true on
-  // the one that opened it; the other three are how the mode, once up, owns
-  // the keyboard. cleanEscape is a chain rather than a leave - it puts the tool
-  // down first, and asks before it ever shuts the mode.
+  // The konami easter egg (ui/clean/). cleanFeed sees every key and answers
+  // true on the one that opens it; the rest let the mode own the keyboard, and
+  // cleanEscape puts the tool down before it asks to leave.
   cleanFeed?(key: string): boolean,
   cleanActive?(): boolean,
   cleanKey?(key: string): boolean,
@@ -1407,77 +1093,43 @@ type InputCommands = {
 
 export function initInput(vp: Viewport, cmds: InputCommands): void {
   const el = vp.el;
-  // Declared in index.html; an absent one is a broken build rather than a state
-  // to recover from - the same thing import/drop.ts says about its overlay.
+  // Declared in index.html; absent is a broken build, not a state to recover from.
   const marquee = document.getElementById('marquee')!;
 
   /** pointerId -> latest client position, for multi-touch bookkeeping. */
   const pointers = new Map<number, Point>();
 
   /**
-   * The one gesture. `mode` is which of GESTURE_MOVES' modes it is in, and every
-   * other field on the object is that mode's own working state - the marquee's
-   * corners, the move's snapshot, the resize's start box.
-   *
-   * Never null: `{ mode: 'idle' }` is what "nothing is happening" looks like, so
-   * every read is a question about the mode rather than a null check that a new
-   * branch can forget. Only enter() assigns it, and entering replaces the object
-   * whole, which is the mechanism behind "exactly one gesture at a time": the
-   * fields of the gesture just ended cannot be read by the one that follows,
-   * because they are not there any more. Mutating the *current* mode's own
-   * fields is ordinary and happens all over the pipeline (`moved` on a drag, the
-   * band's corners); it is `mode` that has exactly one writer.
+   * The one gesture: its mode and that mode's working state. Never null (idle
+   * is `{ mode: 'idle' }`). Only enter() assigns it, replacing the whole object,
+   * so an ended gesture's fields cannot leak into the next. The current mode's
+   * own fields are mutated freely; `mode` has one writer.
    */
   let gesture: Gesture = { mode: 'idle' };
 
   /**
-   * Move into `mode`, carrying `data` as its state.
+   * Move into `mode`, carrying `data` as its state. An illegal transition warns
+   * and proceeds: refusing would wedge a real hand, which is worse.
    *
-   * The guard reports rather than refuses. A transition this file does not
-   * expect is a bug in this file, and the console is where a bug belongs - but
-   * the alternative, refusing the move, would leave a real hand mid-drag in a
-   * mode the rest of the pipeline has already stopped believing in, and a wedged
-   * pointer is a far worse failure than a wrong mode. So it warns and proceeds:
-   * the table is a description that checks itself, not a lock.
-   *
-   * One path can reach the warning with a real hand on it, and it is a bug this
-   * change deliberately did not fix: pressing the middle button in the middle of
-   * a left-drag is not an aux button (so onDown does not stand down) and does not
-   * add a pointer (a mouse is one pointer), so it lands in the pan branch on top
-   * of a standing move. That replaced the gesture where it lay before this table
-   * existed - no commit, no cleanup - and it still does. What is new is that it
-   * now says so out loud instead of leaving a card mid-drag with no undo entry.
+   * Known bug reaching the warning: a middle press during a left drag lands in
+   * the pan branch over a standing move, dropping it with no commit.
    */
   function enter<M extends GestureMode>(
     mode: M,
-    // Optional only because `idle` carries nothing; every other mode's data is
-    // required by GestureData, which is what makes a half-built gesture a type
-    // error rather than a field read as undefined three branches later.
+    // Optional only for `idle`; every other mode's data is required.
     data?: GestureData<GestureOf<M>>,
   ): GestureOf<M> {
     if (!gestureTransition(gesture.mode, mode)) {
       console.warn(`[mbrd] input: ${gesture.mode} -> ${mode} is not a gesture this pipeline makes`);
     }
-    // The cast is the spread. `mode` and every field of `data` together are
-    // exactly the variant `mode` names - that is what GestureData is - but a
-    // spread of a generic comes back to tsc as an intersection it will not fold
-    // into the union member. The argument types are where the check happens.
-    //
-    // SAFETY: `data` is GestureData<GestureOf<M>>, which is the named variant
-    // minus its `mode` - so putting `mode` back is exactly the variant again.
-    // The check happened at the call, where M was fixed.
+    // SAFETY: `data` is the variant minus `mode`, checked at the call; tsc only
+    // cannot fold the generic spread back into the union member.
     const next = { mode, ...data } as GestureOf<M>;
     gesture = next;
-    // The viewport's one fact about the hand: is a finger dragging the board
-    // right now. It decides whether a Mobile board's edges clamp or resist, and
-    // it is written here rather than at the four call sites that start and end a
-    // pan because this is the pipeline's only door between modes - so every path
-    // out of `pan`, including a pinch stealing it and a pointercancel, clears it
-    // for free. Anything that is not a pan is not a finger dragging the board.
+    // Set here, the only door between modes, so every way out of a pan or a
+    // move clears them: whether a Mobile board's edges clamp or resist, and
+    // whether line routes are held until the drop (holdRoutes() in canvas/web.ts).
     vp.dragging = mode === 'pan';
-    // And the lines' one fact about it: while a card is in the hand no route is
-    // recalculated, and the drop recalculates them all - see holdRoutes() in
-    // canvas/web.ts. Here for the same reason: every way out of `move` passes.
     holdRoutes(mode === 'move');
     return next;
   }
@@ -1490,124 +1142,51 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // keyup and on a blur, as Space is.
   let zDown = false;
   /**
-   * A right press on a mouse, which is two gestures until it travels: a drag
-   * pans the board, a click opens the menu. Not part of the gesture, because the
-   * native `contextmenu` that decides the click arrives on the press on macOS
-   * and Linux and after the lift on Windows, so it has to outlive both ends.
-   * `owed` is a menu that arrived on the press and waits for the lift to be
-   * sure it was a click. `hit` is the card under the press, read then because
-   * the capture the press takes can retarget the contextmenu to the viewport.
+   * A right press: a drag pans, a click opens the menu. Outlives the gesture
+   * because `contextmenu` arrives on the press on macOS and Linux and after the
+   * lift on Windows. `owed` is a menu that came on the press and waits for the
+   * lift; `hit` is read at the press, before capture retargets the event.
    */
   let rightPress: { pointerId: number, x: number, y: number, hit: string | null,
     dragged: boolean, owed: boolean } | null = null;
   /** When a right drag ended, so Windows' contextmenu after its lift is swallowed. */
   let rightDragAt = 0;
-  // Linux/X11 pastes the primary selection on a middle click. A middle *click*
-  // here should still paste - that is the platform's paste gesture - but a middle
-  // *drag* means "pan", and the paste it fires on release would dump the
-  // selection into the note being edited or the board's paste-to-import. So the
-  // press is tracked, and only a drag (moved past the slop) arms the guard that
-  // swallows the release paste (below). `at` is the press origin; `dragged` is
-  // set once it travels far enough to be a pan and not a click.
-  //
-  // Not part of the gesture, and it could not be: the paste it exists to swallow
-  // arrives a task *after* the pan that armed it has been released.
+  // A middle click pastes the primary selection on Linux/X11, which should
+  // still work, but a middle drag pans and its release paste must be swallowed.
+  // Outlives the gesture: the paste arrives a task after the pan ends.
   const midPaste: MidPaste = { down: false, at: null, dragged: false };
-  // Where the cursor is - a paste lands under it. Null on a touch device, where
-  // pasteAt falls back to placing beside the original rather than guessing.
+  // Where the cursor is, for a paste to land under. Null on touch.
   let hover: Point | null = null;
-  // A long press is the touch equivalent of a right-click, and without it the
-  // context menu is unreachable with a finger - which is where duplicate,
-  // delete, send to back and rename live. Held here rather than inside the
-  // gesture, because it has to survive the gesture being replaced (a second
-  // finger arriving) and be cancelled by it.
-  //
-  // `menu` is the menu a hold opened, kept so the native contextmenu some touch
-  // engines fire afterwards can be told from a fresh right-click.
+  // A long press is touch's right-click. Outside the gesture so a second
+  // finger can replace the gesture and still cancel it. `menu` is the menu a
+  // hold opened, so a native contextmenu after it is not taken for a new one.
   const hold: Hold = { timer: 0, press: 0, at: null, menu: null };
-  // The pointer id of a touch press on bare board that owes the selection a
-  // clear, spent on the lift. Null on a mouse, which clears on the press as it
-  // always has.
-  //
-  // A finger cannot right-click: the hold *is* the menu, and the hold starts
-  // with a press on the board. Clearing on that press meant that on a phone the
-  // only gesture that opens the board menu was also the gesture that threw away
-  // the group you were about to open it for - and a group assembled by tapping
-  // cards one at a time on a phone is the most expensive thing on the board to
-  // rebuild. So the clear waits, and the hold cancels it.
-  //
-  // Deferred rather than made conditional on movement, so everything else about
-  // this press means what it did: a tap on bare board still deselects, a pan
-  // still lands with nothing selected. Only the moment moves, from the press to
-  // the lift.
+  // A touch press on bare board clears the selection on the lift, not the
+  // press, because the same press may become the hold that opens the board
+  // menu for that selection. Null on a mouse, which clears on the press.
   let clearOnLift: number | null = null;
-  /**
-   * Where a press on bare board began, when it held two or more cards picked.
-   * A group is the expensive selection to rebuild, and a board bigger than the
-   * screen is looked around by dragging it - so for a group the clear is a
-   * *tap's* alone, and a press that travels past the slop calls it off. One
-   * card keeps the old rule: a pan still lands with nothing selected.
-   */
+  /** Where a bare-board press began with two or more cards picked. A group is
+   *  costly to rebuild, so it clears only on a tap; a press that travels
+   *  past the slop calls it off. */
   let clearIfStill: { x: number, y: number } | null = null;
-  /**
-   * A press on bare board inside a fence, with nothing picked, that may still
-   * turn out to be a click on the fence. Its body refuses the pointer
-   * (fences.css) so that a drag across it pans or draws a band, and that stays
-   * true: only a press that lifts where it went down picks the fence, and the
-   * body never moves it - the name bar does. With something picked the same
-   * tap only puts that down, as it always did, so a board covered by one big
-   * fence can still be cleared by tapping it.
-   */
+  /** A press inside a fence, with nothing picked, that picks the fence if it
+   *  lifts where it went down. The body refuses the pointer (fences.css) so a
+   *  drag pans or bands; only the name bar moves a fence. */
   let fenceIfStill: { pointerId: number, x: number, y: number } | null = null;
-  /**
-   * A press that may still turn out to be the click that walks a tour on.
-   *
-   * While a tour is running, a click on anything that is not a card means "next
-   * stop" - the same click a slide deck answers, and the reason the tour needs
-   * no chrome beyond its bar. On a card it means nothing at all: the card is
-   * what is being shown, and a press on the thing you are pointing at should
-   * not skip past it.
-   *
-   * Recorded on the press and spent on the lift rather than answered on the
-   * press, because a press on bare board is also how the board is panned, and a
-   * tour that jumped a stop every time somebody dragged the view an inch would
-   * be unusable. TAP_MOVE_SLOP is the same threshold the touch records above use
-   * for the same question, so "a click" means one thing in this file.
-   *
-   * Not a gesture and not a mode - it coexists with the pan the press started,
-   * exactly as `taps.arm` coexists with one. The pipeline is untouched.
-   */
+  /** A press that walks a tour on if it lifts within TAP_MOVE_SLOP: a click off
+   *  any card is "next stop", while a drag still pans. Coexists with the pan. */
   let tourClick: { pointerId: number, x: number, y: number } | null = null;
-  // The presses that may still turn out to be taps, and the taps just past.
+  // Presses that may still be taps, and taps just past. Not modes: they
+  // coexist with a live gesture, and the last two outlive it.
   //
-  // None of these is a mode: every one of them coexists with a live gesture -
-  // that is the whole point of the pan-then-select gate, which runs a pan while a
-  // selection is still pending - and the last two outlive it, since a double tap
-  // is two gestures with a gap in the middle.
-  //
-  //   arm ......... a pointer resting on an unpicked item - see needsTapFirst().
-  //                 The gesture is a pan; this is what lets the lift still count
-  //                 as a tap if it never moved.
-  //   card ........ a press on a card's own surface, still eligible to count as
-  //                 a tap. Separate from `arm` because the two cover different
-  //                 halves of the same gesture: `arm` only exists on the
-  //                 pan-then-select path (touch, or an unpicked card), where a
-  //                 mouse press on a card starts a move outright. A tap is a tap
-  //                 either way, so this is set on both and cleared by the same
-  //                 slop. Only a playing video does anything with it - see
-  //                 pauseOnTap(). Kept general in name rather than called
-  //                 videoTap, because what it records is a fact about the
-  //                 gesture and not about what happens to be under it.
-  //   empty ....... a touch on bare board that has not yet wandered, and so may
-  //                 still become the first half of a double tap.
-  //   lastEmpty ... the tap that did, waiting for its second.
-  //   lastTitle ... the previous tap on the title card, so a second one within
-  //                 the double-tap window opens its inline rename. Read here in
-  //                 the pointer pipeline rather than through a dblclick listener
-  //                 because #viewport takes pointer capture on press and that
-  //                 retargets the compatibility mouse events to the viewport -
-  //                 the same reason the masthead reads its taps directly (see
-  //                 editBoardName in main.ts).
+  //   arm ......... resting on an unpicked item (needsTapFirst()); the gesture
+  //                 is a pan, and an unmoved lift still counts as a tap.
+  //   card ........ a press on a card's surface, on either path; only a playing
+  //                 video uses it (pauseOnTap()).
+  //   empty ....... a touch on bare board, maybe the first of a double tap.
+  //   lastEmpty ... that tap, waiting for its second.
+  //   lastTitle ... the last tap on the title card, for double-tap rename. Not a
+  //                 dblclick listener, since pointer capture retargets those.
   const taps: Taps = { arm: null, card: null, empty: null, lastEmpty: null, lastTitle: null };
   const cancelPress = () => {
     clearTimeout(hold.timer);
@@ -1617,21 +1196,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     setPressing(null);
   };
 
-  /**
-   * A tap on a playing video stops it.
-   *
-   * The transport's small play button used to be the only way to pause, which
-   * put a 25px target on a bar that fades out until you point at the card,
-   * while the picture - the obvious thing to press - did nothing at all. So the
-   * picture is the pause now.
-   *
-   * Pause only, never play. A tap is also how a card gets selected, and a tap
-   * that toggled would mean you could not pick up a video without starting it;
-   * the big button over the poster frame is the play, and it is only in the way
-   * while the clip is stopped, which is exactly when it is wanted. So a paused
-   * card behaves as any other card does, and a playing one has its whole face
-   * as a stop button.
-   */
+  /** A tap on a playing video pauses it. Pause only: a tap also selects, and a
+   *  toggle would start a video every time it was picked up. */
   const pauseOnTap = (id: string) => {
     const item = byId(id);
     if (item?.type !== 'video') return;
@@ -1639,89 +1205,42 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     if (media && !media.paused) media.pause();
   };
 
-  /**
-   * Whether a pointer landing on this item should pan the board rather than
-   * pick the item up.
-   *
-   * Moving is always a two-step action: first select, then drag. That keeps a
-   * navigation gesture from quietly rearranging the board merely because it
-   * began over a card. A tap still selects on lift; movement cancels that
-   * pending selection and remains a pan.
-   */
+  /** Whether a press on this item pans rather than picks it up. Moving takes
+   *  select then drag, so panning over a card never rearranges the board. */
   const needsTapFirst = (id: string) => needsSelectionBeforeMove(selection, id);
 
   // ---- helpers ----------------------------------------------------------
 
-  /**
-   * A low edge onto the lattice, or left alone when the gesture is not snapping.
-   *
-   * `snap` is passed rather than read, so that a drag can hold the answer it
-   * started with - see MoveGesture.snap and insetFor().
-   */
+  /** A low edge onto the lattice when `snap`, which a drag freezes at its start. */
   const snapLowFor = (v: number, snap: boolean) => (snap ? latticeLow(v, stepNow()) : v);
 
-  // The base lattice - the grid as it stands at 100% - never the zoom-tiered
-  // spacing on screen. gridStep() in grid.ts coarsens the *drawn* dots as you
-  // zoom out so they never become a fill, but a gesture must land on the same
-  // lattice snapAll()/onLattice() use however far the board is zoomed, or an
-  // item dragged at one zoom would sit off the lines it snapped to at another.
+  // The lattice at 100%, never the zoom-coarsened dots on screen (gridStep()),
+  // or an item dragged at one zoom would sit off its lines at another.
   const stepNow = () => baseStep();
 
-  /**
-   * A box laid on the lattice - see latticeBox() in geometry.ts.
-   *
-   * The same shape snapAll() in state.ts gives the board when snapping is
-   * switched on, and deliberately so: that is the arrangement everything here
-   * then has to preserve. An item is flush in the grid only when *both* halves
-   * hold, the position and the size - an edge on a line is not enough if the
-   * side is one and a half cells long, because then the opposite edge is off by
-   * half a cell whatever you do to the position.
-   */
+  /** A box laid on the lattice as snapAll() lays the board: position and size
+   *  both, since an edge on a line with a side 1.5 cells long still misses. */
   const ontoLattice = (box: Box) => latticeBox(box, stepNow());
 
   /**
-   * The seam a snapped item leaves at each of its four edges, in world units,
-   * for a gesture that says whether it is snapping.
-   *
-   * Every edge carries the same one - see CELL_GAP in geometry.ts - so the space
-   * between two neighbours is two halves of a seam rather than one whole one.
-   * The sign is what differs: a low edge sits a seam *past* its grid line and a
-   * high edge a seam short of the next, which is why the snapping below still
-   * has to know which edge the pointer is holding.
-   *
-   * `snap` is passed rather than read off `board.settings`, and that is the bug
-   * this parameter closes. A resize grip decides `snap` once when it is taken,
-   * deliberately (see startResize) - the seam was read live, so toggling
-   * snapping mid-resize left the edge quantising to `step` with the seam
-   * dropped to zero, which puts every snapped edge one `cellInset` off the
-   * lattice the rest of the board is laid on. The step and the seam are two
-   * halves of one lattice and have to come from one decision.
+   * The seam a snapped item leaves at each edge (CELL_GAP in geometry.ts): a
+   * low edge sits a seam past its line, a high edge a seam short. `snap` is
+   * passed, not read, so the seam and the step come from the one decision a
+   * grip freezes at the press; read live, toggling snap mid-resize put edges
+   * one seam off the lattice.
    */
   const insetFor = (snap: boolean) => (snap ? cellInset(stepNow()) : 0);
 
-  /**
-   * A minimum side raised so it does not fight the grid. A floor measured in
-   * pixels - a note's text, a player's frame (embedFloor) - rarely lands on a
-   * grid line, so `Math.max(snappedSide, floor)` bumps a snapped edge a few
-   * pixels off the lattice and the card rests between two cells. Rounded to the
-   * next whole cell instead (the same `cells*step - seam` shape latticeSide()
-   * gives, up rather than to the nearest, since down could fall under the
-   * floor), the floored size is itself a lattice size and stays flush. Off the
-   * grid the floor is returned untouched.
-   */
+  /** A pixel floor (a note's text, embedFloor) rounded up to a whole cell when
+   *  snapping, so the floored size stays on the lattice. */
   const snapFloorUp = (floor: number, snap: boolean) => {
     if (!snap) return floor;
     const step = stepNow(), gap = 2 * insetFor(snap);
     return Math.ceil((floor + gap) / step) * step - gap;
   };
 
-  /**
-   * The cards a fence carries through a resize, put on the lattice. The carry
-   * places each at its fraction of the fence, which lands between lines, so on
-   * a snapped board every card left the grid it stood on. Each now snaps its own
-   * low edges, as a dragged card does. A note stuck to a card takes its host's
-   * shift instead, so it stays where it was on the card.
-   */
+  /** The cards a fence carries through a resize, put back on the lattice by
+   *  their low edges. A stuck note takes its host's shift, so it stays put on it. */
   function snapCarried(riders: ResizeTarget[]) {
     const byRider = new Map(riders.map(r => [r.id, r]));
     const shifts = new Map<string, Point>();
@@ -1746,19 +1265,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     }
   }
 
-  /**
-   * One axis of a resize, against this board's current step and seam.
-   *
-   * The arithmetic is resizeAxisOn() at module scope; this is the two readings
-   * that make it about *this* board. See the note there for why it moved.
-   */
+  /** resizeAxisOn() against this board's step and seam. */
   const resizeAxis = (
     sign: number, centre: number, extent: number, travel: number, snap: boolean,
   ) => resizeAxisOn(sign, centre, extent, travel, snap, stepNow(), insetFor(snap));
 
   function setPanCursor() {
-    // Not while a tour runs: space is held down and nothing pans, and an open
-    // hand promising a drag that will not happen is worse than no cursor at all.
+    // Not during a tour, where nothing pans.
     el.classList.toggle(
       'can-pan', spaceDown && gesture.mode === 'idle' && !cmds.inTour?.(),
     );
@@ -1785,49 +1298,26 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
 
   function startPan(e: PointerEvent) {
     const pan = enter('pan', { lastX: e.clientX, lastY: e.clientY });
-    // Only a finger throws the board - see flingFrom(). A mouse drag stops
-    // where the button came up, which is what every desk-bound tool does and
-    // what a pointer that can be held perfectly still makes possible.
+    // Only a finger throws the board (flingFrom()); a mouse stops where it lifts.
     if (e.pointerType === 'touch') pan.track = [];
     el.classList.add('is-panning');
   }
 
-  /**
-   * The last few positions a panning finger passed through, and when.
-   *
-   * A flick's speed cannot be read off the final pointermove: the last event
-   * before a lift is often a stray pixel or two over a millisecond, which is
-   * either a stationary finger or one moving at two thousand pixels a second
-   * depending on which side of the noise it fell. So the speed is measured
-   * across a window of the recent past instead, which is long enough to average
-   * the jitter out and short enough that it is still describing the throw rather
-   * than the whole drag.
-   */
+  /** The window a flick's speed is measured over. The last event alone is a
+   *  pixel over a millisecond, pure noise; this averages it out while still
+   *  describing the throw, not the whole drag. */
   const FLING_WINDOW_MS = 90;
   /** A finger that has been still this long before lifting is not throwing. */
   const FLING_IDLE_MS = 70;
 
-  // The track, rather than the pan that owns it - the same move drawMarquee()
-  // and applyMarquee() make with the band, and for the same reason: only a
-  // finger's pan has one, and a signature that names the array cannot be handed
-  // a mouse pan that has nothing to push onto.
+  // Takes the track, not the pan: only a finger's pan has one.
   function trackPan(track: PanSample[], e: PointerEvent) {
     track.push({ x: e.clientX, y: e.clientY, t: e.timeStamp });
-    // Anything older than the window can no longer be the start of the throw.
-    // One at a time from the front: the array only ever holds a few events.
     while (track.length > 2 && e.timeStamp - track[0].t > FLING_WINDOW_MS) track.shift();
   }
 
-  /**
-   * The speed to hand the board as the finger leaves it, or null for a lift
-   * that was not a throw.
-   *
-   * Two ways to be not a throw, and they are different. A finger that paused
-   * before lifting has placed the board somewhere deliberately, and carrying on
-   * would take it back off the spot it was just put on - so the gap between the
-   * last movement and the lift is what disqualifies that one. A finger that was
-   * moving slowly the whole way is caught by glide()'s own floor instead.
-   */
+  /** The speed to hand the board as the finger leaves, or null if it paused
+   *  before lifting (it placed the board). A slow drag is caught by glide()'s floor. */
   function flingFrom(pan: PanGesture, at: number) {
     if (!pan.track || pan.track.length < 2) return null;
     const last = pan.track[pan.track.length - 1];
@@ -1840,35 +1330,20 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
 
   function startMarquee(e: PointerEvent) {
     const p = vp.toWorld(e.clientX, e.clientY);
-    // An additive (Shift) band tracks the enclosed set both ways: the selection
-    // it started from is frozen here and re-unioned with the currently enclosed
-    // items every frame, so a card the band grew over and then left is released
-    // again. Without the frozen base, select(ids, true) only ever adds, and the
-    // live selection becomes the union of every position the band ever held.
+    // An additive band freezes the selection it started from and re-unions it
+    // with what it encloses each frame, so a card the band leaves is released.
     const band = enter('marquee', {
       x0: p.x, y0: p.y, x1: p.x, y1: p.y,
       additive: e.shiftKey, base: e.shiftKey ? [...selection] : null,
     });
     marquee.hidden = false;
     drawMarquee(band);
-    // Applied on the press, not only on the first movement past it.
-    //
-    // MARQUEE_DRAWN's note says a shift-click on empty board "starts a marquee
-    // of zero size ... and that gesture means 'clear the selection'". It did
-    // not: applyMarquee() was reached only from pointermove, so a perfectly
-    // still modified click selected nothing and deselected nothing, while one
-    // pixel of wobble cleared the board. Running it here makes the still click
-    // and the wobbly one the same gesture, which is the rule as written - a
-    // zero-size band encloses nothing, so a plain one clears and an additive
-    // one leaves the base it froze exactly where it was.
+    // On the press too, so a still modified click and a wobbly one agree.
     applyMarquee(band);
   }
 
-  // The band, passed in rather than read off `gesture`, so that these two say in
-  // their signature what the pipeline has to be in for them to mean anything.
   function drawMarquee(band: MarqueeGesture) {
-    // The screen's top-left corner is the world's (min x, *max* y) - world y
-    // points up.
+    // Screen top-left is world (min x, max y): world y points up.
     const a = vp.toScreen(Math.min(band.x0, band.x1), Math.max(band.y0, band.y1));
     const b = vp.toScreen(Math.max(band.x0, band.x1), Math.min(band.y0, band.y1));
     marquee.style.left = a.x + 'px';
@@ -1881,10 +1356,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     if (band.zoom) return;
     const x0 = Math.min(band.x0, band.x1), x1 = Math.max(band.x0, band.x1);
     const y0 = Math.min(band.y0, band.y1), y1 = Math.max(band.y0, band.y1);
-    // The band is a world rectangle, so the spatial index narrows the field to
-    // the cells it overlaps instead of hit-testing the whole board every move.
-    // queryRect is a superset (a cell is wider than the band's edge), so the
-    // precise marqueeHit still runs - it just runs over a handful, not O(board).
+    // The spatial index narrows the field to a superset; marqueeHit decides.
     const hit: string[] = [];
     // A card folded away in a rolled-up fence is out of sight, so out of reach.
     const rolled = rolledFences();
@@ -1892,130 +1364,66 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       const it = byId(id);
       if (it && !rolledAway(it, rolled) && marqueeHit(it, x0, y0, x1, y1)) hit.push(id);
     }
-    // Additive: replace the live selection with base + enclosed each frame, so
-    // the enclosed set tracks the band in both directions (see startMarquee).
-    // `base!`: the two are made together in startMarquee() off the one shift
-    // key, so an additive band always has the selection it started from.
+    // `base!`: an additive band always has one (startMarquee()).
     if (band.additive) select([...new Set([...band.base!, ...hit])]);
     else select(hit);
   }
 
   /**
-   * Take hold of what the press landed on, or null if there is nothing to hold.
-   *
-   * Null is not a formality. The press branch below checks `isLocked` on the
-   * item under the pointer, and the two filters in here then resolve every
-   * selected id to the top of its pile and drop the locked ones - so a *pinned*
-   * sticker sitting on a locked photograph passes the press check as an
-   * unlocked sticker and comes out of here as nothing at all. That used to
-   * build a `move` with an empty `origin`, and the first movement past the slop
-   * threw on `lead.x` inside the handler, before applyGeom, with the gesture
-   * still standing and capture still held: every subsequent pointermove threw
-   * again until the button came up. One press wedged the pipeline.
-   *
-   * The caller pans instead, which is what a press on the locked photograph
-   * itself already does - so the two presses that mean the same thing now
-   * behave the same way.
+   * Take hold of what the press landed on, or null if nothing can be held: a
+   * pinned sticker on a locked photograph resolves to the locked root and is
+   * dropped. The caller then pans, as a press on the photograph does; an empty
+   * move used to throw on every pointermove and wedge the pipeline.
    */
   function startMove(e: PointerEvent, id: string, own = false): MoveGesture | null {
-    // The top of the pile an id sits in, or the id itself when it sits in none
-    // and when the board no longer has it. Written out rather than
-    // `dragRoot(byId(sid))?.id ?? sid`, which said the same thing by leaning on
-    // dragRoot() being total on a missing item.
-    //
-    // `own`: Alt on a stuck note, which takes hold of the note itself and not
-    // its host - the way off a card other than Unstick. The drop decides what
-    // it is stuck to, as any drop does.
+    // The top of the pile an id sits in, or the id itself. `own` (Alt on a
+    // stuck note) takes the note itself off its host.
     const rootOf = (sid: string) => {
       const it = byId(sid);
       return it && !own ? dragRoot(it).id : sid;
     };
-    // A pinned item is not what a press on it takes hold of - its host is. The
-    // pile reads as one object under the pointer: press the photograph or press
-    // the star lying on it, and the photograph moves with the star riding along.
-    // That is already what the hover lift promises (setHoverGroup() lifts the
-    // whole pile), so this brings the drag into line with the lift rather than
-    // inventing a rule.
+    // A press on a pinned item drags its host, the pile as one object, as the
+    // hover lift already shows. The selection is not touched: clicking a
+    // pinned star still selects the star, for its menu and Delete.
     //
-    // **The selection is deliberately not touched.** Clicking a pinned star
-    // still selects the star, so its own menu, its colour and Delete all still
-    // reach it - it just drags the photograph. Those two coming apart, what you
-    // have selected and what you are moving, is the one genuinely new idea in
-    // this change, and it is why the redirect lives here and not in the
-    // selection code a few lines up the call.
-    //
-    // Mapped across the whole selection rather than off `id` alone, so a
-    // multi-select holding a pinned item and something else drives both roots;
-    // dedupe, because two stickers on one photo resolve to the same root.
-    // Locked cards are not picked up, and they are dropped here rather than at
-    // the press so that a mixed selection still works: press one of six cards
-    // where two are locked and the other four move, which is what somebody who
-    // locked two of them meant. A press *on* a locked card never reaches this
-    // function at all - see the move branch of onDown(), where it pans instead.
+    // Across the whole selection, deduped. Locked cards drop out here rather
+    // than at the press, so a mixed selection still moves its free cards; a
+    // press on a locked card itself pans (onDown()).
     const roots = [...new Set([...selection].map(rootOf))].filter(sid => !isLocked(byId(sid)));
-    // Whatever is stuck to the selection comes with it, and whatever is fenced
-    // by it. Worked out once, here, and then held for the length of the gesture:
-    // recomputing it per frame would let notes latch on and fall off as the drag
-    // swept the selection across other items, so the group you picked up would
-    // not be the group you put down. What is stuck when you take hold is what
-    // travels. See travelling() in layout.ts, where the fixed point is worked out.
-    // Not filtered for locks again on the way out: a locked card inside a fence
-    // being dragged goes with the fence. A lock stops the card itself being
-    // taken hold of, not the fence it sits in from being moved, and a card left
-    // behind would be measured out of its fence on release without a word.
+    // What is stuck to or fenced by the roots, fixed for the whole gesture so
+    // notes do not latch on and off mid-drag (travelling() in layout.ts). Not
+    // filtered for locks again: a locked card in a dragged fence goes with it.
     const moving = travelling(roots);
-    // Snapshotted here, before anything is touched, so the raise below rides
-    // along in the same undo entry as the move it belongs to.
+    // Before anything is touched, so the raise shares the move's undo entry.
     const before = snapshotGeom(moving);
-    // Before anything is entered, because there is nothing to enter. See the
-    // docstring: this is the pinned-sticker-on-a-locked-card case, and every
-    // line below assumes at least one thing is being carried. Tested on
-    // `before` rather than on `moving`, because `origin` is built out of it and
-    // `origin[0]` is the value that was undefined - snapshotGeom() answers only
-    // for ids the board still has, so the two can differ.
+    // Tested on `before`: snapshotGeom() answers only for ids still on the board.
     if (!before.length) return null;
     const start = vp.toWorld(e.clientX, e.clientY);
     const lead = rootOf(id);
-    // The sides come along as well as the corner: snapping puts the lead's low
-    // edges on lines, and an edge is its centre less half its size.
+    // Sizes too: snapping puts the lead's low edges on lines.
     const origin = before.map(b => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h }));
     const leadOrigin = origin.find(o => o.id === lead) || origin[0];
     const move = enter('move', {
-      // `id` is what the pointer landed on and `lead` is what it has hold of -
-      // the same thing except on a pinned item. The lift keeps `id`, because a
-      // modified click peels the card you clicked; the drag arithmetic and the
-      // stick preview read `lead`, because those are about the thing moving.
+      // `id` is what was pressed (a modified click peels it); `lead` is what is
+      // held (the drag and stick preview read it). They differ on a pinned item.
       id, lead, moving, before, start,
       // Frozen here, like the grip's - see MoveGesture.snap.
       snap: board.settings.snap,
       origin,
       leadOrigin,
       moved: false,
-      // What the pointer has hold of, as against what it is towing. Only these
-      // ask again what they are stuck to when the drag ends - a note carried
-      // across the board by the photo underneath it has not moved relative to
-      // anything, and re-parenting it would take apart the pile you built by
-      // moving it. See restick() in state.ts.
-      //
-      // The roots, not the selection: a pinned star did not move relative to the
-      // photograph under it, the photograph moved, so the star must not be
-      // re-measured on release. It is a towed follower now, whatever the
-      // selection says.
+      // Only the roots re-ask what they are stuck to on release (restick() in
+      // state.ts); towed items have not moved relative to their hosts.
       driven: roots,
     });
     for (const sid of moving) ensureMounted(sid);
-    // Handed back so the press that started it can write what it found onto the
-    // standing gesture - see the move branch of onDown().
+    // Returned so onDown() can write what the press found onto it.
     return move;
   }
 
-  /**
-   * Alt+drag: copy what the drag has hold of where it stands, and hand the
-   * drag the copies, so the originals stay put with everything they belong to -
-   * their lines out, their tour stop, their place in the playlist - and the
-   * copy is what travels. The copy is one undo entry until the release folds it
-   * into the move (see releaseGesture()).
-   */
+  /** Alt+drag: copy what is held in place and drag the copies, so the
+   *  originals keep their lines, tour stops and playlist places. The release
+   *  folds copy and move into one undo step (releaseGesture()). */
   function carryCopies(drag: MoveGesture) {
     const was = lastCommand();
     const copyOf = duplicateInPlace(drag.driven);
@@ -2034,31 +1442,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     select([...selection].map(to));
   }
 
-  /**
-   * Bring the gesture's items to the front. Called on the first movement past
-   * the slop, not on the press that started it.
-   *
-   * It used to happen in startMove(), which meant a plain click reordered the
-   * board. Nothing committed it, because only a gesture that actually moved
-   * gets a history entry - so clicking an item changed its z with no undo entry
-   * to reverse it and no markDirty() to say the board had changed. The change
-   * was real and the record of it was not: a later unrelated save would write it
-   * out, and closing the tab straight after would lose it, and either way the
-   * user had done nothing but click.
-   *
-   * Deferring it costs nothing visible. The slop is three pixels, so anything
-   * that is a drag raises before it has visibly moved, and anything that is a
-   * click leaves the stack exactly as it found it.
-   */
+  /** Bring the gesture's items to the front, on the first movement past the
+   *  slop rather than the press, so a plain click never changes z without an
+   *  undo entry. */
   function raiseToFront(ids: string[]) {
-    // Bottom-to-top rather than in selection order, so the group keeps its
-    // internal stacking. That is what leaves a stuck note still above the thing
-    // it is stuck to when the pair lands, and so still stuck.
+    // Bottom-to-top, so a stuck note stays above its host and stays stuck.
     let z = topZ();
-    // Guarded, like stackOrder()'s own byId(a)?.z a few lines up. `ids` is the
-    // selection as it was when the gesture began, and a delete arriving from
-    // anywhere else - the bin, an undo, a paste replacing the board - can leave
-    // an id in it that the board no longer has.
+    // Guarded: an id may have been deleted elsewhere since the press.
     for (const sid of stackOrder(ids)) { const it = byId(sid); if (it) it.z = ++z; }
     bus.emit('geom', ids);
   }
@@ -2072,101 +1462,43 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     const it = byId(id);
     if (!it) return;
     const before = snapshotGeom([id]);
-    // The card being resized, so its corner marks can stay swollen for the
-    // length of the drag. Hover alone will not do it: the pointer is captured by
-    // #viewport the moment this starts, and it leaves the handle behind as soon
-    // as the corner moves - so the mark would thin out under a hand that is
-    // still dragging it.
+    // Marked so its corner marks stay swollen through the drag; hover fails
+    // once capture moves to #viewport.
     const node = origin?.node
       || (e.target instanceof Element ? e.target.closest('.item') : null);
     node?.classList.add('is-resizing');
-    // A sticky lying on something is sized off the lattice, and this is the one
-    // decision that says so - everything below reads `snap` off the grip rather
-    // than off the board. It is the same exception the move gesture makes for a
-    // note being dropped onto a host: a sticky belongs to the picture under it
-    // and not to the grid, so a corner that jumped to the nearest line would
-    // pull it off the thing it is stuck to, which reads as a refusal. Its host
-    // is on the lattice; the sticky sits where it was put.
-    //
-    // stuckTo() rather than isPinned(): a sticker dropped three seconds ago is
-    // lying on the photograph whatever the settle clock says, and a grip taken
-    // during that window must not square it up either.
-    //
-    // Decided once, with the grip, like everything else here - a note dragged
-    // off its host mid-resize would otherwise start snapping halfway through.
+    // A sticky lying on something is sized off the lattice: it belongs to its
+    // host, and a snapped corner would pull it off. stuckTo(), not isPinned(),
+    // so a sticker still settling counts. Frozen with the grip.
     const snap = board.settings.snap && !stuckTo(it);
-    // Squared up before the drag begins, if snapping is on and this box was
-    // never on the lattice - a photograph imported at its own proportions, a
-    // paste, anything a layout placed. Everything below rounds the edge under
-    // the pointer to a line, and that only yields a whole number of cells if the
-    // edge left behind is on one too; without this the far side is off by
-    // whatever fraction the picture happened to arrive at and the item can never
-    // sit flush however carefully it is dragged.
-    //
-    // Done here rather than on arrival because a resize is where it shows and
-    // where it is asked for, and because `before` above was taken first - so the
-    // correction is inside the same undo entry as the drag that prompted it, and
-    // one Ctrl+Z puts back the picture's own shape.
+    // Squared onto the lattice first, so the edge left behind is on a line too
+    // and the result is whole cells. After `before`, so one undo restores it.
     const box = snap
       ? ontoLattice(it)
       : { x: it.x, y: it.y, w: it.w, h: it.h };
     if (box.x !== it.x || box.y !== it.y || box.w !== it.w || box.h !== it.h) {
       applyGeom([{ id, ...box, rot: it.rot, z: it.z }]);
     }
-    // Notes stuck to this card ride the resize. Shrinking a photo under a sticky
-    // used to leave the note hanging in mid-air - still "stuck" by the record but
-    // no longer physically over the card. Each follower is carried at the same
-    // fractional spot on the card (stuckPlacement, per frame below), so the edge
-    // that moves takes the note with it and it stays on the card.
+    // Riders keep their fractional spot through the resize (stuckPlacement per
+    // frame): notes stuck to a card, and the contents of a fence, which gather
+    // and spread as it is pulled in and out. travelling() for a fence, so a note
+    // on a card inside comes too, the same set a move would carry. Desktop
+    // only: on Mobile a band's cards sit below it, not inside.
     //
-    // A fence carries what is inside it on exactly the same terms, and it is the
-    // same sentence one relation over: a card is *in* a region the way a sticky is
-    // *on* a card, so pulling a region in gathers its cards and pushing it out
-    // spreads them. What it replaces is a floor that stopped the drag when the
-    // rectangle reached its contents - which was the honest answer while the
-    // contents stood still, and is no answer at all once they move, because
-    // nothing can be left behind by an edge that brings it along.
-    //
-    // travelling() rather than the members alone, because a note stuck to a card
-    // inside the region has to come too and neither relation can see that on its
-    // own. It is the same set a *move* of this fence would carry, which is the
-    // point: growing and dragging a region should not disagree about what is in
-    // it. Fractional placement moves a nested fence without resizing it, so a
-    // nested region's own cards spread further than it does and some may be
-    // re-measured out of it on release - the honest cost of not scaling a whole
-    // subtree, and the release re-measures anyway.
-    //
-    // Desktop only. On Mobile a band is one row of a packed column and its cards
-    // are underneath rather than inside it, so there is no fraction of it for
-    // them to hold - the same rule commitGeom() states about membership there.
-    //
-    // Snapshotted into `before` so one undo puts the whole group back, but
-    // deliberately left out of `driven`: a note that kept its place on the card
-    // has not changed what it is stuck to, so it must not be re-measured on
-    // release - the same reasoning startMove() gives for a towed follower.
+    // In `before` for one undo, but not `driven`: riders kept their place, so
+    // their stick is not re-measured on release.
     const riders = isFence(it) && board.layoutMode !== 'mobile'
       ? travelling([id]).filter(rid => rid !== id)
       : stuckFollowers([id]);
-    // `byId(rid)!`: `riders` was read off the live board on the line above and
-    // nothing between the two can have taken an item off it. This is the one
-    // place in the file where that holds - the move gesture's own `origin` is
-    // re-read a frame at a time and is guarded for exactly that reason.
+    // `byId(rid)!`: read off the live board on the line above.
     const followers: ResizeFollower[] = riders.map(rid => {
       const r = byId(rid)!;
       return { id: rid, box: { x: r.x, y: r.y, w: r.w, h: r.h, rot: r.rot, z: r.z } };
     });
     for (const rid of riders) ensureMounted(rid);
-    // What the region has to keep inside its walls: each card standing in the
-    // fence itself, where it sits as a fraction of it, and how much room it
-    // takes. Frozen with the grip, like everything else here, so a drag that
-    // grows past a card and comes back is not held open by something it has not
-    // formally picked up - membership is not re-measured until the release.
-    //
-    // Only the fence's own carry has these. A card being resized under its
-    // stuck notes has never had walls and does not want them: a sticky hanging
-    // over the edge of a photograph is a sticky, not a mistake. A note on a card
-    // in the fence, or a card in a fence inside it, goes with the card or fence
-    // it belongs to, so a wall pushing a card pushes its sticky too.
+    // A fence keeps its own cards inside its walls (CarryHold), frozen with the
+    // grip. A card's stuck notes have no walls: a sticky may hang over an edge.
+    // Anything nested goes with the card or fence it belongs to.
     const carrying = isFence(it) && board.layoutMode !== 'mobile';
     const plate = carrying ? barHeight(id) : 0;
     let holds: CarryHold[] | null = null;
@@ -2199,24 +1531,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       id, corner, node,
       before: followers.length ? before.concat(snapshotGeom(riders)) : before,
       followers,
-      // Resizing a note changes how much of it is over what it is lying on, so
-      // it is as much a reason to ask again as moving it is. Only the resized
-      // item is driven; its riders keep their stick (see above).
+      // A resize changes overlap, so the item re-asks its stick; riders do not.
       driven: [id],
       start: vp.toWorld(origin?.x ?? e.clientX, origin?.y ?? e.clientY),
       box: { x: it.x, y: it.y, w: it.w, h: it.h, rot: it.rot || 0 },
       holds, carried, plate,
-      // Nothing but a picture is aspect-locked by default. Shift is the lock for
-      // everything else, at both ends: on a corner it holds the proportion, on
-      // an edge it holds it and scales from that side. Kept as a field rather
-      // than folded into the XOR below because it is the *default* for this
-      // grip, and a future one may well want its own.
-      //
-      // A photo or video is not steered by Shift at all: its card is its
-      // picture's shape (canvas/picture-shape.ts), and a free corner would only
-      // put paper round it or cut it. On the grid the aspect branch lands the
-      // pair on whole cells, as near the shape as they allow, and the picture
-      // sits inside them.
+      // Only a picture locks its aspect by default, and Shift does not free it:
+      // its card is its picture's shape (picture-shape.ts). Everything else
+      // locks with Shift. On the grid the pair lands on the nearest whole cells.
       lockAspect: isPicture(it),
       picture: isPicture(it) ? cardRatio(it) : null,
       cells: null,
@@ -2227,12 +1549,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // ---- pointer pipeline -------------------------------------------------
 
   el.addEventListener('pointerdown', e => {
-    // A right press on a mouse pans if it travels and is the menu if it does
-    // not - see rightPress. Only from idle: a right button added to a held left
-    // one arrives as a pointermove, not here. Not during a tour, whose view is
-    // the tour's and whose right-click is its own menu, nor in the cleaning
-    // mode, whose right button puts the tool down. Not on a field being typed
-    // in, whose right-click is about its text.
+    // A right press pans or opens the menu (rightPress). Only from idle (a
+    // chorded right button arrives as a pointermove), and not in a tour, the
+    // cleaning mode, or a text field, which own their right-click.
     if (e.button === 2 && e.pointerType === 'mouse' && gesture.mode === 'idle'
         && !pointers.size && !cmds.inTour?.() && !cmds.cleanActive?.()
         && !(e.target instanceof Element && e.target.closest('input, textarea, [contenteditable="true"], [contenteditable="plaintext-only"]'))) {
@@ -2246,43 +1565,23 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       capturePointerSafely(el, e.pointerId);
       return;
     }
-    // Right/aux: leave alone. Pen as well as mouse, which it did not used to be.
-    // A stylus barrel button arrives as `button === 2` with `pointerType ===
-    // 'pen'`, fell through this line, took capture, selected the card and
-    // started a move - and then the contextmenu handler dropped the gesture
-    // under it. A barrel press is the pen's right-click and means what a
-    // right-click means. Touch is left out because a touch has no aux button to
-    // report; `button` is 0 for every finger.
+    // Right/aux: leave alone. A pen's barrel button is its right-click.
     if (e.button > 1 && (e.pointerType === 'mouse' || e.pointerType === 'pen')) return;
-    // A palm resting on the glass while a stylus draws is not a finger asking
-    // for anything - not even a pinch, which would drop the stroke. Left out of
-    // `pointers` altogether, so its moves and its lift find nothing either.
+    // A palm resting while a stylus draws is ignored entirely, so it cannot pinch.
     if (e.pointerType === 'touch' && gesture.mode === 'stroke' && gesture.stylus) return;
-    // A hand on the board stops the board, before anything else is decided.
-    // That is true of a glide let go of a moment ago and of a commanded flight
-    // to Home or to Fit alike: catching a moving board has to work the first
-    // time, not on the first frame it is dragged - a finger put down to stop
-    // something is often a finger that then does not move at all.
-    // Not in a tour: the view is the tour's there (see pressIntent), and a tap
-    // on a card left the camera stopped between two stops.
+    // A hand on the board stops a glide or a flight at once, even a finger that
+    // never moves. Not in a tour, whose view is the tour's.
     if (!cmds.inTour?.()) vp.onPress();
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-    // Two fingers during a tour are not a pinch, for the reason pressIntent()
-    // gives one branch down: while the board is being read the view is the
-    // tour's, and a pinch is the one gesture that drives it without a press
-    // intent to refuse. Captured and returned exactly as a third finger is, so
-    // that this pointer can still be taken back out of `pointers` on its lift -
-    // see the leak the capture below was added for.
+    // Two fingers in a tour do not pinch. Captured, so the lift still removes
+    // the pointer (see below).
     if (pointers.size >= 2 && cmds.inTour?.()) {
       capturePointerSafely(el, e.pointerId);
       return;
     }
 
-    // A second finger always converts the gesture into a pinch - by dropping
-    // whatever was standing (abortGesture, which lands in idle) and entering the
-    // pinch from there, never by converting one live gesture into another. That
-    // is why GESTURE_MOVES has no pan -> pinch edge to travel along.
+    // A second finger drops the standing gesture to idle, then pinches.
     if (pointers.size === 2) {
       cancelPress();
       taps.empty = null;
@@ -2292,15 +1591,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // A pinch is a zoom, and a zoom is not an answer about what is selected.
       clearOnLift = null;
       abortGesture();
-      // The second finger is captured too, and that is not tidiness. Only the
-      // first pointer was ever captured, because this branch returns before the
-      // setPointerCapture() further down - so lifting the second finger over
-      // the toolbar, over the sidebar, or off the window edge delivered its
-      // `pointerup` to that element rather than to a descendant of #viewport,
-      // endPointer() never ran, and the id stayed in `pointers` for the life of
-      // the page. Every later single-finger press then found `pointers.size ===
-      // 2`, entered a pinch against a coordinate belonging to a finger that was
-      // no longer there, and a plain tap panned and zoomed the board.
+      // Captured, or its lift over other chrome never reaches endPointer(), the
+      // id leaks in `pointers`, and every later tap pinches.
       capturePointerSafely(el, e.pointerId);
       const [a, b] = [...pointers.values()];
       enter('pinch', {
@@ -2310,26 +1602,17 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       });
       return;
     }
-    // A third finger changes no mode, but it is in `pointers` and it has to be
-    // possible to take it back out - same leak, one finger further along.
+    // A third finger: captured for the same leak.
     if (pointers.size > 2) {
       capturePointerSafely(el, e.pointerId);
       return;
     }
 
     let target = e.target instanceof Element ? e.target : null;
-    // Typed as an HTMLElement for its `dataset`, which is where the handle
-    // names which of the eight corners it is - see item-dom.ts, which builds
-    // them all and writes data-g on each.
+    // An HTMLElement for `dataset.g`, which names the corner (item-dom.ts).
     let grip = target?.closest<HTMLElement>('.grip') || null;
-    // A corner hitbox straddles the corner and paints over the card (z-index 2),
-    // so a press on a control tucked into a corner - a play button, a scrubber, a
-    // link - arrives as the grip. Look past it: if the real element under the
-    // point is one of those controls, yield the corner and let the control take
-    // the press. Not the full-card surfaces (a model stage, a picture): a corner
-    // over those is meant to resize. Below the chrome rung the hitbox is clipped
-    // to outside the card (see .grip::before), so it covers no control there and
-    // this never fires - the on-card move behaviour is the CSS clip's, not this.
+    // A corner grip paints over the card, so look past it: if a GRIP_YIELD
+    // control is under the point, it takes the press.
     if (grip) {
       for (const node of document.elementsFromPoint(e.clientX, e.clientY)) {
         if (!(node instanceof Element) || node.classList.contains('grip')) continue;
@@ -2340,33 +1623,18 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     const id = itemIdFromEvent(target);
     // Play on the Timeline: the four claims below all edit, so none is asked.
     const viewOnly = timelinePlaying();
-    // The connector tool, when it is armed. A press picks an end instead of
-    // selecting one, and claims the whole gesture: no capture, no drag, nothing
-    // deselected underneath. Caught before every branch below - including the
-    // widget one - because while the tool is out, a press on a card means
-    // connect it whether or not that card happens to have a scrubber on it.
-    //
-    // This is the only mode in the app, and it is one branch in the existing
-    // pipeline rather than a second pipeline, which is the whole of why picking
-    // an end completes on the press and never becomes a drag. cmds.connectTap
-    // answers false on every ordinary board, so what this costs the hot path is
-    // one boolean.
-    //
-    // The Shift key goes with it, and this is the only place that has it: a pair
-    // completed with Shift held keeps the tool armed for the next one, which is
-    // the run of joins that used to be the default (see ui/toolbar.ts). Read off
-    // the event rather than off `intent`, because the connector is answered
-    // before pressIntent() ever runs - the additive flag it would fold Shift
-    // into is about selection, and while the tool is out this press is not.
+    // The armed connector tool: a press picks an end and claims the gesture,
+    // ahead of every branch, widgets included. One branch, not a second
+    // pipeline, so picking completes on the press. Shift keeps the tool armed
+    // for the next pair (ui/toolbar.ts); read off the event, since pressIntent()
+    // has not run.
     if (!viewOnly && cmds.connectTap?.(id, e.shiftKey)) {
       pointers.delete(e.pointerId);
       return;
     }
-    // Drawing mode (canvas/pen.ts), the board's other mode, in the same shape:
-    // one branch here, ahead of the widget and card branches, because while the
-    // pen is out a press anywhere draws. A stroke from the press, with no slop -
-    // a dot is a stroke. Space and the middle button still pan, and two fingers
-    // still pinch (the branch above), so the board can still be moved about.
+    // Drawing mode (canvas/pen.ts): a press anywhere draws, from the press with
+    // no slop, so a dot is a stroke. Space, middle and two fingers still move
+    // the board.
     if (!viewOnly && penOn() && e.button === 0 && !spaceDown
         && !cmds.inTour?.() && !cmds.tourEditing?.()) {
       e.preventDefault();
@@ -2376,19 +1644,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       beginStroke(vp.toWorld(e.clientX, e.clientY), pressureOf(e), id, e.timeStamp);
       return;
     }
-    // The title card's pen. Caught before the generic widget branch below (a
-    // button would otherwise just select the card): it opens the shared style
-    // panel and claims the whole press, so the card underneath neither drags nor
-    // deselects. Selection is left as-is - the pen only exists while selected.
+    // The title card's pen opens the style panel and claims the press, ahead of
+    // the widget branch, which would only select the card.
     if (!viewOnly && target?.closest('.item-pen')) {
       cmds.editTitle?.();
       pointers.delete(e.pointerId);
       return;
     }
-    // Double-tap the title card itself → edit its name.
-    // A second press within the double-tap window that has not wandered claims the
-    // gesture: no capture, no move, just the editor. The first press falls through
-    // and selects as usual, recording itself for the second to match against.
+    // A double tap on the title card edits its name; the first tap selects as usual.
     if (!viewOnly && id && byId(id)?.type === 'title') {
       const now = e.timeStamp;
       const last = taps.lastTitle;
@@ -2401,23 +1664,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       }
       taps.lastTitle = { x: e.clientX, y: e.clientY, at: now };
     } else {
-      // Spent by a press anywhere else, the way lastEmpty is a few lines down.
-      // Without this, tapping the title, then a photograph, then the title again
-      // - all inside the 350 ms window and within the slop of the *first* tap -
-      // matched, and a board that was never double-tapped dropped into its
-      // rename. A double tap is two presses in a row, not two presses with a
-      // press between them.
+      // Any other press in between breaks the double tap.
       taps.lastTitle = null;
     }
-    // A real control inside a card (the audio scrubber, a note being edited)
-    // owns the whole gesture: no capture, no drag. Capturing here would redirect
-    // every following pointermove to #viewport and leave the scrubber dead.
-    // A video's own <video> is deliberately not in this list, because the
-    // picture is the card and dragging it has to drag the card; the two buttons
-    // laid over it are, as buttons.
-    // .model-stage is the 3D canvas: a drag on it turns the model over, so it
-    // has to claim the gesture the way the audio scrubber does, or the card
-    // would move out from under the hand instead.
+    // A control inside a card owns the gesture, uncaptured, or capture would
+    // leave it dead. A bare <video> is not one (dragging the picture drags the
+    // card); .model-stage is (a drag turns the model).
     const widget = target?.closest('audio, video[controls], input, button, a, .wave, .model-stage, [contenteditable="true"], [contenteditable="plaintext-only"]');
     const tap = { x: e.clientX, y: e.clientY, at: e.timeStamp };
     const doubleTapDrag = e.pointerType === 'touch' && !id && !widget
@@ -2428,29 +1680,16 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         ? { pointerId: e.pointerId, x: e.clientX, y: e.clientY }
         : null;
     }
-    // The click that walks a running tour on - see tourClick. The primary
-    // button only: the secondary one opens the tour's own menu (ui/menu.ts) and
-    // the middle one is a paste, and neither is somebody asking for the next
-    // stop. Every pointer type, because a tour shown on a tablet is still a
-    // tour; on touch this is the same tap that would have cleared the selection,
-    // and during a tour there is nothing selected to clear.
+    // The primary button only: right opens the tour's menu, middle pastes.
     tourClick = cmds.inTour?.() && e.button === 0 && !id && !widget
       ? { pointerId: e.pointerId, x: e.clientX, y: e.clientY }
       : null;
 
-    // What this press is, decided in one place off facts a test can state - see
-    // pressIntent() above. Everything below performs the answer; nothing below
-    // re-decides it.
+    // Decided once by pressIntent(); everything below only performs it.
     const intent = pressIntent({
       pointerType: e.pointerType,
       button: e.button,
-      // The multi-select mode reads as a modifier held down, and that is the
-      // whole of what it does to a press on a card: the tap that would have
-      // replaced the selection adds to it instead. Everything that follows -
-      // the peel on a second tap, the drag that moves the group - already
-      // worked that way for Shift and needs nothing new. It belongs in the
-      // facts and not in pressIntent(), which reads no state and is testable
-      // for exactly that reason.
+      // Multi-select mode reads as a held modifier.
       additive: e.shiftKey || e.ctrlKey || e.metaKey || isMultiSelect(),
       picking: isMultiSelect() && !(e.shiftKey || e.ctrlKey || e.metaKey),
       spaceDown,
@@ -2458,40 +1697,22 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       onWidget: !!widget,
       onGrip: !!grip,
       onCard: id,
-      // The tour editor holds every card as if anchored: a press picks it, a
-      // drag pans, and no grip resizes - the board is being ordered, not moved.
+      // The tour editor holds every card as if anchored.
       locked: !!id && (isLocked(byId(id)) || !!cmds.tourEditing?.()),
-      // isPinned(), not stuckTo(): a sticker dropped three seconds ago is still
-      // lying loose on its host and is still the thing you reached for, so its
-      // grips are still its own. It is the same clock canvas/items.ts draws them
-      // by, asked at the same moment, so the handles on screen and the handles
-      // this will honour are one answer.
+      // isPinned(), not stuckTo(): a settling sticker keeps its grips, by the
+      // same clock canvas/items.ts draws them by.
       pinned: !!id && isPinned(byId(id)),
       needsTapFirst: !!id && needsTapFirst(id),
       wasSelected: !!id && selection.has(id),
       selectionSize: selection.size,
       doubleTapDrag,
       isMobile: vp.isMobile,
-      // The same question tourClick asks two blocks up, at the same moment and
-      // through the same door - one press, one answer about what is running.
       touring: !!cmds.inTour?.(),
       viewOnly,
     });
 
-    // Every press that takes hold of a card, said once here rather than in each
-    // branch that performs one.
-    //
-    // It was in the `move` branch alone, and the branches around it are the
-    // reason that read as the app skipping presses. A grip press is `resize`,
-    // and a card that has just been dropped is a card that is *selected*, so its
-    // grips are showing - which means dragging the same card over and over lands
-    // on a grip about as often as not, and both the press and the release were
-    // silent. A press on a control inside a card is `widget`, and that was
-    // silent too while still selecting the card underneath.
-    //
-    // `pan` and `empty` are not here because they take hold of nothing, and
-    // `tapGate` is not because a gated first tap has not taken hold yet - it
-    // sounds on the lift, in endPointer(), which is where it becomes a pick.
+    // The pick sound, for every press that takes hold of a card, grips and
+    // widgets included. A gated first tap sounds on the lift (endPointer()).
     if (intent.kind === 'widget' || intent.kind === 'resize'
         || intent.kind === 'move' || intent.kind === 'lockedPan') {
       cue('pick');
@@ -2508,13 +1729,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
 
     capturePointerSafely(el, e.pointerId);
 
-    // Whatever this press turns out to be, it is not the line that was marked -
-    // the one branch below that disagrees says so itself, by marking one again.
+    // Any press unmarks the marked line; the branch that wants one marks it again.
     cmds.clearActiveConnection?.();
 
     if (intent.kind === 'zoomBox') {
-      // The band drawn as a box to zoom into rather than a selection: it picks
-      // nothing up and puts nothing down. zoomInto() acts on the lift.
+      // A band that selects nothing; zoomInto() acts on the lift.
       e.preventDefault();
       const p = vp.toWorld(e.clientX, e.clientY);
       const band = enter('marquee', {
@@ -2523,13 +1742,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       marquee.hidden = false;
       drawMarquee(band);
     } else if (intent.kind === 'frozen') {
-      // A tour is running and this press does nothing - see pressIntent(). Not
-      // an early return: the pointer is captured above so that the lift reaches
-      // this module (that lift is what walks the tour on - see tourClick), and
-      // the long-press arming at the foot of the function is how a finger opens
-      // the tour's own menu. preventDefault stops the browser filling the gap
-      // with a text selection or an image drag, which is all a frozen press
-      // could otherwise turn into.
+      // Does nothing, but stays captured: the lift walks the tour (tourClick)
+      // and a hold opens its menu. preventDefault stops a text selection or drag.
       e.preventDefault();
     } else if (intent.kind === 'pan') {
       if (intent.middle) {
@@ -2540,55 +1754,29 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       e.preventDefault();
       startPan(e);
     } else if (intent.kind === 'resize') {
-      // A grip press is only a candidate. Waiting for movement keeps a plain tap
-      // on a corner from touching snapped geometry, and leaves the tap free to
-      // mean select rather than a zero-distance resize.
-      //
-      // Resize is a single-card operation: it drives one item's geometry off one
-      // grip, and there is no defined answer for what a corner drag means across
-      // a whole selection. So with more than one card selected a grip press is
-      // not a resize at all - it falls through to the move branch below and picks
-      // the selection up, the same as a press anywhere else on the card.
-      //
-      // `press` with an intent, rather than a mode of its own: this and the
-      // double-tap band below are the same shape of thing - a press that has
-      // landed and is waiting out the slop to find out what it is - and `intent`
-      // is which of the two it will become.
+      // Only a candidate until it moves past the slop, so a tap on a corner
+      // never touches geometry. A multi-selection never gets here: a grip press
+      // on one moves the group (pressIntent()).
       enter('press', {
         intent: 'resize',
         id: intent.id,
-        // pressIntent() only answers 'resize' when onGrip was true, and onGrip
-        // is this element - so the branch itself is what makes this non-null.
+        // 'resize' implies onGrip, so `grip` is set.
         corner: grip!.dataset.g,
         x: e.clientX,
         y: e.clientY,
-        // `?.` rather than a bare read: a grip only exists because `target` did
-        // (it came off target.closest), so this can never be the null branch.
         node: target?.closest('.item') ?? null,
       });
     } else if (intent.kind === 'marqueeDrag') {
-      // Wait for movement before showing or applying the marquee. A plain double
-      // tap does nothing now (it used to fit the board); holding and dragging the
-      // second tap turns into select.
+      // Wait for movement; a plain double tap does nothing.
       const p = vp.toWorld(e.clientX, e.clientY);
       enter('press', {
         intent: 'marquee', clientX: e.clientX, clientY: e.clientY, x0: p.x, y0: p.y,
       });
     } else if (intent.kind === 'tapGate') {
-      // Touch, or the mobile layout whatever the pointer. A finger - and the
-      // mobile board, which is a vertical feed you scroll far more than you
-      // rearrange - navigates more than it drags, so a press on an unpicked card
-      // pans and selects on lift: the two-step gate that keeps a scroll from
-      // quietly dragging a card.
-      //
-      // A mouse on the desktop board has no such tension: a left press on a card
-      // is a grab, and waiting for a select-then-drag felt broken. So there the
-      // pointer falls through to the move branch below, which selects and picks
-      // the card up at once.
-      //
-      // Pan now, decide on the lift. Nothing is selected here: a press that
-      // turns into a drag has to leave the board exactly as a press on empty
-      // space would, or the gate would still be moving the selection about.
+      // Touch, or the mobile layout: a finger navigates more than it drags, so a
+      // press on an unpicked card pans and selects on the lift. A desktop mouse
+      // grabs at once (the move branch). Nothing is selected yet, so a drag
+      // leaves the board as a press on empty space would.
       taps.arm = {
         pointerId: e.pointerId,
         id: intent.id,
@@ -2604,48 +1792,28 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       const { id: cardId, additive, wasSelected: held } = intent;
       if (additive) select([cardId], true);
       else if (!held) select([cardId]);
-      // No cue here: it is said once for all four card branches, above.
       taps.card = {
         pointerId: e.pointerId, id: cardId, x: e.clientX, y: e.clientY, slop: DRAG_SLOP,
       };
-      // A locked card is not something the pointer can take hold of, so the
-      // press does what a press on bare board does and pans. Note what is above
-      // this line and therefore still happens: the card is *selected*, so its
-      // menu, its name, its colour, Delete and the unlock that undoes all this
-      // are all still one click away. Only the grab is gone.
-      //
-      // Panning rather than doing nothing is the whole feel of the feature. The
-      // case lock exists for is a backdrop photograph under the cards somebody
-      // is arranging, and there every press meant for the board lands on it; a
-      // locked card that swallowed those presses would be worse than the
-      // unlocked one, not better.
-      //
-      // Not an early return, which would fall past the long-press arming at the
-      // foot of this function - and on a phone that hold is the *only* way to
-      // reach a locked card's menu, which is where the unlock is.
+      // A locked card is selected (its menu and unlock stay one click away) but
+      // the press pans, as on bare board: a locked backdrop photo must not
+      // swallow every press meant for the board. Not an early return, so the
+      // hold below can still open its menu on a phone.
       if (intent.kind === 'lockedPan') {
         startPan(e);
       } else {
         // Alt on a mouse: a stuck note comes off its card, anything else is
-        // carried as a copy. Never both - on a stuck note the note is what Alt
-        // reaches for. A mouse only: a finger has no Alt to hold.
+        // carried as a copy.
         const alt = e.altKey && e.pointerType === 'mouse';
         const pressed = byId(cardId);
         const pull = alt && !!pressed && isPinned(pressed);
         const move = startMove(e, cardId, pull);
-        // Nothing to carry - a pinned item whose host is locked. The press
-        // means what a press on that host means, so it pans. See startMove().
+        // Nothing to carry (a pinned item on a locked host): pan. See startMove().
         if (!move) startPan(e);
         else {
           move.alt = alt && !pull;
-          // Carried on the gesture so the lift can tell a selection edit from a
-          // pick - see `unpick` in endPointer(). A modified press means "toggle
-          // this card", and whether the lift should drop it again depends on
-          // what the press found, not on how big the selection ended up.
-          //
-          // Written straight onto the standing gesture, which startMove() hands
-          // back: it is the `move` mode's own state, and only `mode` itself has
-          // to go through enter().
+          // What the press found, so the lift can tell a toggle from a pick
+          // (`unpick` in endPointer()).
           move.additive = additive;
           move.wasSelected = held;
         }
@@ -2653,16 +1821,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     } else if (intent.kind === 'marquee') {
       startMarquee(e);
     } else {
-      // Nothing a press on bare board does clears the group while the mode is
-      // on - not a pan, not a tap. That is the half of it a person can feel:
-      // building a group of nine on a board bigger than the screen means panning
-      // between them, and a pan that cost you the nine is the mode failing at
-      // the one thing it exists for. The way out is the row that turned it on,
-      // Escape, or tapping the cards back off.
+      // In multi-select mode bare board never clears the group: building one
+      // across a big board means panning between its cards.
       clearIfStill = null;
-      // Read before the clears below: a tap that puts a selection down is
-      // spent on that. Not in the pick mode, where bare board does nothing,
-      // nor during a tour, where the click walks it on.
+      // Only with nothing selected: a tap that puts a selection down is spent.
       fenceIfStill = !selection.size && !isMultiSelect() && !tourClick && e.button === 0
         ? { pointerId: e.pointerId, x: e.clientX, y: e.clientY }
         : null;
@@ -2675,20 +1837,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // Touch defers it to the lift so a hold can cancel it - see clearOnLift.
       else if (e.pointerType === 'touch') clearOnLift = selection.size ? e.pointerId : null;
       else if (selection.size) clearSelection();
-      // A press on bare board that happens to land on a connection points at
-      // that connection instead of at nothing - which is what the line lighting
-      // up under the pointer has been promising all along, and what gives Delete
-      // something to remove that is not a card. It still pans: pointing at a
-      // line is a click, and this press may yet become a drag.
-      // A line is the nearer thing under the pointer than the fence it crosses.
+      // A press on a connection marks it (for Delete) and still pans. A line is
+      // nearer than the fence it crosses.
       if (cmds.pickConnection?.(vp.toWorld(e.clientX, e.clientY))) fenceIfStill = null;
       startPan(e);
     }
 
-    // Armed after the gesture, so the early returns above - a widget claiming
-    // the press, a second finger - never reach it. It waits out the whole
-    // duration and then checks that the press is still a press: a drag cancels
-    // it from pointermove, and lifting cancels it from endPointer.
+    // The long press, armed after the early returns. A drag (pointermove) or a
+    // lift (endPointer) cancels it.
     if (e.pointerType === 'touch' && pointers.size === 1) {
       hold.at = { x: e.clientX, y: e.clientY, id };
       hold.timer = setTimeout(() => {
@@ -2704,16 +1860,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         clearOnLift = null;
         fenceIfStill = null;
         tourClick = null;
-        // Whatever the finger had started - a move, a pan, a marquee - it was
-        // not that. Dropped rather than committed, since nothing moved.
+        // Whatever the finger started was not that; nothing moved.
         abortGesture();
         hold.menu = { x: p.x, y: p.y, at: performance.now() };
         openMenuAt(p.x, p.y, p.id, true);
       }, LONG_PRESS_MS);
-      // A finger resting on a card shows nothing until the menu, so a hold that
-      // is working looks like one that missed. After a moment of stillness the
-      // card starts to shrink, landing as the menu opens; cancelPress() lets it
-      // go. Not under reduced motion or with Quality's motion off.
+      // After a moment's stillness the held card shrinks toward the menu, so a
+      // working hold shows. Not under reduced motion.
       if (id && baseMs() > 0 && !reducedMotion()) {
         hold.press = setTimeout(() => { hold.press = 0; setPressing(id); }, PRESS_SHOW_MS);
       }
@@ -2722,11 +1875,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   });
 
   el.addEventListener('pointermove', e => {
-    // Before the gesture guard below, which drops every pointer that is not
-    // pressed - and a hovering mouse is exactly that. Touch is excluded
-    // because a finger that is not down is not anywhere.
-    // Mirrored onto the viewport so the import layer's paste (drop.ts), which
-    // has no view into this module's `hover`, can land under the cursor too.
+    // Hover, before the guard drops unpressed pointers. Mirrored on the
+    // viewport for drop.ts's paste.
     if (e.pointerType !== 'touch') hover = vp.cursor = { x: e.clientX, y: e.clientY };
     if (!pointers.has(e.pointerId)) return;
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -2746,38 +1896,28 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         && Math.hypot(e.clientX - fenceIfStill.x, e.clientY - fenceIfStill.y) > TAP_MOVE_SLOP) {
       fenceIfStill = null;
     }
-    // And the same slop again for the tour's click: a pointer that has gone
-    // this far was moving the board, not asking for the next stop.
+    // Nor the tour's next-stop click.
     if (tourClick?.pointerId === e.pointerId
         && Math.hypot(e.clientX - tourClick.x, e.clientY - tourClick.y) > TAP_MOVE_SLOP) {
       tourClick = null;
     }
-    // The same slop, for the same reason: a finger that has travelled this far
-    // was panning, and a pan must not leave a selection behind it.
+    // A pan must not leave a selection behind it.
     if (taps.arm?.pointerId === e.pointerId
         && Math.hypot(e.clientX - taps.arm.x, e.clientY - taps.arm.y) > TAP_MOVE_SLOP) {
       taps.arm = null;
     }
-    // And a card that has been dragged was not tapped. Its own slop, carried on
-    // the record, because the two paths that set it disagree about how far a
-    // press may wander and still be a press - and both are right. On the pan
-    // path nothing under the finger moves until the lift, so it gets the same
-    // generous TAP_MOVE_SLOP the selection does, for the same finger-wobble
-    // reason. On the move path the card is already following the pointer at
-    // DRAG_SLOP, and a gesture that visibly moved a card should not also have
-    // paused it.
+    // A dragged card was not tapped. Its own slop: generous on the pan path,
+    // DRAG_SLOP on the move path, where the card already follows the pointer.
     if (taps.card?.pointerId === e.pointerId
         && Math.hypot(e.clientX - taps.card.x, e.clientY - taps.card.y) > taps.card.slop) {
       taps.card = null;
     }
-    // A finger that has travelled is dragging, not pressing. The same slop the
-    // move gesture uses, so the two agree about when a press has become a drag.
+    // A travelled finger is dragging, not holding; the move gesture's slop.
     if (hold.at && Math.hypot(e.clientX - hold.at.x, e.clientY - hold.at.y) > DRAG_SLOP) {
       cancelPress();
       if (e.pointerType === 'touch') taps.lastEmpty = null;
     }
-    // A right press that travels is a pan from here on, and the menu it would
-    // have been is not owed any more.
+    // A travelled right press is a pan, and owes no menu.
     if (rightPress?.pointerId === e.pointerId && !rightPress.dragged
         && Math.hypot(e.clientX - rightPress.x, e.clientY - rightPress.y) > DRAG_SLOP) {
       rightPress.dragged = true;
@@ -2787,8 +1927,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     }
     if (gesture.mode === 'idle') return;
 
-    // Every point the pointer passed through since the last event, not only
-    // where it is now, so a quick stroke is a curve and not a polygon.
+    // Coalesced points too, so a quick stroke is a curve, not a polygon.
     if (gesture.mode === 'stroke') {
       if (e.pointerId !== gesture.pointerId) return;
       const passed = e.getCoalescedEvents?.() ?? [];
@@ -2798,10 +1937,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       return;
     }
 
-    // The branches are the modes, in the order they were always tested in. The
-    // one that does not end in a return is deliberate: a grip press that crosses
-    // the slop starts the resize and then falls through to the resize branch
-    // below, so the event that decided it also applies its first step.
+    // One branch per mode. This one falls through on purpose: the event that
+    // starts the resize also applies its first step.
     if (gesture.mode === 'press' && gesture.intent === 'resize') {
       const pending = gesture;
       const action = resizeHandleAction(
@@ -2810,9 +1947,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       );
       if (action !== 'resize') return;
       cancelPress();
-      // Leaves the machine in `resize` - unless the card has gone, in which case
-      // startResize() returns without entering and the press stands until the
-      // finger lifts, which is what it did before.
+      // If the card has gone, nothing is entered and the press stands to the lift.
       startResize(e, pending.id, pending.corner, pending);
     }
 
@@ -2836,8 +1971,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       gesture.lastX = e.clientX;
       gesture.lastY = e.clientY;
       if (gesture.track) trackPan(gesture.track, e);
-      // Once a middle-button pan clears the slop it is a drag, not a click, so
-      // the release paste is the pan's and gets swallowed rather than pasted.
+      // A middle pan past the slop: its release paste will be swallowed.
       if (midPaste.down && !midPaste.dragged && midPaste.at
           && Math.hypot(e.clientX - midPaste.at.x, e.clientY - midPaste.at.y) > DRAG_SLOP) {
         midPaste.dragged = true;
@@ -2866,12 +2000,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     followEdge(e);
   });
 
-  /**
-   * One step of a marquee, a move or a resize, with the pointer at this screen
-   * point. The tail of the pointermove handler, and a function of its own so
-   * the edge loop can run it again at a still pointer while the board pans
-   * under it - see followEdge().
-   */
+  /** One step of a marquee, move or resize at this screen point. Separate so
+   *  the edge loop can rerun it while the board pans under a still pointer
+   *  (followEdge()). */
   function track(clientX: number, clientY: number, shiftKey: boolean, altKey = false) {
     if (gesture.mode === 'marquee') {
       const p = vp.toWorld(clientX, clientY);
@@ -2882,66 +2013,38 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     }
 
     if (gesture.mode === 'move') {
-      // Bound once, like `pending` and `grip` in the branches either side. The
-      // reads below happen inside callbacks (`find`, `flatMap`) as well as out
-      // of them, and a name that is the move says the same thing in both.
+      // Bound, so the narrowing holds inside callbacks.
       const drag = gesture;
       const p = vp.toWorld(clientX, clientY);
       let dx = p.x - drag.start.x, dy = p.y - drag.start.y;
       if (!drag.moved && Math.hypot(dx * vp.zoom, dy * vp.zoom) < DRAG_SLOP) return;
-      // Shift held during the drag keeps it to one axis, whichever the hand has
-      // gone further along from the start - and lets go the moment Shift does.
-      // Read per move, never at the press: Shift *at the press* is the additive
-      // pick (pressIntent), and a drag that moved never peels on the lift, so
-      // the two meanings of one key cannot meet.
+      // Shift during the drag holds it to the longer axis. Read per move: Shift
+      // at the press means additive, and a moved drag never peels, so the two
+      // meanings cannot meet.
       const axis = shiftKey ? (Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y') : null;
       if (axis === 'x') dy = 0;
       if (axis === 'y') dx = 0;
-      // The press has become a drag. Raise now, so the stack change belongs to
-      // the move that is about to be committed - see raiseToFront.
+      // The press has become a drag.
       if (!drag.moved) {
-        // Alt+drag: the copy is made here, at the slop, so a plain Alt-click
-        // makes nothing.
+        // Alt+drag copies here, at the slop, so an Alt-click makes nothing.
         if (drag.alt) carryCopies(drag);
         raiseToFront(drag.moving);
-        // The pointer is captured by #viewport, so the cursor is #viewport's
-        // however far the card under it wants a grabbing hand. Mark the viewport
-        // for the length of the drag - see #viewport.is-moving in the CSS.
+        // Capture makes the cursor #viewport's, so mark it for the grabbing hand.
         el.classList.add('is-moving');
-        // And the cards themselves are picked up - the lift and lean items.css
-        // gives .is-dragging, which nothing used to set.
         setDragging(drag.moving, true);
       }
       drag.moved = true;
-      // Snap the dragged item; everything else keeps its offset from it, so a
-      // multi-selection moves rigidly instead of collapsing onto the grid.
-      //
-      // The item's *low edges* land on the lattice, not its centre. Centres were the
-      // obvious thing to round and the wrong one: an item an odd number of cells
-      // wide has its centre half a cell off the lattice by construction - that
-      // is what being an odd width means - so rounding the centre to a line
-      // pushed both its sides half a cell off instead. Edges are also what
-      // snapAll() lines up when snapping is switched on, so this is the same
-      // arrangement being kept rather than a second one being imposed.
+      // Only the lead snaps; the rest keep their offsets, so a group moves rigidly.
+      // Its low edges land on the lattice, not its centre, which for an odd
+      // width sits half a cell off by construction; edges are what snapAll() aligns.
       const lead = drag.leadOrigin;
       const low = { x: lead.x + dx - lead.w / 2, y: lead.y + dy - lead.h / 2 };
-      // The held axis does not snap either: a card that started off the lattice
-      // would otherwise step sideways onto it, which is the one move Shift says
-      // not to make.
+      // The held axis does not snap: that sideways step is what Shift forbids.
       let sx = axis === 'y' ? 0 : snapLowFor(low.x, drag.snap) - low.x;
       let sy = axis === 'x' ? 0 : snapLowFor(low.y, drag.snap) - low.y;
-      // A dragged note that would stick: show its would-be host wearing the
-      // selection ring so the target is unmistakable before release, and - when
-      // snapping is on - let the note land exactly where it was let go rather
-      // than on the nearest grid line, since it is being stuck to that host and a
-      // sticky that jumps a few pixels off the picture reads as a refusal. Only
-      // the note being dragged is measured; everything else keeps snapping.
-      //
-      // The gesture's `lead`, not its `id`: a press on a pinned star is dragging
-      // the photograph, and the photograph is not looking for a host. Asking
-      // about the star would light up whatever it is about to be carried over.
-      // Only the cards the spatial index holds around the note are asked, not
-      // the whole board on every move (research/old/done-2026-09-15.md, R23).
+      // A dragged sticky that would stick: ring its would-be host, and skip the
+      // snap so it lands where it was let go. Asked of `lead`, not `id` (a
+      // pinned star drags its photograph), and only of nearby cards.
       const leadItem = byId(drag.lead);
       const at = isSticky(leadItem)
         ? { x: lead.x + dx, y: lead.y + dy, w: leadItem.w, h: leadItem.h }
@@ -2954,11 +2057,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         sx = 0;
         sy = 0;
       }
-      // flatMap rather than map: `origin` was taken when the gesture began, and
-      // an item can leave the board mid-drag - deleted from the bin, undone, or
-      // swapped out wholesale by a load. Dropping it here rather than reading w
-      // off undefined is the same call applyGeom() and snapshotGeom() already
-      // make; the gesture then simply carries what is left.
+      // flatMap: an item may leave the board mid-drag; carry what is left.
       applyGeom(drag.origin.flatMap(o => {
         const it = byId(o.id);
         return it
@@ -2969,12 +2068,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     }
 
     if (gesture.mode === 'resize') {
-      // The card being resized can leave the board mid-gesture - deleted from
-      // the bin, undone, or swapped out wholesale by a load. Checked at the head
-      // of the branch rather than at the note-floor read below, which was the
-      // first line to touch it and threw; abortGesture() commits whatever the
-      // gesture had already done and lets go, which is what a release would have
-      // done a moment later anyway.
+      // The card may leave the board mid-gesture: commit what was done and let go.
       const grip = gesture;
       const it = byId(grip.id);
       if (!it) { abortGesture(); return; }
