@@ -531,11 +531,9 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
  * show has no run. Fencing is the canvas's: nothing here writes membership.
  */
 function feedRuns(ridden: Set<string>): { band: Item | null, items: Item[] }[] {
-  // SAFETY: mobileOrder() hands back the very items it was given, in a new
-  // order - ArrangeItem is only the narrower shape it reads them through.
   const shown = mobileOrder(
     board.items.filter(it => !HIDDEN.has(it.type) && !canvasOnly(it) && !ridden.has(it.id)),
-    { name: board.arrangement }) as Item[];
+    { name: board.arrangement });
   const fences = board.items.filter(isFence);
   if (!fences.length) return [{ band: null, items: shown }];
   return mobileRuns([...shown, ...fences]).filter(run => run.items.length);

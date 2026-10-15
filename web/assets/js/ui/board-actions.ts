@@ -690,10 +690,7 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     // fork - the shuffle above exists to re-deal a set of 2D slots, and dealt
     // into a Mobile order it would scramble the very sequence the order just
     // chose. See MOBILE_ARRANGEMENTS in arrange/arrangements.ts.
-    // SAFETY: the cast holds because mobileOrder() hands back the very items it
-    // was given, in a new order - ArrangeItem is only the narrower shape it
-    // reads them through, and every ORDERS entry is a permutation of its input.
-    placed = mobileOrder(free, { name: board.arrangement, seed }) as Item[];
+    placed = mobileOrder(free, { name: board.arrangement, seed });
     const moving = new Set(free.map(item => item.id));
     // Riders are not obstacles - they overlap their host and would wall it off.
     const obstacles = whole ? [] : board.items.filter(item =>

@@ -792,8 +792,7 @@ export async function importFiles(
   // Unzip keeps the archive's own order on both surfaces.
   if (!desktop && !replace) {
     // Mobile: only reorder, no 2D layout.
-    // SAFETY: every ORDERS entry in arrangements.ts returns the items it was handed, so each is a Draft.
-    const ordered = mobileOrder(drafts, { name: board.arrangement }) as Draft[];
+    const ordered = mobileOrder(drafts, { name: board.arrangement });
     drafts.length = 0;
     drafts.push(...ordered);
   }

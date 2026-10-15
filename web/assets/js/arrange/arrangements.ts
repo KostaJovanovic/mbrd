@@ -492,11 +492,12 @@ export function mobileArrangement(name?: string): string {
 }
 
 /** Top-to-bottom, left-to-right. Stable sort preserves input order for ties. */
-const readingOrder = (items: ArrangeItem[]): ArrangeItem[] =>
+const readingOrder = <T extends ArrangeItem>(items: T[]): T[] =>
   [...items].sort((a, b) => (b.y || 0) - (a.y || 0) || (a.x || 0) - (b.x || 0));
 
-/** Same items reordered for the packer. */
-type Order = (items: ArrangeItem[], o: ArrangeOpts) => ArrangeItem[];
+/** Same items reordered for the packer: the objects handed in, so a caller
+ *  gets back what it gave, typed as it gave it. */
+type Order = <T extends ArrangeItem>(items: T[], o: ArrangeOpts) => T[];
 
 const ORDERS: Record<string, Order> = {
   free: items => readingOrder(items),
@@ -524,7 +525,7 @@ const ORDERS: Record<string, Order> = {
 };
 
 /** Order items for the Mobile packer. Pure; seedless calls are deterministic. */
-export function mobileOrder(items: ArrangeItem[], opts: ArrangeOpts = {}): ArrangeItem[] {
+export function mobileOrder<T extends ArrangeItem>(items: T[], opts: ArrangeOpts = {}): T[] {
   const fn = ORDERS[mobileArrangement(opts.name)] || ORDERS[MOBILE_DEFAULT];
   return items.length ? fn(items, opts) : [];
 }

@@ -214,9 +214,7 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
 /** The board's audio in playing order, hidden tracks still in their places. */
 function boardOrder(): Item[] {
   const audio = board.items.filter(it => it.type === 'audio');
-  // SAFETY: every order in mobileOrder() returns the same objects it was given, so these are still Items.
-  return applyAudioOrder(
-    mobileOrder(audio, { name: board.arrangement }) as Item[], board.audioOrder);
+  return applyAudioOrder(mobileOrder(audio, { name: board.arrangement }), board.audioOrder);
 }
 
 /** As the list shows it: the hidden tracks sunk to the foot. */

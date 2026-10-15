@@ -666,10 +666,7 @@ export function completeLayout(mode: LayoutMode): Geometry[] {
     // different the moment the Mobile arrangement is anything but 'placed', and
     // the sequence somebody scrolled through on the phone is the sequence they
     // expect to read across on the desktop.
-    // SAFETY: the reason import/drop.ts gives at its own call - mobileOrder()
-    // mints nothing, it returns the items it was handed in another order, so
-    // every element here is one of `missing`. See ORDERS in arrangements.ts.
-    const ordered = mobileOrder(missing, { name: board.arrangements.mobile }) as Item[];
+    const ordered = mobileOrder(missing, { name: board.arrangements.mobile });
     // Masonry, and it is the same rule the Feed itself packs by: shortest column
     // first, leftmost on a tie. That used to be a claim about two loops written
     // from each other - and by the time it was written here they had come apart,
