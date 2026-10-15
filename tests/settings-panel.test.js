@@ -58,7 +58,7 @@ test('every button names a command that exists', () => {
   // precisely so it touches no browser global at import time), and
   // `key in cmds` is what the panel actually does.
   const cmds = createCommands(
-    { toWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0, fit() {}, recenter() {} },
+    { toWorld: () => ({ x: 0, y: 0 }), centreWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0, fit() {}, recenter() {} },
     { resetAppearance() {}, setWhimsy() {} });
   const camel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
   let checked = 0;

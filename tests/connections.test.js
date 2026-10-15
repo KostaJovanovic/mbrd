@@ -269,7 +269,7 @@ test('the app will not draw past the cap either', () => {
 
 /** The command surface, with the two things it is normally handed stubbed. */
 const commands = () => createCommands(
-  { toWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0 },
+  { toWorld: () => ({ x: 0, y: 0 }), centreWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0 },
   { resetAppearance() {}, setWhimsy() {} });
 
 test('the generator joins a board into one connected piece', () => {

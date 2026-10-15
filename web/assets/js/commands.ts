@@ -107,7 +107,7 @@ function clearStage(): true {
 
 /** Structural viewport subset this file needs — view centre for "add" commands, fit() for zoom. */
 export interface CommandsViewport extends CommandViewport {
-  toWorld(x: number, y: number): Point;
+  centreWorld(): Point;
   left: number;
   top: number;
   cx: number;
@@ -280,15 +280,15 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // composeNote() — item is real from the first keystroke; cancelling takes it
     // back. `tint` from the toolbar flyout; omitted cycles NOTE_TINTS.
     addNote: (tint?: number) => composeNote(
-      () => addNote(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), '', tint)),
+      () => addNote(vp.centreWorld(), '', tint)),
     // Pick a colour before the card exists, via the in-app picker.
     addSwatch: async () => {
       const picked = await pickColor({ title: 'Add a colour', go: 'Add', value: SWATCH_DEFAULT });
       if (!picked) return;
-      addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), picked);
+      addSwatch(vp.centreWorld(), picked);
     },
     // Shortcut for the toolbar flyout's pigment swatches — no dialog needed.
-    addSwatchOf: (hex: string) => addSwatch(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), hex),
+    addSwatchOf: (hex: string) => addSwatch(vp.centreWorld(), hex),
     /**
      * A new .tex file on the board, an article ready to fill in, opened in the
      * editor with its preview. Made through importFiles() as a dropped file is,
@@ -296,11 +296,11 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
      */
     newLatex: async () => {
       const file = new File([LATEX_STARTER], 'Untitled.tex', { type: 'application/x-tex' });
-      const [made] = await importFiles([file], vp.toWorld(vp.left + vp.cx, vp.top + vp.cy));
+      const [made] = await importFiles([file], vp.centreWorld());
       if (made) openViewer(made.id, { edit: true });
     },
     /** Add a style tile card. Selection curates the picture strip; empty = largest pictures. */
-    addStyleTile: () => addStyleTile(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), selection),
+    addStyleTile: () => addStyleTile(vp.centreWorld(), selection),
     // Typed link — nothing is fetched until the card is clicked.
     addLink: async () => {
       const typed = await ask({
@@ -312,7 +312,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       if (!typed) return;
       const url = linkTyped(typed);
       if (!url) { toast('That is not an address this can open', 'error'); return; }
-      addLink(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), url);
+      addLink(vp.centreWorld(), url);
     },
     /** The address a link card points at, or null for anything that is not a
      *  link carrying a valid http(s) URL. Guards the menu's Properties row. */
@@ -702,7 +702,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // --- one card at a time: the can*/setter pairs the menu reads ---
     ...itemMetaCommands(),
     // Boards inside the board: make, go in, come out.
-    ...boardCommands(() => vp.toWorld(vp.left + vp.cx, vp.top + vp.cy)),
+    ...boardCommands(() => vp.centreWorld()),
 
     // S: every command, searched by name at the pointer (ui/palette.ts).
     palette: (x?: number, y?: number) => {

@@ -627,7 +627,7 @@ async function runAddFontFiles(files: Iterable<File>) {
   let added = 0;
   // Cascade so several faces dropped at once do not stack on one point.
   let placed = 0;
-  const at = vp ? vp.toWorld(vp.left + vp.cx, vp.top + vp.cy) : null;
+  const at = vp ? vp.centreWorld() : null;
   for (const file of files) {
     const list = fontList();
     if (list.length >= MAX_FONTS) {

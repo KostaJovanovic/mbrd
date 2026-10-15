@@ -25,7 +25,7 @@ const started = existsSync(join(DESKTOP, 'package.json'));
 // Same stub as settings-panel.test.js: createCommands() is a factory
 // touching no browser global, and only the set of keys matters here.
 const commands = () => createCommands(
-  { toWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0, fit() {}, recenter() {} },
+  { toWorld: () => ({ x: 0, y: 0 }), centreWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0, fit() {}, recenter() {} },
   { resetAppearance() {}, setWhimsy() {} });
 
 test('every native menu entry names a command that exists', { skip: skipReason() }, () => {

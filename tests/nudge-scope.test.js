@@ -12,7 +12,7 @@ import { fresh, photo, fence } from './state-fixtures.js';
 globalThis.requestAnimationFrame ??= () => 0;
 
 const commands = () => createCommands(
-  { toWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0 },
+  { toWorld: () => ({ x: 0, y: 0 }), centreWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0 },
   { resetAppearance() {}, setWhimsy() {} });
 
 beforeEach(() => {

@@ -174,7 +174,7 @@ export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps)
       let at = typeof x === 'number' && typeof y === 'number' && Number.isFinite(x) && Number.isFinite(y)
         ? { x, y } : null;
       if (!at) {
-        const here = vp.toWorld(vp.left + vp.cx, vp.top + vp.cy);
+        const here = vp.centreWorld();
         const typed = await ask({
           title: 'Move to',
           body: 'A point on the board as the readout says it: x, then y.',

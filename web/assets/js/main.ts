@@ -898,7 +898,7 @@ platform.lifecycle.onOpenFiles(files => {
     try {
       await started;
       if (boardFile) await openFile(boardFile.file, boardFile.ref);
-      if (content.length) await importFiles(content, vp.toWorld(vp.left + vp.cx, vp.top + vp.cy));
+      if (content.length) await importFiles(content, vp.centreWorld());
     } catch (err) { console.warn('[mbrd] open file:', err); }
   })();
 });

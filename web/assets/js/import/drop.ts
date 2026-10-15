@@ -182,11 +182,8 @@ const IMPORT_WORKERS = 6;
 /** Minimal viewport surface — screen-to-world and view centre. Narrow to stay loadable without a browser. */
 export interface DropViewport {
   toWorld(x: number, y: number): Point;
+  centreWorld(): Point;
   cursor?: Point | null;
-  left: number;
-  top: number;
-  cx: number;
-  cy: number;
 }
 
 export function initDrop(vp: DropViewport) {
@@ -273,7 +270,7 @@ export function initDrop(vp: DropViewport) {
     // Under cursor if known, otherwise centre of view (touch device or no prior pointer).
     const centre = vp.cursor
       ? vp.toWorld(vp.cursor.x, vp.cursor.y)
-      : vp.toWorld(vp.left + vp.cx, vp.top + vp.cy);
+      : vp.centreWorld();
     const files = [...(e.clipboardData?.files || [])];
     if (files.length) {
       e.preventDefault();
@@ -320,7 +317,7 @@ export function initDrop(vp: DropViewport) {
       if (id && files[0]) await replaceItemFile(id, files[0]);
       return;
     }
-    if (files.length) await importFiles(files, vp.toWorld(vp.left + vp.cx, vp.top + vp.cy));
+    if (files.length) await importFiles(files, vp.centreWorld());
   });
 }
 

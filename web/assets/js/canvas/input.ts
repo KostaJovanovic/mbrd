@@ -3035,7 +3035,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // note at, no anchor to hold and no stack to reorder.
       case 'n': case 'N': if (!onlyLooking() && !vp.isMobile) {
         // At the pointer, where "here" is, as the menu's Add a note here does.
-        const at = hover ? vp.toWorld(hover.x, hover.y) : vp.toWorld(vp.left + vp.cx, vp.top + vp.cy);
+        const at = hover ? vp.toWorld(hover.x, hover.y) : vp.centreWorld();
         cmds.addNoteAt?.(at);
         e.preventDefault();
       } break;
@@ -3368,7 +3368,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     const r = vp.visibleRect(0);
     const inView = box && box.x1 >= r.x0 && box.x0 <= r.x1 &&
                           box.y1 >= r.y0 && box.y0 <= r.y1;
-    return inView ? null : vp.toWorld(vp.left + vp.cx, vp.top + vp.cy);
+    return inView ? null : vp.centreWorld();
   }
 
   // The canvas owns the right-click slot: a board's useful actions are spatial,

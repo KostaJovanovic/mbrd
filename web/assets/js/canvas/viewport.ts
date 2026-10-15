@@ -845,6 +845,12 @@ export class Viewport {
     return { x: sx / this.zoom + this.pan.x, y: this.pan.y - sy / this.zoom };
   }
 
+  /** The board point at the middle of the room the panels leave, where a
+   *  thing added with no pointer to place it lands. toWorld() of that middle. */
+  centreWorld(): Point {
+    return { x: this.pan.x, y: this.pan.y };
+  }
+
   /** The world-space rectangle currently visible, grown by `margin` world px. */
   visibleRect(margin = 0): Bounds {
     const hw = this.cx / this.zoom + margin;
