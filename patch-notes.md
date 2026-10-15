@@ -162,14 +162,54 @@ back to the board.
 
 ## Releases
 
+## Caught Up
+version: 0.726
+date: 15 October 2026
+
+- **Nothing in the app changed.** These notes were brought up to date.
+
+## Right Names
+version: 0.706 - 0.725
+date: 14 October 2026
+
+- **Settings is called Settings, and three things stop going wrong quietly.**
+- **The `System` tab is now `Settings`.** The `Sounds` slider moves into the Debug
+  fold, the frame profiler and cue log rows are gone, and `Clear everything`
+  sits below the Debug fold, where it shows without opening it.
+- [fix] **`Export a copy` in the apps writes a copy and nothing else.** It used
+  to rename the open board after the copy and mark it saved, so the next Save
+  went to the copy rather than to the board's own file.
+- [fix] **`Save image` and `Save PDF` keep the letters of the board's name** in
+  the file name, Cyrillic and accented ones included, rather than dropping
+  every letter outside English.
+- [fix] **Copy works when the app is opened from another machine on the same
+  network:** every menu `Copy`, the share link, `Report a problem`, a colour
+  and a link card's address.
+- [fix] **A very quick tap no longer gets lost** on a 3D model, the colour
+  field, the Timeline's handles, the sheet's grips, the darkroom's frame, the
+  viewer or the tour editor.
+- **Maintenance:** a long round of tidying inside the app, with nothing else to
+  see.
+
+## Margins
+version: 0.705
+date: 13 October 2026
+
+- **Maintenance:** comments inside the app were trimmed, with nothing to see.
+
 ## Flat Top
-version: 0.690 - 0.702
+version: 0.690 - 0.704
 date: 9 October 2026
 
 - **`Rearrange` under the title card gets a proper top edge.**
 - [fix] **With `Keep cards below the title card` on, a spiral or a scatter is a
   circle with its top cut flat.** The first row of cards sits level under the
   title, rather than the block hanging from a single card at its point.
+- [new] **`Select multiple` clears the screen for picking.** The bars step
+  aside, a `Done selecting` button at the top is the way out, and a drag on
+  bare board pans rather than drawing a box, so a board bigger than the screen
+  can be picked across. A box drawn by a swipe adds to what is picked rather
+  than replacing it.
 - **Maintenance:** a round of tidying inside the app, with nothing to see.
 
 ## Boards Within

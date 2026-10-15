@@ -198,27 +198,82 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>53 releases</span>
-      <span>725 commits</span>
+      <span>56 releases</span>
+      <span>726 commits</span>
       <span>since 24 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
-<li class="pn-rel" id="r-flat-top">
+<li class="pn-rel" id="r-caught-up">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>
-    <span class="pn-count">13</span>
+    <span class="pn-count">1</span>
   </div>
   <article class="pn-plate">
     <header class="pn-plate-head">
-      <p class="pn-ver">0.690 - 0.702</p>
+      <p class="pn-ver">0.726</p>
+      <h2 class="pn-name">Caught Up</h2>
+      <p class="pn-date">15 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Nothing in the app changed.</strong> These notes were brought up to date.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-right-names">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">20</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.706 - 0.725</p>
+      <h2 class="pn-name">Right Names</h2>
+      <p class="pn-date">14 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Settings is called Settings, and three things stop going wrong quietly.</strong></li>
+      <li class="is-plain"><strong>The <code>System</code> tab is now <code>Settings</code>.</strong> The <code>Sounds</code> slider moves into the Debug fold, the frame profiler and cue log rows are gone, and <code>Clear everything</code> sits below the Debug fold, where it shows without opening it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Export a copy</code> in the apps writes a copy and nothing else.</strong> It used to rename the open board after the copy and mark it saved, so the next Save went to the copy rather than to the board's own file.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Save image</code> and <code>Save PDF</code> keep the letters of the board's name</strong> in the file name, Cyrillic and accented ones included, rather than dropping every letter outside English.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Copy works when the app is opened from another machine on the same network:</strong> every menu <code>Copy</code>, the share link, <code>Report a problem</code>, a colour and a link card's address.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A very quick tap no longer gets lost</strong> on a 3D model, the colour field, the Timeline's handles, the sheet's grips, the darkroom's frame, the viewer or the tour editor.</li>
+      <li class="is-plain"><strong>Maintenance:</strong> a long round of tidying inside the app, with nothing else to see.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-margins">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">1</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.705</p>
+      <h2 class="pn-name">Margins</h2>
+      <p class="pn-date">13 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Maintenance:</strong> comments inside the app were trimmed, with nothing to see.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-flat-top">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">15</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.690 - 0.704</p>
       <h2 class="pn-name">Flat Top</h2>
       <p class="pn-date">9 October 2026</p>
     </header>
     <ul class="pn-notes">
       <li class="is-plain"><strong><code>Rearrange</code> under the title card gets a proper top edge.</strong></li>
       <li><span class="pn-tag is-fix">Fix</span><strong>With <code>Keep cards below the title card</code> on, a spiral or a scatter is a circle with its top cut flat.</strong> The first row of cards sits level under the title, rather than the block hanging from a single card at its point.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Select multiple</code> clears the screen for picking.</strong> The bars step aside, a <code>Done selecting</code> button at the top is the way out, and a drag on bare board pans rather than drawing a box, so a board bigger than the screen can be picked across. A box drawn by a swipe adds to what is picked rather than replacing it.</li>
       <li class="is-plain"><strong>Maintenance:</strong> a round of tidying inside the app, with nothing to see.</li>
     </ul>
   </article>
