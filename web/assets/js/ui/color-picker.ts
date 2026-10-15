@@ -7,6 +7,7 @@ import { capturePointerSafely, clamp } from '../util.ts';
 // module works in is still HSV, for the reason the header gives.
 import { parseHex } from '../color.ts';
 import { tickSlider } from './controls.ts';
+import { openModal } from './dialog.ts';
 
 /** A colour as this module holds it: hue in degrees, the other two in 0..1. */
 type Hsv = { h: number, s: number, v: number };
@@ -105,7 +106,7 @@ export async function pickColor(opts: PickOptions = {}): Promise<string | null> 
   }
 }
 
-function openWith(el: HTMLDialogElement, o: Required<PickOptions>) {
+async function openWith(el: HTMLDialogElement, o: Required<PickOptions>): Promise<string | null> {
   // Every id here is inside the #pick dialog in index.html, and the two ranges
   // are <input>s there - the markup is what makes the assertions below true,
   // and a missing one is a broken build rather than a state to draw around.
@@ -156,15 +157,17 @@ function openWith(el: HTMLDialogElement, o: Required<PickOptions>) {
   };
   paintAll();
 
-  return new Promise<string | null>(resolve => {
-    let answer: string | null = null;
-    // A drag that leaves the square still ends somewhere, and where it ends is
-    // usually the dialog itself - which is the backdrop test below. Without
-    // this, choosing a colour near the edge of the square and releasing past it
-    // closes the dialog and throws the colour away.
-    let dragged = false;
+  // Escape and the backdrop leave this at null; only Go sets it.
+  let answer: string | null = null;
+  // A drag that leaves the square still ends somewhere, and where it ends is
+  // usually the dialog itself - which is the backdrop test. Without this,
+  // choosing a colour near the edge of the square and releasing past it
+  // closes the dialog and throws the colour away.
+  let dragged = false;
 
-    const close = (choice: string | null) => { answer = choice; el.close(); };
+  // Quiet: this box never made the 'pick' cue the others close on.
+  const closed = openModal(el, (signal, shut) => {
+    const close = (choice: string | null) => { answer = choice; shut(); };
 
     const atPointer = (e: PointerEvent) => {
       const r = area.getBoundingClientRect();
@@ -224,14 +227,6 @@ function openWith(el: HTMLDialogElement, o: Required<PickOptions>) {
     };
     const onHexBlur = () => { hex.value = hsvToHex(h, s, v).toUpperCase(); };
 
-    const onGo = () => close(hsvToHex(h, s, v));
-    const onCancel = () => close(null);
-    const onClick = (e: MouseEvent) => { if (e.target === el && !dragged) close(null); };
-    // Escape is left to the browser: it fires `cancel` then `close`, and this
-    // dialog answers on `close` (onClose below). `answer` is already null until
-    // a `close(hex)` sets it, so a `cancel` listener could only re-set the
-    // default - hence there is none.
-
     // Enter is the go button from anywhere in the panel except a button, which
     // already answers Enter by being pressed.
     const onKey = (e: KeyboardEvent) => {
@@ -240,43 +235,24 @@ function openWith(el: HTMLDialogElement, o: Required<PickOptions>) {
       close(hsvToHex(h, s, v));
     };
 
-    const onClose = () => {
-      area.removeEventListener('pointerdown', onDown);
-      area.removeEventListener('pointermove', onMove);
-      area.removeEventListener('pointerup', onUp);
-      area.removeEventListener('pointercancel', onUp);
-      area.removeEventListener('keydown', onAreaKey);
-      hue.removeEventListener('input', onHue);
-      hex.removeEventListener('input', onHexInput);
-      hex.removeEventListener('blur', onHexBlur);
-      go.removeEventListener('click', onGo);
-      cancel.removeEventListener('click', onCancel);
-      el.removeEventListener('click', onClick);
-      el.removeEventListener('keydown', onKey);
-      el.removeEventListener('close', onClose);
-      resolve(answer);
-    };
-
-    area.addEventListener('pointerdown', onDown);
-    area.addEventListener('pointermove', onMove);
-    area.addEventListener('pointerup', onUp);
-    area.addEventListener('pointercancel', onUp);
-    area.addEventListener('keydown', onAreaKey);
+    area.addEventListener('pointerdown', onDown, { signal });
+    area.addEventListener('pointermove', onMove, { signal });
+    area.addEventListener('pointerup', onUp, { signal });
+    area.addEventListener('pointercancel', onUp, { signal });
+    area.addEventListener('keydown', onAreaKey, { signal });
     // 360 stops, so tickSlider() declines it. See the note in ui/nowplaying.ts.
     tickSlider(hue);
-    hue.addEventListener('input', onHue);
-    hex.addEventListener('input', onHexInput);
-    hex.addEventListener('blur', onHexBlur);
-    go.addEventListener('click', onGo);
-    cancel.addEventListener('click', onCancel);
-    el.addEventListener('click', onClick);
-    el.addEventListener('keydown', onKey);
-    el.addEventListener('close', onClose);
-
-    el.showModal();
-    // Focus lands on the square, because that is the whole of what this dialog
-    // is for. Nothing here is destructive - ask() lands on Cancel for questions
-    // where the difference between two buttons is a board, and this is not one.
-    area.focus();
-  });
+    hue.addEventListener('input', onHue, { signal });
+    hex.addEventListener('input', onHexInput, { signal });
+    hex.addEventListener('blur', onHexBlur, { signal });
+    go.addEventListener('click', () => close(hsvToHex(h, s, v)), { signal });
+    cancel.addEventListener('click', () => close(null), { signal });
+    el.addEventListener('keydown', onKey, { signal });
+  }, { quiet: true, hold: () => dragged });
+  // Focus lands on the square, because that is the whole of what this dialog
+  // is for. Nothing here is destructive - ask() lands on Cancel for questions
+  // where the difference between two buttons is a board, and this is not one.
+  area.focus();
+  await closed;
+  return answer;
 }

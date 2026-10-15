@@ -13,8 +13,8 @@ import { readToken } from '../util.ts';
 import { formatSize, MM_PER_INCH } from '../measure.ts';
 import { EXPORT_DEFAULTS, boardPreview, boardShadows, boardTilts, exportSize } from './snapshot.ts';
 import type { ExportOpts } from './snapshot.ts';
-import { cue } from '../cuelume/engine.ts';
 import { onTouch } from '../canvas/viewport.ts';
+import { openModal } from './dialog.ts';
 
 /** Which of the three buttons asked. Each keeps its own options. */
 export type ExportKind = 'image' | 'pdf' | 'svg';
@@ -202,9 +202,9 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
       + (kind === 'svg' ? '. The cards stay text, for a browser to open' : '');
   };
 
-  return new Promise<ExportOpts | null>(resolve => {
-    let answer: ExportOpts | null = null;
-    const close = () => { cue('pick'); el.close(); };
+  let answer: ExportOpts | null = null;
+  paint();
+  const closed = openModal(el, (signal, close) => {
     const save = () => {
       answer = read();
       // The ids are this selection's; only the wish carries to the next box.
@@ -212,43 +212,23 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
       if (picked.length) wantOnly[kind] = only.checked;
       close();
     };
-
-    const onGo = (e: Event) => { e.preventDefault(); save(); };
-    const onCancel = () => close();
-    // A click on the <dialog> itself (the backdrop), not a child, cancels.
-    const onClick = (e: MouseEvent) => { if (e.target === el) close(); };
-    // Enter anywhere in the box saves; Escape is the browser's own cancel→close.
-    const onKey = (e: KeyboardEvent) => {
+    go.addEventListener('click', e => { e.preventDefault(); save(); }, { signal });
+    cancel.addEventListener('click', close, { signal });
+    // Enter anywhere in the box saves.
+    el.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); save(); }
-    };
-
-    const onClose = () => {
-      go.removeEventListener('click', onGo);
-      cancel.removeEventListener('click', onCancel);
-      el.removeEventListener('click', onClick);
-      el.removeEventListener('keydown', onKey);
-      el.removeEventListener('input', paint);
-      el.removeEventListener('close', onClose);
-      // Nothing late may land, and the picture goes with the box.
-      clearTimeout(timer);
-      generation++;
-      mount.replaceChildren();
-      showing = false;
-      resolve(answer);
-    };
-
-    go.addEventListener('click', onGo);
-    cancel.addEventListener('click', onCancel);
-    el.addEventListener('click', onClick);
-    el.addEventListener('keydown', onKey);
+    }, { signal });
     // One listener for every control: each changes either the readout or nothing.
-    el.addEventListener('input', paint);
-    el.addEventListener('close', onClose);
-
-    paint();
-    el.showModal();
-    // Touch: focus the dialog, not a field, so the keyboard does not spring
-    // up before a tap. Desktop: Save, since the defaults are the usual answer.
-    if (onTouch()) { el.tabIndex = -1; el.focus(); } else go.focus();
+    el.addEventListener('input', paint, { signal });
   });
+  // Touch: focus the dialog, not a field, so the keyboard does not spring
+  // up before a tap. Desktop: Save, since the defaults are the usual answer.
+  if (onTouch()) { el.tabIndex = -1; el.focus(); } else go.focus();
+  await closed;
+  // Nothing late may land, and the picture goes with the box.
+  clearTimeout(timer);
+  generation++;
+  mount.replaceChildren();
+  showing = false;
+  return answer;
 }

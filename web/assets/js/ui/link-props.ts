@@ -11,8 +11,8 @@
 import { byId, renameItem, setLinkURL } from '../state.ts';
 import { linkURL, linkTyped } from '../canvas/links.ts';
 import { toast } from '../notify.ts';
-import { cue } from '../cuelume/engine.ts';
 import { onTouch } from '../canvas/viewport.ts';
+import { openModal } from './dialog.ts';
 import { copyText } from '../util.ts';
 
 // One at a time: a second call while the box is up is ignored, not stacked.
@@ -51,16 +51,23 @@ export async function editLinkProps(id: string): Promise<void> {
   urlField.value = linkURL(it.meta?.url)?.href
     ?? (typeof it.meta?.url === 'string' ? it.meta.url : '');
 
-  await new Promise<void>(resolve => {
-    const close = () => { cue('pick'); el.close(); };
+  // Grow the address field to its content: reset to auto so scrollHeight
+  // measures the text, not the last height, then take that. CSS max-height
+  // caps it at four lines and scrolls past them. Setting .style is fine under
+  // the CSP - only a style attribute in markup is not.
+  const autosize = () => {
+    urlField.style.height = 'auto';
+    urlField.style.height = `${urlField.scrollHeight}px`;
+  };
 
+  const closed = openModal(el, (signal, close) => {
     // Copy takes what is in the box now, edited or not - the field is the
     // truth on screen. A blank field copies nothing.
-    const onCopy = () => {
+    copy.addEventListener('click', () => {
       const text = urlField.value.trim();
       if (!text) return;
       void copyText(text).then(ok => { if (ok) toast('Link copied'); });
-    };
+    }, { signal });
 
     // Save validates the address first and, on a bad one, keeps the box open
     // rather than closing on edits the user cannot see were rejected.
@@ -73,52 +80,20 @@ export async function editLinkProps(id: string): Promise<void> {
       close();
     };
 
-    // Grow the address field to its content: reset to auto so scrollHeight
-    // measures the text, not the last height, then take that. CSS max-height
-    // caps it at four lines and scrolls past them. Setting .style is fine under
-    // the CSP - only a style attribute in markup is not.
-    const autosize = () => {
-      urlField.style.height = 'auto';
-      urlField.style.height = `${urlField.scrollHeight}px`;
-    };
-
-    const onGo = (e: Event) => { e.preventDefault(); save(); };
-    const onCancel = () => close();
-    // A click on the <dialog> itself (the backdrop), not a child, cancels.
-    const onClick = (e: MouseEvent) => { if (e.target === el) close(); };
-    // Enter in either field saves; Escape is the browser's own cancel→close.
-    // Enter saves rather than adding a line: a URL has no legitimate newline,
-    // so the textarea's wrapping stays soft (visual only). Escape is the
-    // browser's own cancel→close.
+    go.addEventListener('click', e => { e.preventDefault(); save(); }, { signal });
+    cancel.addEventListener('click', close, { signal });
+    // Enter in either field saves rather than adding a line: a URL has no
+    // legitimate newline, so the textarea's wrapping stays soft (visual only).
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); save(); } };
-
-    const onClose = () => {
-      copy.removeEventListener('click', onCopy);
-      go.removeEventListener('click', onGo);
-      cancel.removeEventListener('click', onCancel);
-      el.removeEventListener('click', onClick);
-      nameField.removeEventListener('keydown', onKey);
-      urlField.removeEventListener('keydown', onKey);
-      urlField.removeEventListener('input', autosize);
-      el.removeEventListener('close', onClose);
-      showing = false;
-      resolve();
-    };
-
-    copy.addEventListener('click', onCopy);
-    go.addEventListener('click', onGo);
-    cancel.addEventListener('click', onCancel);
-    el.addEventListener('click', onClick);
-    nameField.addEventListener('keydown', onKey);
-    urlField.addEventListener('keydown', onKey);
-    urlField.addEventListener('input', autosize);
-    el.addEventListener('close', onClose);
-
-    el.showModal();
-    // Now the field is laid out, size it to the address it opened with.
-    autosize();
-    // Touch: focus the dialog, not a field, so the keyboard does not spring up
-    // before a tap. Desktop: the name field, the first thing to edit.
-    if (onTouch()) { el.tabIndex = -1; el.focus(); } else nameField.focus();
+    nameField.addEventListener('keydown', onKey, { signal });
+    urlField.addEventListener('keydown', onKey, { signal });
+    urlField.addEventListener('input', autosize, { signal });
   });
+  // Now the field is laid out, size it to the address it opened with.
+  autosize();
+  // Touch: focus the dialog, not a field, so the keyboard does not spring up
+  // before a tap. Desktop: the name field, the first thing to edit.
+  if (onTouch()) { el.tabIndex = -1; el.focus(); } else nameField.focus();
+  await closed;
+  showing = false;
 }

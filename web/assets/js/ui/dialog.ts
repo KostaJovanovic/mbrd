@@ -63,7 +63,46 @@ export async function ask(opts: AskOptions = {}): Promise<Answer | string | null
   }
 }
 
-function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string | null> {
+/** How a box departs from the usual, for the one that does. */
+export interface ModalOptions {
+  /** No 'pick' cue on the way out. */
+  quiet?: boolean;
+  /** True while a click on the backdrop must not close the box. */
+  hold?: () => boolean;
+}
+
+/**
+ * Show a <dialog> modally; resolves when it closes, however it closes.
+ *
+ * Owns what every box here did the same way by hand: the cue on the way out, a
+ * click on the <dialog> itself (the backdrop, not a child) cancelling, and
+ * taking every listener down again. `wire` adds the box's own listeners and
+ * passes `signal` to each, so none can outlive the box; `close` is the one exit
+ * for its buttons. Escape is the browser's own cancel→close and needs nothing.
+ *
+ * The box is open by the time this returns, so a caller focuses or measures
+ * after the call and awaits the promise after that.
+ */
+export function openModal(
+  el: HTMLDialogElement,
+  wire: (signal: AbortSignal, close: () => void) => void,
+  { quiet = false, hold = () => false }: ModalOptions = {},
+): Promise<void> {
+  return new Promise<void>(resolve => {
+    const life = new AbortController();
+    const { signal } = life;
+    const close = () => {
+      if (!quiet) cue('pick');
+      el.close();
+    };
+    el.addEventListener('click', e => { if (e.target === el && !hold()) close(); }, { signal });
+    el.addEventListener('close', () => { life.abort(); resolve(); }, { signal });
+    wire(signal, close);
+    el.showModal();
+  });
+}
+
+async function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string | null> {
   // All six child elements live inside #ask in index.html.
   const title = document.getElementById('ask-title')!;
   const body = document.getElementById('ask-body')!;
@@ -95,56 +134,33 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
   // Danger styling: on by default for button questions, off for field questions.
   go.classList.toggle('danger', o.danger ?? !o.field);
 
-  return new Promise<Answer | string | null>(resolve => {
-    let answer: Answer = 'cancel';
-
-    const close = (choice: Answer) => {
-      answer = choice;
-      // Single exit path for all five ways to close.
-      cue('pick');
-      el.close();
-    };
-    const onGo = () => close('go');
-    const onCancel = () => close('cancel');
-    const onKeep = () => close('keep');
-
-    // Click on the <dialog> itself (not a child) = backdrop = cancel.
-    const onClick = (e: MouseEvent) => { if (e.target === el) close('cancel'); };
-
-    // Escape handled by the browser's cancel→close sequence; answer is already 'cancel'.
+  // Escape and the backdrop leave this at 'cancel'. A getter, because tsc
+  // narrows a `let` to its initial value and cannot see the closure set it.
+  let answer: Answer = 'cancel';
+  const answered = (): Answer => answer;
+  const closed = openModal(el, (signal, close) => {
+    const pick = (choice: Answer) => () => { answer = choice; close(); };
+    go.addEventListener('click', pick('go'), { signal });
+    cancel.addEventListener('click', pick('cancel'), { signal });
+    keep.addEventListener('click', pick('keep'), { signal });
     // Enter in the field acts as go.
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); close('go'); } };
-
-    const onClose = () => {
-      go.removeEventListener('click', onGo);
-      cancel.removeEventListener('click', onCancel);
-      keep.removeEventListener('click', onKeep);
-      field.removeEventListener('keydown', onKey);
-      el.removeEventListener('click', onClick);
-      el.removeEventListener('close', onClose);
-      // Field question → typed string or null; button question → Answer.
-      resolve(o.field ? (answer === 'go' ? field.value.trim() : null) : answer);
-    };
-
-    go.addEventListener('click', onGo);
-    cancel.addEventListener('click', onCancel);
-    keep.addEventListener('click', onKeep);
-    field.addEventListener('keydown', onKey);
-    el.addEventListener('click', onClick);
-    el.addEventListener('close', onClose);
-
-    el.showModal();
-    // Focus: field → the input; touch → the dialog itself (no highlighted
-    // button on a device with no Enter key); desktop → cancel (safe default
-    // against an accidental Enter that would destroy work).
-    if (o.field) {
-      field.focus();
-    } else if (onTouch()) {
-      // -1 makes focus() work but keeps it out of the tab order.
-      el.tabIndex = -1;
-      el.focus();
-    } else {
-      cancel.focus();
-    }
+    field.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); pick('go')(); }
+    }, { signal });
   });
+  // Focus: field → the input; touch → the dialog itself (no highlighted
+  // button on a device with no Enter key); desktop → cancel (safe default
+  // against an accidental Enter that would destroy work).
+  if (o.field) {
+    field.focus();
+  } else if (onTouch()) {
+    // -1 makes focus() work but keeps it out of the tab order.
+    el.tabIndex = -1;
+    el.focus();
+  } else {
+    cancel.focus();
+  }
+  await closed;
+  // Field question → typed string or null; button question → Answer.
+  return o.field ? (answered() === 'go' ? field.value.trim() : null) : answered();
 }
