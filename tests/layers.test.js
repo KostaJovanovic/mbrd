@@ -166,6 +166,9 @@ const BASE = new Set([
   // dirty flag), board-model.ts (shape, defaults, id index), history.ts
   // (undo/redo). None may ever import state.ts back.
   'board-store.ts', 'board-model.ts', 'history.ts', 'sticky.ts', 'layout.ts', 'stacking.ts',
+  // The tour's stop list and its edits, over board-model, board-store, history
+  // and sticky. state.ts re-exports it, downward.
+  'tour-model.ts',
   // The step ledger, below history.ts: history keeps changes as closures and
   // calls in here to keep the same change as data, an arrow that can't
   // reverse. Knows nothing about the file format, so board-schema.ts imports it.
