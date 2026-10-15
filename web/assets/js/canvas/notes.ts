@@ -16,7 +16,8 @@ import { nodeFor, onViewChange, refreshRings, screenBoxOf, viewportClientRect } 
 import { travelMs } from './viewport.ts';
 import { makeEditable, markClosed, readToken } from '../util.ts';
 import { rotatedExtents } from '../geometry.ts';
-import { linkURL, linkDraft } from './renderers.ts';
+import { linkDraft } from './renderers.ts';
+import { linkURL } from './links.ts';
 import {
   flattenNoteRich, buildNoteLine, normalizeRun, tidyRuns, styleOf, styleAt, locate, cutRuns,
   sliceLines, deleteRange, insertLines, restyle, withPending, linesLength, linesRich, linesMarkdown,

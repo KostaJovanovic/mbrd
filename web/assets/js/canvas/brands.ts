@@ -10,6 +10,8 @@
 // a brand whose mark is black (X, GitHub, Patreon...) is left to draw in the
 // board's ink so it sits as one of ours rather than a black slab.
 
+import { bareHost } from './links.ts';
+
 export interface Brand {
   /** Registry key, and the Simple Icons slug it came from. */
   key: string;
@@ -79,7 +81,7 @@ const ALIAS: Record<string, string> = {
  * open.spotify.com -> spotify, bbc.co.uk -> bbc, a bare host -> itself.
  */
 export function siteName(u: URL): string {
-  const host = u.hostname.replace(/^www\./, '');
+  const host = bareHost(u);
   const parts = host.split('.');
   if (parts.length <= 1) return host;
   const n = parts.length;

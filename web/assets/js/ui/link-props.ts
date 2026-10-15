@@ -9,7 +9,7 @@
 // to call it without ui/ importing commands.ts back.
 
 import { byId, renameItem, setLinkURL } from '../state.ts';
-import { linkURL, linkTyped } from '../canvas/renderers.ts';
+import { linkURL, linkTyped } from '../canvas/links.ts';
 import { toast } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import { onTouch } from '../canvas/viewport.ts';

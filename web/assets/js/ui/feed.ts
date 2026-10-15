@@ -20,7 +20,8 @@ import { mobileOrder } from '../arrange/arrangements.ts';
 // that file for why the two walls are one rule and two surfaces.
 import { packColumns } from '../arrange/columns.ts';
 import { assetURL, readText } from '../storage/assets.ts';
-import { linkURL, buildContent, swatchHex, MARKDOWN, enrichEmbedCard, linkGlyph, fitMode } from '../canvas/renderers.ts';
+import { buildContent, swatchHex, MARKDOWN, enrichEmbedCard, linkGlyph, fitMode } from '../canvas/renderers.ts';
+import { bareHost, linkURL } from '../canvas/links.ts';
 import { openExternal } from './leaving.ts';
 import { embedFor, frameFor, offerButton } from '../canvas/embed.ts';
 import type { EmbedSpec } from '../canvas/embed.ts';
@@ -1084,7 +1085,7 @@ function fillLink(t: Tile) {
   // it through the same scheme check so a non-http(s) string makes an inert card
   // rather than a live window.open.
   const u = linkURL(t.item.meta?.url);
-  const host = u ? u.hostname.replace(/^www\./, '') : '';
+  const host = u ? bareHost(u) : '';
 
   // A YouTube or Spotify link is a player waiting to be asked for. The offer,
   // not the frame: nothing is requested from anyone until the tile is tapped,

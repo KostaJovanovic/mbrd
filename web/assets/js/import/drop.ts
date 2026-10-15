@@ -15,9 +15,10 @@ import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
 import { makeByteBudget, overPixelBudget, pixelCrossing, IMPORT_LIMITS } from './budget.ts';
 import { allow, isAllowed, isOversize, fileKey, mb, withLift } from '../consent.ts';
 import {
-  classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame, isRetryable,
+  classify, defaultSize, measureSize, fitToBox, linkDraft, videoFrame, isRetryable,
   videoDrawsBlank, pictureIsFlat, swatchHex, SWATCH_DEFAULT,
 } from '../canvas/renderers.ts';
+import { linkURL } from '../canvas/links.ts';
 import { iframeURL, embedFor } from '../canvas/embed.ts';
 import { arrange, mobileOrder } from '../arrange/arrangements.ts';
 import { coverArt, mayHaveArt } from './artwork.ts';

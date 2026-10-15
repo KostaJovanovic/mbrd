@@ -6,7 +6,7 @@
 // shown as the words inside it, never dropped. Built from createElement and
 // createTextNode alone, as ui/markdown.ts is: the file is foreign.
 
-import { linkURL } from '../canvas/renderers.ts';
+import { linkURL } from '../canvas/links.ts';
 import { typeset } from './math.ts';
 import type { Macros } from './math.ts';
 

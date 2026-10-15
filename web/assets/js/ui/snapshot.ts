@@ -23,6 +23,7 @@ import { boardGridStep, MAJOR, MAJOR_WEIGHT, harshGrid } from '../canvas/grid.ts
 import { cutout } from '../canvas/matte.ts';
 import { surface } from '../canvas/surface.ts';
 import { fitMode } from '../canvas/renderers.ts';
+import { bareHost } from '../canvas/links.ts';
 import { isPrint } from '../canvas/picture-shape.ts';
 import { noteWords, normalizeNoteRich, richLines, NOTE_FONTS } from '../canvas/note-model.ts';
 import type { NoteFont } from '../canvas/note-model.ts';
@@ -928,7 +929,7 @@ function paintSwatch({ ctx, it, w, h, look, scale }: Paint) {
 
 /** The site's own name out of an address - www. and the scheme gone. */
 const hostOf = (url: unknown) => {
-  try { return new URL(String(url)).hostname.replace(/^www\./, ''); } catch { return ''; }
+  try { return bareHost(new URL(String(url))); } catch { return ''; }
 };
 
 /**

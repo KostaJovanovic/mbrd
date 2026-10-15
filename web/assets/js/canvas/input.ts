@@ -30,7 +30,7 @@ import {
 } from './items.ts';
 import { noteFloor } from './notes.ts';
 import { leanAtSize, itemAccessibleName } from './item-dom.ts';
-import { linkURL } from './renderers.ts';
+import { linkURL } from './links.ts';
 import { isPicture, cardRatio } from './picture-shape.ts';
 import { embedFor, embedFloor } from './embed.ts';
 import { queryRect, queryAround } from './spatial.ts';

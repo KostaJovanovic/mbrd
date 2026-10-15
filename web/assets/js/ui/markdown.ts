@@ -5,7 +5,7 @@
 // no innerHTML, no escaping to get right. Only href reaches an attribute,
 // checked via linkURL.
 
-import { linkURL } from '../canvas/renderers.ts';
+import { linkURL } from '../canvas/links.ts';
 import { typeset } from './math.ts';
 
 /**

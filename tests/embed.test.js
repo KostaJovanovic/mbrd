@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import {
   youTubeId, spotifyRef, embedFor, iframeURL,
 } from '../web/assets/js/canvas/embed.ts';
-import { linkURL } from '../web/assets/js/canvas/renderers.ts';
+import { linkURL } from '../web/assets/js/canvas/links.ts';
 
 const id = s => youTubeId(new URL(s));
 const sp = s => spotifyRef(new URL(s));

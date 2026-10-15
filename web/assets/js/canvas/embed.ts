@@ -6,6 +6,7 @@
 import { byId, snapshotGeom, applyGeom, commitGeom } from '../state.ts';
 import type { Item } from '../board-model.ts';
 import { hasOwn } from '../util.ts';
+import { bareHost } from './links.ts';
 
 export type EmbedSpec = {
   provider: 'youtube' | 'spotify';
@@ -57,7 +58,7 @@ const YT_ID = /^[\w-]{11}$/;
 
 export function youTubeId(u: URL | null | undefined): string | null {
   if (!u) return null;
-  const host = u.hostname.replace(/^www\./, '').toLowerCase();
+  const host = bareHost(u);
   let id = null;
   if (host === 'youtu.be') {
     id = u.pathname.slice(1);
@@ -111,7 +112,7 @@ const isSpotifyKind = (k: string): k is SpotifyKind => hasOwn(SPOTIFY, k);
 // Strips /intl-xx/, /embed, /embed-podcast prefixes before extracting kind/id.
 export function spotifyRef(u: URL | null | undefined): { kind: SpotifyKind; id: string } | null {
   if (!u) return null;
-  const host = u.hostname.replace(/^www\./, '').toLowerCase();
+  const host = bareHost(u);
   if (host !== 'open.spotify.com' && host !== 'play.spotify.com') return null;
   const parts = u.pathname.split('/').filter(Boolean);
   while (parts.length && (/^intl-[a-z]{2,3}$/i.test(parts[0]) || parts[0] === 'embed' || parts[0] === 'embed-podcast')) {

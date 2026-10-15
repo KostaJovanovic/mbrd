@@ -15,7 +15,7 @@
 // in a test with no network.
 
 import { embedFor } from './embed.ts';
-import { linkURL } from './renderers.ts';
+import { linkURL } from './links.ts';
 import { byId, setEmbedMeta } from '../state.ts';
 import { addFile, derivedFile } from '../storage/assets.ts';
 import { isRecord } from '../util.ts';
