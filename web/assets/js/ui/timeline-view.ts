@@ -7,7 +7,7 @@
 
 import { bus } from '../board-store.ts';
 import { toast } from '../notify.ts';
-import { formatBytes } from '../util.ts';
+import { capturePointerSafely, formatBytes } from '../util.ts';
 import { readPref, writePref } from '../prefs.ts';
 import { baseMs, reducedMotion } from '../canvas/viewport.ts';
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
@@ -557,7 +557,7 @@ function wireScroll() {
   grip.addEventListener('pointerdown', event => {
     if (event.button !== 0) return;
     event.preventDefault();
-    grip.setPointerCapture(event.pointerId);
+    capturePointerSafely(grip, event.pointerId);
     grip.classList.add('is-dragging');
     const from = event.clientX;
     const start = list.scrollLeft;
@@ -608,7 +608,7 @@ function wireMarker() {
   handle.addEventListener('pointerdown', event => {
     if (timelineStale() || playing || event.button !== 0) return;
     event.preventDefault();
-    handle.setPointerCapture(event.pointerId);
+    capturePointerSafely(handle, event.pointerId);
     handle.classList.add('is-dragging');
     let frame = 0;
     const move = (e: PointerEvent) => {

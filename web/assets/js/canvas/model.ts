@@ -3,7 +3,7 @@
 // kill contexts past ~16, so per-card contexts die as you pan. Cards show a still
 // (WebP snapshot) by default; live geometry only while actively turning.
 
-import { clamp } from '../util.ts';
+import { capturePointerSafely, clamp } from '../util.ts';
 import { addFile, allAssets, assetURL, derivedFile, getAsset, readText } from '../storage/assets.ts';
 import { surface, surfaceToBlob } from './surface.ts';
 import { applyMaterials, meshKind, readModel, parseMTL, MeshError } from '../mesh.ts';
@@ -541,7 +541,7 @@ function orbit(stage: HTMLCanvasElement, view: View, paint: () => void) {
   stage.addEventListener('pointerdown', e => {
     dragging = e.pointerId;
     last = { x: e.clientX, y: e.clientY };
-    stage.setPointerCapture(e.pointerId);
+    capturePointerSafely(stage, e.pointerId);
     stage.classList.add('is-turning');
   });
 

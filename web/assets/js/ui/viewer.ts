@@ -24,7 +24,7 @@ import { fileKey, lift } from '../consent.ts';
 import { mountEditor } from './editor/view.ts';
 import type { Editor, EditorOptions } from './editor/view.ts';
 import { measureForEdit } from './editor/markdown.ts';
-import { baseName, copyText, formatBytes, icon, markClosed, wasClosed } from '../util.ts';
+import { baseName, capturePointerSafely, copyText, formatBytes, icon, markClosed, wasClosed } from '../util.ts';
 import { MARKDOWN, enrichEmbedCard } from '../canvas/renderers.ts';
 import { linkURL } from '../canvas/links.ts';
 import { embedFor, frameFor } from '../canvas/embed.ts';
@@ -1198,7 +1198,7 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
     // Caught: whatever was travelling stops where it is, under the finger.
     still();
     stopGlide();
-    img.setPointerCapture(e.pointerId);
+    capturePointerSafely(img, e.pointerId);
     points.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (points.size === 1) { downX = e.clientX; downY = e.clientY; moved = false; }
     if (points.size === 2) {

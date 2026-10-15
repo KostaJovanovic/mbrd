@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 
 import {
   isDoubleTap, needsSelectionBeforeMove, repeatsLongPressContextMenu,
-  releasePointerSafely, capturePointerSafely, resizeHandleAction, shortcutsSuppressed,
+  resizeHandleAction, shortcutsSuppressed,
   liftWithButtonsHeld, readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
   carryFloor, carryHold, carryPlace, drewRectangle, marqueeHit,
   GESTURE_MOVES, gestureTransition, pressIntent,
   resizeAxisOn, nudgeDelta, walkOrder, nearestCard,
 } from '../web/assets/js/canvas/input.ts';
 import { cellInset, MIN_SIZE, MAX_SIZE } from '../web/assets/js/geometry.ts';
+import { capturePointerSafely, releasePointerSafely } from '../web/assets/js/util.ts';
 
 test('Tab walks the cards in reading order, a row a few pixels out of line still one row', () => {
   const card = (id, x, top) => ({ id, x, y: top - 50, w: 100, h: 100 });

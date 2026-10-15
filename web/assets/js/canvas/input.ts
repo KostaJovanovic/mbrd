@@ -4,7 +4,7 @@
 // Pure deciders (readWheel, gestureTransition, pressIntent) are exported
 // for tests; the doing stays inside initInput().
 
-import { clamp, hasOwn, markClosed } from '../util.ts';
+import { capturePointerSafely, clamp, hasOwn, markClosed, releasePointerSafely } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
 import {
   board, byId, selection, select, deselect, clearSelection, isMultiSelect, topZ, stackOrder,
@@ -683,49 +683,6 @@ export function nearestCard<T extends { id: string, x: number, y: number }>(
     if (score < bestScore) { best = card; bestScore = score; }
   }
   return best;
-}
-
-/** Release capture as one guarded step: some engines report it held, then
- *  invalidate the pointer before releasePointerCapture() runs. */
-export function releasePointerSafely(
-  element: {
-    hasPointerCapture?: (pointerId: number) => boolean,
-    releasePointerCapture?: (pointerId: number) => void,
-  } | null | undefined,
-  pointerId: number,
-): boolean {
-  if (!element?.releasePointerCapture) return false;
-  try {
-    if (element.hasPointerCapture && !element.hasPointerCapture(pointerId)) {
-      return false;
-    }
-    element.releasePointerCapture(pointerId);
-    return true;
-  } catch (error) {
-    if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
-      return false;
-    }
-    throw error;
-  }
-}
-
-/** Take capture without a refusal taking the press down: `setPointerCapture`
- *  throws for a finger already lifted, and thrown out of `pointerdown` that
- *  left a press that selected a card and did nothing else. */
-export function capturePointerSafely(
-  element: { setPointerCapture?: (pointerId: number) => void } | null | undefined,
-  pointerId: number,
-): boolean {
-  if (!element?.setPointerCapture) return false;
-  try {
-    element.setPointerCapture(pointerId);
-    return true;
-  } catch (error) {
-    if (typeof DOMException !== 'undefined' && error instanceof DOMException) {
-      return false;
-    }
-    throw error;
-  }
 }
 
 /** Cells shift+arrow covers on a snapped board, where a bare arrow is already one. */

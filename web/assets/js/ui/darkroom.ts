@@ -15,6 +15,7 @@ import { shownHash } from '../board-model.ts';
 import { cutout, matteAvailable } from '../canvas/matte.ts';
 import { surface } from '../canvas/surface.ts';
 import { tickSlider } from './controls.ts';
+import { capturePointerSafely } from '../util.ts';
 import { ask } from './dialog.ts';
 
 /** The crop rectangle, as fractions of the source. */
@@ -562,7 +563,7 @@ function onGrab(e: PointerEvent) {
   const x0 = e.clientX;
   const y0 = e.clientY;
   e.preventDefault();
-  frame!.setPointerCapture(e.pointerId);
+  capturePointerSafely(frame, e.pointerId);
 
   const onMove = (ev: PointerEvent) => {
     // Mapped through toSource(): the hand moves over the displayed picture but

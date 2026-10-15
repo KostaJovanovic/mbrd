@@ -2,7 +2,7 @@
 // the app's dialog. HSV (not OKLCH) because every sRGB value must be
 // reachable and no region dead.
 
-import { clamp } from '../util.ts';
+import { capturePointerSafely, clamp } from '../util.ts';
 // Only the six-digit parse, which is arithmetic and shared. The space this
 // module works in is still HSV, for the reason the header gives.
 import { parseHex } from '../color.ts';
@@ -179,7 +179,7 @@ function openWith(el: HTMLDialogElement, o: Required<PickOptions>) {
       // menu, not a colour.
       if (e.button !== 0) return;
       dragged = true;
-      area.setPointerCapture(e.pointerId);
+      capturePointerSafely(area, e.pointerId);
       area.focus();
       atPointer(e);
       e.preventDefault();

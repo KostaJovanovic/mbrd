@@ -13,7 +13,7 @@ import type { MenuEntry } from './menu.ts';
 import { paintTourMarks, setSpot, setTourMarks } from '../canvas/items.ts';
 import { baseMs, reducedMotion } from '../canvas/viewport.ts';
 import { cue } from '../cuelume/engine.ts';
-import { icon as iconOf, markClosed, readToken } from '../util.ts';
+import { capturePointerSafely, icon as iconOf, markClosed, readToken } from '../util.ts';
 import { previewStop, startTour, tourActive } from './tour.ts';
 
 /** The bar, built once by initTourEdit(). */
@@ -740,7 +740,7 @@ function lift(d: ChipDrag) {
   d.list.classList.add('is-sorting');
   d.li.classList.add('is-dragging');
   // Captured, so the chips passed under the pointer do not each peek their stop.
-  try { d.li.querySelector('button')?.setPointerCapture(d.pointerId); } catch { /* the pointer has gone */ }
+  capturePointerSafely(d.li.querySelector('button'), d.pointerId);
   addEventListener('keydown', onDragKey, true);
   cue('pick');
 }

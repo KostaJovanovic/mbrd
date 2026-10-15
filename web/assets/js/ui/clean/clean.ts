@@ -12,7 +12,7 @@ import type { Item } from '../../board-model.ts';
 import type { Viewport } from '../../canvas/viewport.ts';
 import { reducedMotion } from '../../canvas/viewport.ts';
 import { tiltOf, nodeFor, setCleanPlay } from '../../canvas/items.ts';
-import { capturePointerSafely, releasePointerSafely } from '../../canvas/input.ts';
+import { capturePointerSafely, releasePointerSafely } from '../../util.ts';
 import { defaultSize } from '../../canvas/renderers.ts';
 import { buildSpotlessCard, SPOTLESS_FRAME } from '../../canvas/spotless.ts';
 import { captureStills } from '../../canvas/stills.ts';

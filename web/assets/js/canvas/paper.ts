@@ -5,6 +5,7 @@
 import { board, bus, setSetting } from '../state.ts';
 import { paperMm, toUnits, formatSize, clampScale } from '../measure.ts';
 import { deviceRatio } from './viewport.ts';
+import { capturePointerSafely } from '../util.ts';
 import type { Viewport } from './viewport.ts';
 
 /** Max off-screen extent in CSS px. Prevents multi-million-pixel boxes at high zoom. */
@@ -142,7 +143,7 @@ function onDown(e: PointerEvent) {
     cy: spec.sy * toUnits(mm.h, scale) / 2,
     from: vp.toWorld(e.clientX, e.clientY),
   };
-  grip.setPointerCapture(e.pointerId);
+  capturePointerSafely(grip, e.pointerId);
   // The board's own pan handler is on the viewport and would otherwise start a
   // pan under the drag.
   e.stopPropagation();
