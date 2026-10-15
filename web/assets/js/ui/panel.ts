@@ -193,10 +193,14 @@ function buildSection(spec: Section) {
   // runs - so two runs in one section get a box each rather than sharing one
   // that would animate rows the second run never asked about.
   let run: Reveal | null = null;
+  // `belowFold` rows, held back until the fold is in, so they stay in view
+  // under its summary whether it is open or shut.
+  const below: HTMLElement[] = [];
   building = spec;
   for (const c of spec.controls) {
     const node = buildControl(c, spec);
     if (!node) continue;
+    if (c.belowFold) { below.push(node); continue; }
     if (!c.reveal) run = null;
     else if (!run) {
       const box = make('div', 'reveal-body');
@@ -222,6 +226,7 @@ function buildSection(spec: Section) {
   }
   building = null;
   if (fold) el.append(fold);
+  el.append(...below);
   if (spec.id) sections.set(spec.id, el);
   return el;
 }

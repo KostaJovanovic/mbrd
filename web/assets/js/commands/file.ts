@@ -379,7 +379,7 @@ export function fileCommands() {
           title: `That is ${formatBytes(packed.blob.size)} to upload`,
           body: 'Uploading will take a while on a slow connection, and whoever opens '
             + 'the link downloads all of it before they see the board. Optimising the '
-            + 'board first (System → Optimize) usually cuts it a long way.',
+            + 'board first (Board contents → Optimize) usually cuts it a long way.',
           go: 'Upload anyway',
           cancel: 'Cancel',
           danger: false,

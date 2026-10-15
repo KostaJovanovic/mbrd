@@ -21,7 +21,7 @@ import {
   QUALITY_LEVELS, quality, qualityLevel, setQualityLevel, setQualityOverride,
   SHARPNESS_STEPS, BUILD_STEPS,
 } from '../quality.ts';
-import { SOUND_STOPS, cueLogOn, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
+import { SOUND_STOPS, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
 import { drawingEnabled } from '../canvas/pen.ts';
 import {
   wheelMode, setWheelMode, zoomReversed, setZoomReversed,
@@ -103,6 +103,8 @@ type Common = {
   reveal?: boolean,
   /** Sinks the control into its section's one fold. */
   advanced?: boolean,
+  /** Drawn after the section's fold, outside it, so it shows with the fold shut. */
+  belowFold?: boolean,
   /** Another module owns the behaviour; this file only asks for the element. */
   external?: boolean,
   /** Its owner decides when it shows, for a reason this table does not know. */
@@ -243,7 +245,9 @@ const CONNECT_BUTTONS: ButtonSpec[] = cloudProviders().map(p => ({
 export const TABS = [
   { id: 'board',  label: 'Board' },
   { id: 'look',   label: 'Look' },
-  { id: 'system', label: 'System' },
+  // Labelled Settings; the id stays 'system', which revealFold() and the
+  // browser suite address it by.
+  { id: 'system', label: 'Settings' },
 ];
 
 /**
@@ -1074,10 +1078,6 @@ export const SECTIONS: Section[] = [
     // The one section that is not about a board at all. See quality.ts: it is
     // per device and never travels inside a .mbrd, because how hard someone
     // else's phone should work is not a property of your moodboard.
-    // "More settings" rather than "Advanced": the fold now opens with the sound
-    // dial, which is not an advanced anything - it is an ordinary choice that
-    // happens to be off by default. The word has to cover both it and the
-    // quality overrides under it.
     id: 'quality', tab: 'system', title: 'Quality', foldLabel: 'More settings',
     controls: [
       { id: 'opt-quality', type: 'range', label: 'Quality',
@@ -1085,35 +1085,6 @@ export const SECTIONS: Section[] = [
         stops: QUALITY_LEVELS.map(l => l.label),
         get: () => QUALITY_LEVELS.findIndex(l => l.id === qualityLevel()),
         set: v => setQualityLevel(QUALITY_LEVELS[v]?.id) },
-      // In this section rather than in Appearance, and that is the same line
-      // the section's own note draws: how loud somebody else's laptop should be
-      // is not a property of your moodboard, so it never travels inside a
-      // .mbrd. It is stored under mbrd.sound like every other per-device
-      // choice - which means "Clear everything" sweeps it and /patch cannot
-      // change it, both for free (prefs.ts).
-      //
-      // One four-stop dial rather than a checkbox and a volume beside it: two
-      // controls can disagree with each other, and "Off" is a stop on this one.
-      // Defaults to Off: the sounds are experimental, and the hint under the
-      // dial says so whenever it is on.
-      //
-      // The quality dial deliberately does not touch it. Sound costs nothing to
-      // draw, and muting it on a tired phone would be tidying rather than
-      // helping.
-      //
-      // Behind the fold, which is where a row that defaults to Off and says
-      // "experimental" of itself belongs: somebody who wants the sounds goes
-      // looking for them once, and everybody else was reading past a dial for a
-      // feature that is not on. It heads the fold rather than joining the
-      // overrides below, because it is a dial of its own and not one of the
-      // quality flags Reset puts back.
-      { id: 'opt-sound', type: 'range', label: 'Sounds (experimental)',
-        min: 0, max: 3, step: 1, silent: true, advanced: true,
-        stops: SOUND_STOPS,
-        get: () => soundLevel(),
-        set: v => setSoundLevel(v) },
-      { id: 'sound-hint', type: 'hint', when: () => soundLevel() > 0, advanced: true,
-        text: () => 'Experimental feature. Might suck.' },
       // The overrides. Each reads the resolved flag - so moving the dial moves
       // every one of these - and writes an override that outranks the dial from
       // then on. "Reset" at the foot is the way back, the same as
@@ -1330,36 +1301,15 @@ export const SECTIONS: Section[] = [
         // and a painted value would put the button back to false behind it.
         { cmd: 'debug-grips', label: 'Highlight resize grips', ariaPressed: 'false',
           closesPanel: true },
-        // The frame profiler, which until now had no way in from the interface
-        // at all - a console call or a URL fragment, on a tool whose whole point
-        // is the device with neither. Writes its own aria-pressed for the reason
-        // the grips row does: the fragment drives the same toggle.
-        { cmd: 'debug-perf', label: 'Profile the frame', ariaPressed: 'false' },
-        // Its own row rather than something the toggle prints on the way off:
-        // the useful sequence is arm, drive the board, read, drive some more,
-        // and turning it off to see the numbers would reset them.
-        { cmd: 'debug-perf-report', label: 'Print the frame report' },
-        // The profiler's scripted twin: the same preset moves on every device,
-        // written out as a file (perf/bench.ts). It asks which board and then
-        // either reloads onto the standard one or runs where it stands, so the
-        // panel goes out of the way either way.
+        // The frame profiler and the cue log have no rows: #perf and
+        // mbrd.sound.log() still reach them from the console.
+        //
+        // The same preset moves on every device, written out as a file
+        // (perf/bench.ts). It asks which board and then either reloads onto
+        // the standard one or runs where it stands, so the panel goes out of
+        // the way either way.
         { cmd: 'run-benchmark', label: 'Run benchmark', closesPanel: true,
           title: () => 'About two minutes of preset zooms and pans, then a file of the timings' },
-        // The interface sounds, and the one row in this fold that is about
-        // something you cannot see. Every cue that reaches cuelume/engine.ts,
-        // with the reason where it made no sound - and the point of it is the
-        // presses that produce *no line at all*, which are call sites that never
-        // asked rather than sounds the engine dropped.
-        //
-        // `pressed` here, unlike the two rows above, and that difference is the
-        // whole of the difference between the toggles: this one is remembered
-        // across a reload, so a button that assumed it started off would be
-        // wrong on every load after the first. cueLogOn() is askable, which is
-        // what makes painting it right rather than a guess; the command writes
-        // aria-pressed too, for the repaints in between.
-        { cmd: 'debug-sound', label: 'Log interface sounds',
-          pressed: () => cueLogOn() },
-        { cmd: 'debug-sound-report', label: 'Print the cue log' },
         // Drawing is held back here while it is being finished: off, the Draw
         // button, D and the More menu's row are gone (canvas/pen.ts).
         { cmd: 'debug-drawing', label: 'Enable drawing',
@@ -1367,6 +1317,18 @@ export const SECTIONS: Section[] = [
         // Remove all connections lived here; it is in the Join tool's flyout now,
         // beside the generator whose result it is usually for taking back.
       ] },
+      // Held back here with drawing until the cue table is tuned by ear. Per
+      // device and never in a .mbrd: stored under mbrd.sound, so Clear
+      // everything sweeps it (prefs.ts). One four-stop dial rather than a
+      // checkbox and a volume, because "Off" is a stop on it. The quality dial
+      // leaves it alone: sound costs nothing to draw.
+      { id: 'opt-sound', type: 'range', label: 'Sounds (experimental)',
+        min: 0, max: 3, step: 1, silent: true, advanced: true,
+        stops: SOUND_STOPS,
+        get: () => soundLevel(),
+        set: v => setSoundLevel(v) },
+      { id: 'sound-hint', type: 'hint', when: () => soundLevel() > 0, advanced: true,
+        text: () => 'Experimental feature. Might suck.' },
       // Four readouts. Buttons rather than live rows, and that is forced rather
       // than chosen: paintPanel() repaints on `board`, `settings`, `layout` and
       // `lens`, and on none of the events these four would have to follow - not
@@ -1390,25 +1352,11 @@ export const SECTIONS: Section[] = [
         // answers, the way "Is my work safe?" three rows up is.
         { cmd: 'history-state', label: 'How much can be undone' },
       ] },
-      // The way out, and it lives in here now rather than at the foot of "This
-      // browser". It used to sit at the far end of the tab on the argument that
-      // a destructive control belongs where it cannot be hit on the way to
-      // something else - which is the right instinct and this is a stronger
-      // version of it: a fold that is closed on arrival is further from an
-      // accidental press than any amount of distance down an open panel, and it
-      // puts the button among the other things nobody needs while using a
-      // board.
-      //
-      // It keeps the danger dressing and it keeps the three-press arming behind
-      // it (see armClear in ui/board-actions.ts). Being harder to reach is not a
-      // reason to make it easier to fire.
-      //
-      // `advanced` is what actually puts it *in* the fold rather than under it:
-      // this section has no heading, so a control without the flag is appended
-      // to the section body and lands below the closed <details> - which would
-      // have left the one button here that must not be pressed by accident as
-      // the only one on permanent display. See buildFold() in ui/panel.ts.
-      { type: 'buttons', advanced: true, buttons: [
+      // The way out: under the Debug fold rather than in it, so it is always
+      // the last row of the tab. Open, the fold reads as it did when this sat
+      // inside it. Distance and the three-press arming (armClear in
+      // ui/board-actions.ts) are what keep it from an accidental press.
+      { type: 'buttons', belowFold: true, buttons: [
         { cmd: 'clear-data', label: 'Clear everything', className: 'danger', closesPanel: 'if-done' },
       ] },
     ],

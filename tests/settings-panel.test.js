@@ -184,7 +184,7 @@ test('a section that is all fold is all fold', () => {
     if (!s.fold) continue;
     assert.equal(s.title, undefined, `${s.id} is a fold and a heading both`);
     for (const c of s.controls) {
-      assert.equal(c.advanced, true,
+      assert.ok(c.advanced || c.belowFold,
         `${c.id || c.type} in ${s.id} would be drawn above that section's own summary`);
     }
   }
@@ -196,6 +196,18 @@ test('a section that is all fold is all fold', () => {
   assert.equal(paper.title, 'Paper');
   assert.equal(paper.controls.some(c => c.advanced), false,
     'a heading with every row folded under it is the fold it stopped being');
+});
+
+test('Clear everything is the last row of the tab, under the Debug fold', () => {
+  // Outside the fold so it shows with Debug shut, and the last control of
+  // the last section, so nothing is ever drawn below it.
+  const tab = SECTIONS.filter(s => s.tab === 'system');
+  const debug = tab.at(-1);
+  assert.equal(debug.id, 'debug');
+  const last = debug.controls.at(-1);
+  assert.equal(last.belowFold, true);
+  assert.equal(last.advanced, undefined, 'advanced would sink it back into the fold');
+  assert.deepEqual(last.buttons.map(b => b.cmd), ['clear-data']);
 });
 
 // --- The Paper section's shape ---------------------------------------------

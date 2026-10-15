@@ -566,6 +566,9 @@
    so the close does not end on a jump. */
 .advanced.is-head > .fold-body { margin: 11px 0 0; }
 .advanced.is-head[open] > summary::after { transform: rotate(90deg) translateX(1px); }
+/* A `belowFold` row: the gap it had as the last row inside the open fold, kept
+   whichever way the fold stands, so the close ends on no jump. */
+.advanced + .btn-row { margin-top: 8px; }
 
 /* Wraps so nowrap buttons do not push each other off-screen. */
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
