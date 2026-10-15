@@ -3,7 +3,7 @@
 // out has no camera. Session policy lives in ui/board-actions.ts.
 
 import { busy, toast } from '../notify.ts';
-import { formatBytes } from '../util.ts';
+import { copyText, formatBytes } from '../util.ts';
 import {
   board, cleanBoardTitle, historyDepth, historyState, historyWeight,
 } from '../state.ts';
@@ -146,17 +146,7 @@ const VIEWING_GAIN = 0.6;
 // Copy the share link to the clipboard, or show it in a dialog if the
 // clipboard write is refused (stale gesture, no secure context, etc.).
 async function handOverLink(link: string): Promise<void> {
-  const copy = async (): Promise<boolean> => {
-    try {
-      if (!navigator.clipboard?.writeText) return false;
-      await navigator.clipboard.writeText(link);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
-  if (await copy()) {
+  if (await copyText(link)) {
     toast('Link copied. Anyone with it can open this board');
     return;
   }
@@ -168,7 +158,7 @@ async function handOverLink(link: string): Promise<void> {
     field: { value: link },
   });
   if (again === null) return;
-  if (await copy()) toast('Link copied. Anyone with it can open this board');
+  if (await copyText(link)) toast('Link copied. Anyone with it can open this board');
   else toast('Could not reach the clipboard. The link is in the console', 'error');
 }
 
@@ -242,8 +232,7 @@ export function fileCommands() {
     reportProblem: async () => {
       const text = await diagnostics();
       console.info('[mbrd] diagnostics:\n' + text);
-      let copied = false;
-      try { await navigator.clipboard.writeText(text); copied = true; } catch { /* no clipboard grant */ }
+      const copied = await copyText(text);
       window.open(ISSUES, '_blank', 'noopener,noreferrer');
       toast(copied ? 'The details are copied - paste them into the report'
         : 'The details could not be copied - they are in the console');

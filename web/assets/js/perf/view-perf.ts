@@ -6,53 +6,7 @@ import { board } from '../state.ts';
 import { cullProfile, viewStats } from '../canvas/items.ts';
 import { mobilePerfFlags } from '../canvas/viewport.ts';
 import { frameStats, pct } from './frames.ts';
-
-/**
- * Put a string on the clipboard on a device that has no console and,
- * usually, no secure context either. The benchmark's Copy uses it too.
- *
- * navigator.clipboard is the right answer and is the one that will not be
- * there: the phone reaches this board over the LAN at http://192.168.x.x, and
- * the Clipboard API is gated on a secure context, so the whole namespace is
- * undefined on exactly the device this button exists for. execCommand is
- * deprecated and works there, which is the trade - and it is tried first, for
- * the reason written against it below.
- *
- * And when neither lands, the text is put in a selectable box instead and the
- * user copies it by hand. A dev tool that says "copied" without copying is
- * worse than one that hands you the text.
- */
-export function copyText(text: string): Promise<boolean> {
-  // execCommand first, and synchronously, which is the whole point of the
-  // order. Both paths need the tap that is still in progress, and awaiting
-  // the Clipboard API's rejection would spend it: by the time the promise
-  // settles the gesture is no longer the transient activation execCommand
-  // asks for, so the fallback would fail on precisely the device it exists
-  // for. Nothing is awaited before the attempt that has to work.
-  const box = document.createElement('textarea');
-  try {
-    box.value = text;
-    // Off-screen but focusable, and readOnly so a phone does not open its
-    // keyboard over the readout on the way past.
-    box.readOnly = true;
-    box.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0';
-    document.body.append(box);
-    box.select();
-    box.setSelectionRange(0, text.length);
-    if (document.execCommand('copy')) return Promise.resolve(true);
-  } catch { /* deprecated, and one day gone - the API below is the future */ }
-  // In a finally-shaped position rather than after the call, because an
-  // engine that has already removed execCommand throws there and left the
-  // <textarea> in document.body - one orphan per press of a button whose
-  // whole purpose is to be pressed until something works.
-  finally { box.remove(); }
-  try {
-    if (navigator.clipboard?.writeText) {
-      return navigator.clipboard.writeText(text).then(() => true, () => false);
-    }
-  } catch { /* no secure context: there is nothing left to try */ }
-  return Promise.resolve(false);
-}
+import { copyText } from '../util.ts';
 
 /** Inferred from the factory to avoid a hand-kept duplicate. */
 export type ViewPerf = ReturnType<typeof createViewPerf>;

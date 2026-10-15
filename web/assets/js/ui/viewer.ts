@@ -24,7 +24,7 @@ import { fileKey, lift } from '../consent.ts';
 import { mountEditor } from './editor/view.ts';
 import type { Editor, EditorOptions } from './editor/view.ts';
 import { measureForEdit } from './editor/markdown.ts';
-import { baseName, formatBytes, markClosed, wasClosed } from '../util.ts';
+import { baseName, copyText, formatBytes, markClosed, wasClosed } from '../util.ts';
 import { linkURL, MARKDOWN, enrichEmbedCard } from '../canvas/renderers.ts';
 import { embedFor, frameFor } from '../canvas/embed.ts';
 import { noteTint } from '../canvas/note-model.ts';
@@ -990,7 +990,7 @@ function viewerEntries(id: string): MenuEntry[] {
       label: 'Copy',
       action: () => {
         const text = copyItems([id]);
-        if (text) navigator.clipboard?.writeText(text).catch(() => {});
+        if (text) void copyText(text);
       },
     },
     { sep: true },

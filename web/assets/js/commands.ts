@@ -6,6 +6,7 @@
 // arrangements.
 
 import { toast, runCommand } from './notify.ts';
+import { copyText } from './util.ts';
 import {
   board, selection, selectAll, removeItems, setSetting, undo, redo, byId,
   raiseSelection, lowerSelection, selectionHasStackOverlap,
@@ -639,11 +640,11 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       const copies = duplicateItems(selection);
       if (copies.length) select(copies.map((i: Item) => i.id));
     },
-    // Menu copy — uses async clipboard API (no ClipboardEvent available from a menu).
+    // Menu copy — no ClipboardEvent available from a menu, so copyText().
     // Internal clipboard always filled; system write may be refused silently.
     copy: () => {
       const text = copyItems(selection);
-      if (text) navigator.clipboard?.writeText(text).catch(() => {});
+      if (text) void copyText(text);
     },
     // null = Feed (no cursor point); pasteItems() places beside the original.
     paste: (at: Point | null) => {

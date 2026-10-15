@@ -8,7 +8,7 @@ import { readPref, writePref } from '../prefs.ts';
 import { assetURL } from '../storage/assets.ts';
 import { reportPlayError } from '../media/transport.ts';
 import { toast } from '../notify.ts';
-import { shuffle } from '../util.ts';
+import { emitter, shuffle } from '../util.ts';
 import {
   claimPlayer, nowPlaying, onPlayerReleased, ownerOf,
   registerPlayer, registeredPlayers, setNowPlaying,
@@ -117,14 +117,14 @@ let player: HTMLAudioElement | null = null;
 // The element the queue is driving right now. See the header: this is a card's
 // own <audio> whenever the track has a card, and the shared player otherwise.
 let queuePlayerEl: HTMLMediaElement | null = null;
-const queueWatchers = new Set<() => void>();
+// A throwing watcher is reported, not fatal to the ones after it.
+const queueWatchers = emitter<{ queue: undefined }>();
 
 /** Told when the queue's shape or mode changes (the bar repaints its buttons). */
-export function onQueue(fn: () => void): () => boolean {
-  queueWatchers.add(fn);
-  return () => queueWatchers.delete(fn);
+export function onQueue(fn: () => void): () => void {
+  return queueWatchers.on('queue', fn);
 }
-function notifyQueue(): void { for (const fn of queueWatchers) fn(); }
+function notifyQueue(): void { queueWatchers.emit('queue'); }
 
 /** Whether `el` is the element the queue is currently driving (shared or a card's). */
 export const isQueuePlayer = (el: unknown): boolean => !!queuePlayerEl && el === queuePlayerEl;

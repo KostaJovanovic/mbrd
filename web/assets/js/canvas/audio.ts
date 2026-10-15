@@ -2,7 +2,7 @@
 // No DOM, no queue, no waveform — those live in transport.ts, playlist-queue.ts,
 // waveform.ts. Everything depends on this, not the other way round.
 
-import { clamp } from '../util.ts';
+import { clamp, emitter } from '../util.ts';
 import { readPref, writePref } from '../prefs.ts';
 import { reportPlayError } from '../media/transport.ts';
 import type { Item } from '../board-model.ts';
@@ -19,10 +19,9 @@ const players = new Set<Player>();
 // Weak so a deleted card's element is not kept alive by this map.
 const owners = new WeakMap<Player, Item>();
 
-const volumeWatchers = new Set<(v: number) => void>();
-const playingWatchers = new Set<(now: NowPlaying | null) => void>();
-// Told when an element is destroyed — the queue drops its references through this.
-const releaseWatchers = new Set<(el: Player) => void>();
+// `released` is told when an element is destroyed — the queue drops its
+// references through it. A throwing watcher is reported, not fatal to the rest.
+const watchers = emitter<{ volume: number, playing: NowPlaying | null, released: Player }>();
 
 // Not cleared on pause — a paused track is still "now playing" until the element goes away.
 let current: NowPlaying | null = null;
@@ -43,26 +42,15 @@ export function clearNowPlaying() {
   setNowPlaying(null);
 }
 
-export function onNowPlaying(fn: (now: NowPlaying | null) => void) {
-  playingWatchers.add(fn);
-  return () => playingWatchers.delete(fn);
-}
-
-export function onVolume(fn: (v: number) => void) {
-  volumeWatchers.add(fn);
-  return () => volumeWatchers.delete(fn);
-}
-
-export function onPlayerReleased(fn: (el: Player) => void) {
-  releaseWatchers.add(fn);
-  return () => releaseWatchers.delete(fn);
-}
+export const onNowPlaying = (fn: (now: NowPlaying | null) => void) => watchers.on('playing', fn);
+export const onVolume = (fn: (v: number) => void) => watchers.on('volume', fn);
+export const onPlayerReleased = (fn: (el: Player) => void) => watchers.on('released', fn);
 
 // Exported for the queue, which repoints a long-lived element without any event firing.
 export function setNowPlaying(next: NowPlaying | null): void {
   if (current?.el === next?.el && current?.item === next?.item) return;
   current = next;
-  for (const fn of playingWatchers) fn(current);
+  watchers.emit('playing', current);
 }
 
 export const registeredPlayers = () => players.values();
@@ -102,7 +90,7 @@ export function setVolume(v: number): void {
   volume = clamp(+v || 0, 0, 1);
   for (const a of players) a.volume = volume;
   storeVolume();
-  for (const fn of volumeWatchers) fn(volume);
+  watchers.emit('volume', volume);
 }
 
 // Throttle localStorage writes during slider drag.
@@ -155,6 +143,6 @@ export function releasePlayers(root: Element): void {
     players.delete(el);
     owners.delete(el);
     if (current?.el === el) setNowPlaying(null);
-    for (const fn of releaseWatchers) fn(el);
+    watchers.emit('released', el);
   }
 }

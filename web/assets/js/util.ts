@@ -46,6 +46,49 @@ export function makeEl<K extends keyof HTMLElementTagNameMap>(
 /** A `<div>` with a class - the commonest makeEl(), spelled once for its callers. */
 export const div = (className = '') => makeEl('div', className);
 
+/**
+ * Put a string on the clipboard, answering whether it landed. Never throws.
+ *
+ * navigator.clipboard is gated on a secure context, so on a phone reaching the
+ * dev server at http://192.168.x.x the whole namespace is undefined. There the
+ * deprecated execCommand('copy') still works, and it runs synchronously, while
+ * the press that asked is still the transient activation it needs. Where the
+ * API exists it is used alone: falling back after its rejection would come
+ * too late for execCommand anyway. The fallback hands focus and the selection
+ * back, so copying from an editor does not leave its caret behind.
+ */
+export function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      return navigator.clipboard.writeText(text).then(() => true, () => false);
+    }
+  } catch { /* fall through to the old way */ }
+  const focused = document.activeElement;
+  const sel = getSelection();
+  const ranges = sel ? Array.from({ length: sel.rangeCount }, (_, i) => sel.getRangeAt(i)) : [];
+  const box = document.createElement('textarea');
+  let ok = false;
+  try {
+    box.value = text;
+    // Off-screen but focusable, and readOnly so a phone does not open its
+    // keyboard on the way past.
+    box.readOnly = true;
+    box.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0';
+    document.body.append(box);
+    box.select();
+    box.setSelectionRange(0, text.length);
+    ok = document.execCommand('copy');
+  } catch { /* deprecated, and one day gone */ }
+  // Removed in a finally: an engine that has dropped execCommand throws, and
+  // would otherwise leave one orphan <textarea> per press.
+  finally {
+    box.remove();
+    if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
+    if (sel && ranges.length) { sel.removeAllRanges(); for (const r of ranges) sel.addRange(r); }
+  }
+  return Promise.resolve(ok);
+}
+
 /** Give a non-button element role, tabIndex, and click/Enter/Space handling. */
 export function actAsButton(node: HTMLElement, onActivate: () => void, role = 'button') {
   node.setAttribute('role', role);

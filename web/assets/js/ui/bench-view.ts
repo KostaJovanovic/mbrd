@@ -7,7 +7,7 @@ import { toast } from '../notify.ts';
 import { markClosed } from '../util.ts';
 import { homePath } from '../page.ts';
 import { ask } from './dialog.ts';
-import { copyText } from '../perf/view-perf.ts';
+import { copyText } from '../util.ts';
 import { benchFileName, summaryLine, parseBenchHash } from '../perf/bench.ts';
 import type { Bench, BenchOptions, BenchResult } from '../perf/bench.ts';
 

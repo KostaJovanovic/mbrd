@@ -9,13 +9,13 @@ import { toast } from './notify.ts';
 import { itemBounds } from './geometry.ts';
 import { board } from './board-model.ts';
 import type { Connection, Item } from './board-model.ts';
-import { uid } from './util.ts';
+import { copyText, uid } from './util.ts';
 import { subtreeOf, docsHashes } from './board-tree.ts';
 import type { Docs } from './board-tree.ts';
 
 /** A colour to the system clipboard, said in a toast when it lands. */
 export function copyHex(hex: string) {
-  navigator.clipboard?.writeText(hex).then(() => toast(`Copied ${hex}`), () => {});
+  void copyText(hex).then(ok => { if (ok) toast(`Copied ${hex}`); });
 }
 
 /**

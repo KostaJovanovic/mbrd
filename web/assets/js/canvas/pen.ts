@@ -8,6 +8,7 @@ import { addItems, board, byId, isLocked, removeItems, replaceItems, setDrawings
 import type { Item } from '../board-model.ts';
 import { readPref, writePref } from '../prefs.ts';
 import { rotatedExtents } from '../geometry.ts';
+import { emitter } from '../util.ts';
 import type { Viewport } from './viewport.ts';
 import {
   isInk, MAX_STROKES, addStroke, frameScale, joinDrawings, joinsDrawing, newDrawing, outlinePts, readDrawing,
@@ -42,7 +43,8 @@ function loadState(): PenState {
 }
 
 let state: PenState | null = null;
-const watchers = new Set<(s: PenState) => void>();
+// A throwing watcher is reported, not fatal to the toolbar after it.
+const watchers = emitter<{ pen: PenState }>();
 
 export function penState(): PenState {
   state ??= loadState();
@@ -59,7 +61,7 @@ export function setPen(patch: Partial<PenState>) {
   writePref(KEY, `${s.tool},${s.ink},${s.size}`);
   if (vp) vp.el.classList.toggle('is-drawing', s.on);
   if (!s.on) { dropStroke(); burst = null; }
-  for (const fn of watchers) fn(s);
+  watchers.emit('pen', s);
 }
 
 const ENABLED = 'mbrd.drawing';
@@ -73,13 +75,12 @@ export const drawingEnabled = () => readPref(ENABLED) === '1';
 export function setDrawingEnabled(on: boolean) {
   writePref(ENABLED, on ? '1' : '0');
   if (!on && penState().on) setPen({ on: false });
-  else for (const fn of watchers) fn(penState());
+  else watchers.emit('pen', penState());
 }
 
 /** Hear every change, for the toolbar's button and the pen bar. */
 export function onPen(fn: (s: PenState) => void): () => void {
-  watchers.add(fn);
-  return () => watchers.delete(fn);
+  return watchers.on('pen', fn);
 }
 
 // ---------------------------------------------------------------------------

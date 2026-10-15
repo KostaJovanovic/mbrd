@@ -20,7 +20,7 @@ import {
 } from './fountain.ts';
 import { keepsLocked, advance, superLock, lockAtEnd, clampToLock, clock, SUPER_MS, VOMIT_MINUTES, VOMIT_INFO } from './vomit.ts';
 import { ask } from '../dialog.ts';
-import { makeEditable, markClosed, readToken } from '../../util.ts';
+import { copyText, makeEditable, markClosed, readToken } from '../../util.ts';
 import { baseMs, fastMs, reducedMotion } from '../../canvas/viewport.ts';
 import { toast } from '../../notify.ts';
 import { readPref, writePref } from '../../prefs.ts';
@@ -1628,15 +1628,15 @@ export function mountEditor(opts: EditorOptions): Editor {
   // The right-click menu: the app's own, over the whole editor
   // -------------------------------------------------------------------------
 
-  /** The selection to the clipboard through the async API - a menu row has no clipboard event to write into. */
+  /** The selection to the clipboard through copyText() - a menu row has no clipboard event to write into. */
   const clip = (cut: boolean) => {
     const text = selected();
     if (!text) return;
     const [a, z] = range();
-    const wrote = navigator.clipboard?.writeText(text);
-    if (!wrote) return void toast('The browser would not take the clipboard. Ctrl+C copies.');
-    wrote.then(() => { if (cut) apply(deleteRange(doc, a, z), 'delete'); },
-      () => toast('The browser would not take the clipboard. Ctrl+C copies.'));
+    void copyText(text).then(ok => {
+      if (!ok) toast('The browser would not take the clipboard. Ctrl+C copies.');
+      else if (cut) apply(deleteRange(doc, a, z), 'delete');
+    });
   };
   const pasteFromMenu = () => {
     const [a, z] = range();

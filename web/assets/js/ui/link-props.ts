@@ -13,6 +13,7 @@ import { linkURL, linkTyped } from '../canvas/renderers.ts';
 import { toast } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import { onTouch } from '../canvas/viewport.ts';
+import { copyText } from '../util.ts';
 
 // One at a time: a second call while the box is up is ignored, not stacked.
 let showing = false;
@@ -58,7 +59,7 @@ export async function editLinkProps(id: string): Promise<void> {
     const onCopy = () => {
       const text = urlField.value.trim();
       if (!text) return;
-      navigator.clipboard?.writeText(text).then(() => toast('Link copied'), () => {});
+      void copyText(text).then(ok => { if (ok) toast('Link copied'); });
     };
 
     // Save validates the address first and, on a bad one, keeps the box open
