@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import {
   allow, lift, isAllowed, fileKey, explain, oversize, isOversize,
-  setRiskPrompt, resetConsent, askingStopped, mb,
+  setRiskPrompt, resetConsent, askingStopped, mb, withLift,
 } from '../web/assets/js/consent.ts';
 
 /** A prompt that answers the same way every time and counts how often it was asked. */
@@ -41,6 +41,49 @@ test('unwired, everything is allowed', async () => {
 test('unwired, a ceiling is still lifted rather than swallowed', async () => {
   fresh();
   assert.equal(await lift(oversize('entry-bytes', 'big'), 'k', 'f'), true);
+});
+
+// ---------------------------------------------------------------------------
+// withLift(): the read, the question and the second read
+// ---------------------------------------------------------------------------
+
+/** A reader that crosses a ceiling unless lifted, and records how it was called. */
+function ceilingReader() {
+  const calls = [];
+  const read = async lifted => {
+    calls.push(lifted);
+    if (!lifted) throw oversize('entry-bytes', 'big');
+    return 'read';
+  };
+  return { calls, read };
+}
+
+test('withLift reads again, lifted, after a yes', async () => {
+  fresh();
+  stub('yes');
+  const { calls, read } = ceilingReader();
+  assert.equal(await withLift(read, 'k', 'f'), 'read');
+  assert.deepEqual(calls, [false, true]);
+});
+
+test('withLift rethrows the ceiling after a no, or answers declined()', async () => {
+  fresh();
+  stub('no');
+  const { calls, read } = ceilingReader();
+  await assert.rejects(withLift(read, 'k', 'f'), isOversize);
+  assert.equal(await withLift(read, 'k2', 'f', 'Import', () => null), null);
+  assert.deepEqual(calls, [false, false], 'a no never reads lifted');
+});
+
+test('withLift never lifts a broken file', async () => {
+  // The load-bearing half: a plain Error is corruption, not a ceiling.
+  fresh();
+  const asked = stub('yes');
+  const calls = [];
+  const broken = async lifted => { calls.push(lifted); throw new Error('offset past the end'); };
+  await assert.rejects(withLift(broken, 'k', 'f', 'Import', () => null), /offset past the end/);
+  assert.deepEqual(calls, [false]);
+  assert.equal(asked.length, 0);
 });
 
 test('nothing to ask about is allowed without a prompt being reached', async () => {

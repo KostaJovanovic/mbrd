@@ -13,7 +13,7 @@ import {
 } from '../state.ts';
 import { noteTint } from '../canvas/note-model.ts';
 import { extOf } from '../util.ts';
-import { fileKey, isOversize, lift } from '../consent.ts';
+import { fileKey, withLift } from '../consent.ts';
 import { ask } from '../ui/dialog.ts';
 import { defaultUpAxis, meshKind, upAxisIsGuessed } from '../mesh.ts';
 import { stickerTint } from '../stickers/catalogue.ts';
@@ -566,14 +566,9 @@ export function itemMetaCommands() {
       const name = it.name || asset.name || 'this RAW';
       toast(`Demosaicing ${name} - this takes a few seconds`);
       try {
-        let made;
-        try {
-          made = await demosaic(asset.blob);
-        } catch (err) {
-          if (!isOversize(err)) throw err;
-          if (!await lift(err, fileKey({ name, size: asset.size }), `"${name}"`, 'Demosaic')) return;
-          made = await demosaic(asset.blob, true);
-        }
+        const made = await withLift(lift => demosaic(asset.blob, lift),
+          fileKey({ name, size: asset.size }), `"${name}"`, 'Demosaic', () => null);
+        if (!made) return;
         const file = derivedFile(made.blob, 'demosaic');
         const picture = await addFile(file);
         const [thumb, display] = await Promise.all([

@@ -5,7 +5,7 @@
 
 import { readZip } from '../storage/zip.ts';
 import { makeEl as el } from '../util.ts';
-import { lift, allow, mb, nameOf } from '../consent.ts';
+import { withLift, allow, mb, nameOf } from '../consent.ts';
 // The container walk itself, shared with import/slide.ts, which composites a
 // deck's first slide into a card. It lives down there because the importer
 // may not reach into ui/ - see the header of import/ooxml.ts.
@@ -29,13 +29,8 @@ const docKey = (blob: Blob) => `doc:${blob.size}`;
  * Used to be six call sites to readZip(), each surfacing an inflate ceiling
  * as an unhelpful "could not be read". The retry contract lives in consent.ts.
  */
-async function openDoc(blob: Blob): Promise<Entries> {
-  try {
-    return await readZip(blob);
-  } catch (err) {
-    if (!await lift(err, docKey(blob), nameOf(blob, 'This document'), 'Open it')) throw err;
-    return await readZip(blob, { lift: true });
-  }
+function openDoc(blob: Blob): Promise<Entries> {
+  return withLift(lift => readZip(blob, { lift }), docKey(blob), nameOf(blob, 'This document'), 'Open it');
 }
 
 /** Caps. None is a correctness bound; all are "this file is lying to us" stops. */

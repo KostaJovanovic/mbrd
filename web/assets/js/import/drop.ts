@@ -13,7 +13,7 @@ import {
 import { cleanPath } from './archive.ts';
 import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
 import { makeByteBudget, overPixelBudget, pixelCrossing, IMPORT_LIMITS } from './budget.ts';
-import { allow, isAllowed, isOversize, lift, fileKey, mb as consentMb } from '../consent.ts';
+import { allow, isAllowed, isOversize, fileKey, mb, withLift } from '../consent.ts';
 import {
   classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame, isRetryable,
   videoDrawsBlank, pictureIsFlat, swatchHex, SWATCH_DEFAULT,
@@ -161,21 +161,14 @@ function summaryAction(failed: readonly string[], added: readonly Item[]): Toast
   return { label: 'Show them', run: () => show(ids) };
 }
 
-/** Whole megabytes, for a sentence. Nothing here needs the decimal. */
-const mb = (bytes: number) => Math.round(bytes / 1024 ** 2) + ' MB';
-
 /**
  * Run a reader; if it throws Oversize, ask and retry with the ceiling lifted.
  * Fails soft: null means the card stays what it was without the picture.
  * Keyed by file, so one document is one question however many ceilings it hits.
  */
-async function asking<T>(file: File, read: (lift: boolean) => Promise<T | null>): Promise<T | null> {
-  try {
-    return await read(false);
-  } catch (err) {
-    if (!await lift(err, fileKey(file), `${file.name} - ${consentMb(file.size || 0)}`)) return null;
-    return await read(true).catch(() => null);
-  }
+function asking<T>(file: File, read: (lift: boolean) => Promise<T | null>): Promise<T | null> {
+  return withLift(read, fileKey(file), `${file.name} - ${mb(file.size || 0)}`, 'Import', () => null)
+    .catch(() => null);
 }
 
 /** The shared hidden file input. Three entry points take turns via `dataset.mode`. */
@@ -465,7 +458,7 @@ export async function replaceItemFile(id: string, file: File, retry = false) {
   // The header first, as applyCover() asks it: a small file that declares
   // 65535 x 65535 is a question before it is a decode.
   const px = await pixelCrossing(file).catch(() => null);
-  if (px && !(await allow(fileKey(file), `${file.name} - ${consentMb(file.size)}`, [px], 'Use it'))) return;
+  if (px && !(await allow(fileKey(file), `${file.name} - ${mb(file.size)}`, [px], 'Use it'))) return;
   const missing = missingHashes();
   let draft: Draft;
   try {
@@ -553,7 +546,7 @@ export async function applyCover(id: string, file: File) {
   // measureSize() decodes, so the header is asked first, as importFiles()
   // does: a small file that declares 65535 x 65535 is a question, not a draw.
   const px = await pixelCrossing(file).catch(() => null);
-  if (px && !(await allow(fileKey(file), `${file.name} - ${consentMb(file.size)}`, [px], 'Use it'))) return;
+  if (px && !(await allow(fileKey(file), `${file.name} - ${mb(file.size)}`, [px], 'Use it'))) return;
   const { decodable } = await measureSize('image', file);
   if (!decodable) {
     toast(`This browser cannot draw ${file.name}`, 'error');
@@ -710,7 +703,7 @@ export async function importFiles(
     // Decode-bomb check from header dimensions, folded into the same question.
     const px = await pixelCrossing(f).catch(() => null);
     if (px) reasons.push(px);
-    if (!reasons.length || await allow(fileKey(f), `${f.name} - ${consentMb(f.size || 0)}`, reasons)) {
+    if (!reasons.length || await allow(fileKey(f), `${f.name} - ${mb(f.size || 0)}`, reasons)) {
       budget.charge(f.size || 0);
       keep.push(f);
     } else {

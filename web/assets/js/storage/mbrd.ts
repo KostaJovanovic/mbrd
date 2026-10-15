@@ -8,7 +8,7 @@ import { getAsset, putAsset } from './assets.ts';
 import type { Asset } from './assets.ts';
 import { sha256 } from '../crypto.ts';
 // Aliased — this module has its own fileKey() and nameOf().
-import { lift, fileKey as consentKey, nameOf as blobName } from '../consent.ts';
+import { withLift, fileKey as consentKey, nameOf as blobName } from '../consent.ts';
 import { isHash, isRecord, itemHashes } from '../util.ts';
 // Read from stored document, not live ledger — must match what the file carries.
 import { timelineHashes } from '../timeline.ts';
@@ -773,13 +773,7 @@ export async function unpackBoard(blob: Blob, { owned = false }: { owned?: boole
   const read = async (lifted: boolean) => owned
     ? readZipBlob(blob, { lift: lifted, keep: assetType })
     : { files: await readZip(blob, { lift: lifted }), blobs: new Map<string, Blob>() };
-  let files, blobs;
-  try {
-    ({ files, blobs } = await read(false));
-  } catch (err) {
-    if (!await lift(err, consentKey(blob), name, 'Open it')) throw err;
-    ({ files, blobs } = await read(true));
-  }
+  const { files, blobs } = await withLift(read, consentKey(blob), name, 'Open it');
 
   // The `mimetype` entry, when it leads the archive, names what this is. Another
   // ZIP-based format renamed to .mbrd (an EPUB, an ODF document) says so there

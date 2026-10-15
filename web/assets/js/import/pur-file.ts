@@ -8,7 +8,7 @@ import { normalizeBoard } from '../board-schema.ts';
 import { planMerge } from '../merge.ts';
 import { toast, busy } from '../notify.ts';
 import { addFile } from '../storage/assets.ts';
-import { lift, fileKey } from '../consent.ts';
+import { withLift, fileKey } from '../consent.ts';
 import { readPur } from './pureref.ts';
 import type { PurRead } from './pureref.ts';
 import type { Incoming } from '../storage/json-canvas.ts';
@@ -21,13 +21,7 @@ export async function importPur(file: File): Promise<boolean> {
   const job = busy('Reading ' + file.name);
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    let read: PurRead;
-    try {
-      read = readPur(bytes);
-    } catch (err) {
-      if (!await lift(err, fileKey(file), file.name)) throw err;
-      read = readPur(bytes, { lift: true });
-    }
+    const read: PurRead = await withLift(async lift => readPur(bytes, { lift }), fileKey(file), file.name);
     const hashes = new Map<number, string>();
     const items: Incoming[] = [];
     const order = [...read.placed].sort((a, b) => a.z - b.z);

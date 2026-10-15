@@ -173,6 +173,27 @@ export async function lift(e: unknown, key: string, subject: string, go = 'Impor
   return allow(key, subject, [{ ceiling: e.ceiling, what: e.what }], go);
 }
 
+/**
+ * The whole dance in one place: read; on an Oversize, ask, and on a yes read
+ * again with the ceiling lifted. A plain Error is rethrown untouched, so the
+ * retry only ever follows a ceiling. A no rethrows the Oversize, or answers
+ * `declined()` when the caller gives one.
+ */
+export async function withLift<T, D = never>(
+  read: (lift: boolean) => Promise<T>,
+  key: string, subject: string, go = 'Import',
+  declined?: () => D,
+): Promise<T | D> {
+  try {
+    return await read(false);
+  } catch (err) {
+    if (!isOversize(err)) throw err;
+    if (await lift(err, key, subject, go)) return read(true);
+    if (declined) return declined();
+    throw err;
+  }
+}
+
 /** Whether this subject was already allowed. For ceilings checked twice (e.g. pixel count). */
 export const isAllowed = (key: string) => allowEverything || allowed.has(key);
 

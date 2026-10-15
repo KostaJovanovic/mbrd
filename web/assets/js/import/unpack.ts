@@ -7,7 +7,7 @@
 
 import { byId } from '../state.ts';
 import { toast, busy } from '../notify.ts';
-import { lift, fileKey, isOversize, mb } from '../consent.ts';
+import { withLift, fileKey, mb } from '../consent.ts';
 import { getAsset } from '../storage/assets.ts';
 import { extOf, isHash, isRecord } from '../util.ts';
 import type { Item } from '../board-model.ts';
@@ -107,12 +107,7 @@ function diskContents(list: unknown[]): Incoming[] {
 }
 
 /** Read, and at a ceiling ask once and read again with it lifted. Null for a no. */
-async function readConsenting(blob: Blob, name: string): Promise<ArchiveFile[] | null> {
-  try {
-    return await readArchive(blob, name);
-  } catch (err) {
-    if (!isOversize(err)) throw err;
-    if (!await lift(err, fileKey({ name, size: blob.size }), `${name} - ${mb(blob.size)}`, 'Unzip')) return null;
-    return readArchive(blob, name, true);
-  }
+function readConsenting(blob: Blob, name: string): Promise<ArchiveFile[] | null> {
+  return withLift(lift => readArchive(blob, name, lift),
+    fileKey({ name, size: blob.size }), `${name} - ${mb(blob.size)}`, 'Unzip', () => null);
 }

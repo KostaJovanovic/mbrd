@@ -7,7 +7,7 @@ import { clamp } from '../util.ts';
 import { addFile, allAssets, assetURL, derivedFile, getAsset, readText } from '../storage/assets.ts';
 import { surface, surfaceToBlob } from './surface.ts';
 import { applyMaterials, meshKind, readModel, parseMTL, MeshError } from '../mesh.ts';
-import { lift, isOversize } from '../consent.ts';
+import { withLift, isOversize } from '../consent.ts';
 import type { Mesh } from '../mesh.ts';
 import { makeThumb } from '../optimize/picture.ts';
 import { board, bus, byId, selection, setItemThumb, setModelShot } from '../state.ts';
@@ -317,13 +317,8 @@ async function load(item: Item): Promise<Mesh> {
   // On ceiling hit, ask the user and re-read with lift if accepted.
   const buf = await asset.blob.arrayBuffer();
   const name = asset.name || item.name || 'This model';
-  let mesh: Mesh;
-  try {
-    mesh = await readModel(kind, buf, item.meta?.upAxis);
-  } catch (err) {
-    if (!await lift(err, `mesh:${hash}`, name, 'Open it')) throw err;
-    mesh = await readModel(kind, buf, item.meta?.upAxis, true);
-  }
+  const mesh: Mesh = await withLift(async lift => readModel(kind, buf, item.meta?.upAxis, lift),
+    `mesh:${hash}`, name, 'Open it');
   await paint(mesh);
   meshes.set(key, mesh);
   while (meshes.size > MESH_CACHE_MAX) meshes.delete(meshes.keys().next().value!);
