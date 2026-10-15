@@ -290,10 +290,7 @@ export function layoutFromTail(tail: Uint8Array, size: number): ZipLayout | numb
   const view = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
   // Where tail[0] sits in the file.
   const base = size - tail.length;
-  let eocd = -1;
-  for (let i = tail.length - 22; i >= Math.max(0, tail.length - 22 - 0xffff); i--) {
-    if (view.getUint32(i, true) === EOCD_SIG) { eocd = i; break; }
-  }
+  const eocd = lastEOCD(view, tail.length - 22, Math.max(0, tail.length - 22 - 0xffff));
   if (eocd < 0) return null;
   const count = view.getUint16(eocd + 10, true);
   const cdSize = view.getUint32(eocd + 12, true);
@@ -304,22 +301,11 @@ export function layoutFromTail(tail: Uint8Array, size: number): ZipLayout | numb
   const end = p + cdSize;
   const records = new Map<string, ZipRecord>();
   for (let n = 0; n < count; n++) {
-    if (p + 46 > end || view.getUint32(p, true) !== CD_SIG) return null;
-    const flags = view.getUint16(p + 8, true);
-    const method = view.getUint16(p + 10, true);
-    const time = view.getUint16(p + 12, true);
-    const date = view.getUint16(p + 14, true);
-    const crc = view.getUint32(p + 16, true);
-    const csize = view.getUint32(p + 20, true);
-    const usize = view.getUint32(p + 24, true);
-    const nameLen = view.getUint16(p + 28, true);
-    const extraLen = view.getUint16(p + 30, true);
-    const commentLen = view.getUint16(p + 32, true);
-    const offset = view.getUint32(p + 42, true);
-    if (p + 46 + nameLen > end) return null;
-    const name = entryName(tail.subarray(p + 46, p + 46 + nameLen), flags);
-    p += 46 + nameLen + extraLen + commentLen;
-    if (p > end) return null;
+    let rec;
+    // What readZip() would call corrupt is, here, a file to write whole.
+    try { rec = cdRecord(view, tail, p, end); } catch { return null; }
+    const { name, method, time, date, crc, csize, usize, nameLen, localOff: offset } = rec;
+    p = rec.next;
     if (name.endsWith('/')) continue;
     // What readZip() would refuse, an append must not point at.
     if (method !== 0 && method !== 8) return null;
@@ -566,6 +552,67 @@ function within(end: number, size: number, what: string) {
 }
 
 /**
+ * The central-directory record at `p`, every read bounds-checked against
+ * `end` first. The three readers (readZip(), readZipBlob(), layoutFromTail())
+ * all go through here, which is what keeps their checks the same checks.
+ * Throws a plain Error for anything malformed, never an Oversize.
+ */
+function cdRecord(view: DataView, bytes: Uint8Array, p: number, end: number) {
+  within(p + 46, end, 'a central-directory entry');
+  if (view.getUint32(p, true) !== CD_SIG) throw new Error('Corrupt central directory');
+  const flags = view.getUint16(p + 8, true);
+  const nameLen = view.getUint16(p + 28, true);
+  const extraLen = view.getUint16(p + 30, true);
+  const commentLen = view.getUint16(p + 32, true);
+  within(p + 46 + nameLen, end, 'an entry name');
+  const next = p + 46 + nameLen + extraLen + commentLen;
+  within(next, end, 'the central directory');
+  return {
+    name: entryName(bytes.subarray(p + 46, p + 46 + nameLen), flags),
+    nameLen,
+    method: view.getUint16(p + 10, true),
+    time: view.getUint16(p + 12, true),
+    date: view.getUint16(p + 14, true),
+    crc: view.getUint32(p + 16, true),
+    csize: view.getUint32(p + 20, true),
+    usize: view.getUint32(p + 24, true),
+    localOff: view.getUint32(p + 42, true),
+    next,
+  };
+}
+
+/** The last end-record signature from `from` back to `to`, or -1. */
+function lastEOCD(view: DataView, from: number, to: number) {
+  for (let i = from; i >= to; i--) {
+    if (view.getUint32(i, true) === EOCD_SIG) return i;
+  }
+  return -1;
+}
+
+/**
+ * An entry's bytes as written: inflated when deflated, then checksummed. The
+ * length check stays after the inflate, whose cap can only catch an entry that
+ * expands past what it promised, not one that stops early because the archive
+ * is damaged. The checksum is the one check that reads the content, and what
+ * turns "the archive parses" into "the archive is intact" - a .mbrd carries
+ * the user's photographs, and a silently corrupted one is worse than a refused one.
+ */
+async function entryBytes(raw: Bytes, method: number, usize: number, crc: number, name: string): Promise<Bytes> {
+  let data = raw;
+  if (method !== 0) {
+    if (typeof DecompressionStream === 'undefined') {
+      throw new Error('This browser cannot inflate DEFLATE entries');
+    }
+    // Capped at the declared size, so the entry cannot cost more than the
+    // checks made before it - see inflateRaw.
+    data = await inflateRaw(raw, usize, name);
+    if (data.length !== usize) throw new Error(`"${name}" failed to inflate cleanly`);
+  }
+  if (crc32(data) !== crc) throw new Error(`"${name}" is damaged (checksum mismatch)`);
+  return data;
+}
+
+/**
  * Read a ZIP Blob/ArrayBuffer into `Map<name, Uint8Array>`.
  * Reads the central directory (not a linear scan), so entries written by any
  * conforming zipper - including Explorer's "Send to > Compressed folder" - work.
@@ -625,23 +672,8 @@ export async function readZip(
   let totalOut = 0;
 
   for (let n = 0; n < count; n++) {
-    within(p + 46, size, 'a central-directory entry');
-    if (view.getUint32(p, true) !== CD_SIG) throw new Error('Corrupt central directory');
-
-    const flags = view.getUint16(p + 8, true);
-    const method = view.getUint16(p + 10, true);
-    const crc = view.getUint32(p + 16, true);
-    const csize = view.getUint32(p + 20, true);
-    const usize = view.getUint32(p + 24, true);
-    const nameLen = view.getUint16(p + 28, true);
-    const extraLen = view.getUint16(p + 30, true);
-    const commentLen = view.getUint16(p + 32, true);
-    const localOff = view.getUint32(p + 42, true);
-
-    within(p + 46 + nameLen, size, 'an entry name');
-    const name = entryName(bytes.subarray(p + 46, p + 46 + nameLen), flags);
-    p += 46 + nameLen + extraLen + commentLen;
-    within(p, size, 'the central directory');
+    const { name, method, crc, csize, usize, localOff, next } = cdRecord(view, bytes, p, size);
+    p = next;
 
     if (name.endsWith('/')) continue;      // directory entry: nothing to store
     // Before the duplicate check on purpose: a name the caller does not want is a
@@ -669,34 +701,7 @@ export async function readZip(
 
     admit(name, method, csize, usize, totalOut, { lift, entryCap, totalCap });
 
-    const raw = bytes.subarray(start, start + csize);
-    let data;
-    if (method === 0) {
-      data = raw;
-    } else {
-      if (typeof DecompressionStream === 'undefined') {
-        throw new Error('This browser cannot inflate DEFLATE entries');
-      }
-      // Capped at the declared size, so the entry cannot cost more than the
-      // checks above were made against - see inflateRaw. Coming back short is
-      // still a failure, and that check has to stay here: the cap can only
-      // catch an entry that expands past what it promised, not one that stops
-      // early because the archive is damaged.
-      data = await inflateRaw(raw, usize, name);
-      if (data.length !== usize) {
-        throw new Error(`"${name}" failed to inflate cleanly`);
-      }
-    }
-
-    // The last word on whether these are the bytes that were written. Every
-    // check so far has been about structure; this is the only one that reads
-    // the content, and it is what turns "the archive parses" into "the archive
-    // is intact". A .mbrd carries the user's photographs - a silently
-    // corrupted one is worse than a refused one.
-    if (crc32(data) !== crc) {
-      throw new Error(`"${name}" is damaged (checksum mismatch)`);
-    }
-
+    const data = await entryBytes(bytes.subarray(start, start + csize), method, usize, crc, name);
     totalOut += data.length;
     out.set(name, data);
   }
@@ -732,10 +737,7 @@ export async function readZipBlob(
   const tailFrom = Math.max(0, size - 0xffff - 22);
   const tail = await read(tailFrom, size);
   const tv = new DataView(tail.buffer);
-  let eocd = -1;
-  for (let i = tail.length - 22; i >= 0; i--) {
-    if (tv.getUint32(i, true) === EOCD_SIG) { eocd = i; break; }
-  }
+  const eocd = lastEOCD(tv, tail.length - 22, 0);
   if (eocd < 0) return { files: await readZip(blob, { lift }), blobs: new Map() };
 
   const count = tv.getUint16(eocd + 10, true);
@@ -753,21 +755,8 @@ export async function readZipBlob(
   let totalOut = 0;
   let p = 0;
   for (let n = 0; n < count; n++) {
-    within(p + 46, cd.length, 'a central-directory entry');
-    if (view.getUint32(p, true) !== CD_SIG) throw new Error('Corrupt central directory');
-    const flags = view.getUint16(p + 8, true);
-    const method = view.getUint16(p + 10, true);
-    const crc = view.getUint32(p + 16, true);
-    const csize = view.getUint32(p + 20, true);
-    const usize = view.getUint32(p + 24, true);
-    const nameLen = view.getUint16(p + 28, true);
-    const extraLen = view.getUint16(p + 30, true);
-    const commentLen = view.getUint16(p + 32, true);
-    const localOff = view.getUint32(p + 42, true);
-    within(p + 46 + nameLen, cd.length, 'an entry name');
-    const name = entryName(cd.subarray(p + 46, p + 46 + nameLen), flags);
-    p += 46 + nameLen + extraLen + commentLen;
-    within(p, cd.length, 'the central directory');
+    const { name, method, crc, csize, usize, localOff, next } = cdRecord(view, cd, p, cd.length);
+    p = next;
 
     if (name.endsWith('/')) continue;
     if (files.has(name) || blobs.has(name)) throw new Error(`Corrupt archive: "${name}" appears twice`);
@@ -788,17 +777,7 @@ export async function readZipBlob(
       if (await crc32Blob(slice) !== crc) throw new Error(`"${name}" is damaged (checksum mismatch)`);
       blobs.set(name, slice);
     } else {
-      const raw = await read(start, start + csize);
-      let data = raw;
-      if (method === 8) {
-        if (typeof DecompressionStream === 'undefined') {
-          throw new Error('This browser cannot inflate DEFLATE entries');
-        }
-        data = await inflateRaw(raw, usize, name);
-        if (data.length !== usize) throw new Error(`"${name}" failed to inflate cleanly`);
-      }
-      if (crc32(data) !== crc) throw new Error(`"${name}" is damaged (checksum mismatch)`);
-      files.set(name, data);
+      files.set(name, await entryBytes(await read(start, start + csize), method, usize, crc, name));
     }
     totalOut += usize;
   }
@@ -820,9 +799,8 @@ export async function readZipBlob(
  */
 function findEOCD(view: DataView, size: number) {
   const min = Math.max(0, size - 0xffff - 22);
-  for (let i = size - 22; i >= min; i--) {
-    if (view.getUint32(i, true) === EOCD_SIG) return i;
-  }
+  const near = lastEOCD(view, size - 22, min);
+  if (near >= 0) return near;
   for (let i = min - 1; i >= 0; i--) {
     if (view.getUint32(i, true) !== EOCD_SIG) continue;
     const cdSize = view.getUint32(i + 12, true);

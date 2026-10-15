@@ -63,6 +63,17 @@ test('an append onto a layout read from the end reads as the new save', async ()
   assert.deepEqual(files.get('assets/a'), bytes(4000));
 });
 
+test('a directory record whose name runs past the directory is no layout, and a corrupt read', async () => {
+  // The three readers share one record parser; this holds that the reader that
+  // answers null and the one that throws still agree on what is broken.
+  const file = (await whole((await firstSave()).blob)).slice();
+  const view = new DataView(file.buffer);
+  const cdStart = view.getUint32(file.length - 22 + 16, true);
+  view.setUint16(cdStart + 28, 0xffff, true);
+  assert.equal(layoutFromTail(file, file.length), null);
+  await assert.rejects(readZip(file), /an entry name points past the end/);
+});
+
 test('a file whose end holds no directory has no layout, and is written whole', async () => {
   assert.equal(layoutFromTail(new Uint8Array(5000), 5000), null);
   // A save cut short: its end record is not whole.
