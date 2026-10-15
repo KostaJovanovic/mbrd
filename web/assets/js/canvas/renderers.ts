@@ -5,7 +5,7 @@
 // re-exported below so no caller had to learn they moved.
 
 import { cue } from '../cuelume/engine.ts';
-import { extOf, baseName, formatBytes, hasOwn, isRecord } from '../util.ts';
+import { extOf, baseName, formatBytes, hasOwn, icon, isRecord } from '../util.ts';
 import { oklch, parseHex } from '../color.ts';
 import { colourName } from '../colour-words.ts';
 import { shownHash, type Item, type ItemType } from '../board-model.ts';
@@ -1445,34 +1445,23 @@ const RENDERERS = {
       card.append(row);
     } else if (rows) {
       // A legend rather than a paragraph, which is what all three hints print;
-      // the prose branch below is the not-found pair's. Icons are built the
-      // long way here for the reason
-      // canvas/item-dom.ts's anchor badge is: ui/menu.ts's icon() is the helper
-      // every other module reaches for and canvas/ may not import ui/.
+      // the prose branch below is the not-found pair's.
       //
       // .ico is base.css's, plain screen pixels - which on a card is what is
       // wanted, since the whole card is inside the board transform and a 16px
       // glyph there zooms with the words beside it.
       const list = document.createElement('div');
       list.className = 'ghost-keys';
-      for (const { icon, label, desktop } of rows) {
+      for (const { icon: glyph, label, desktop } of rows) {
         const row = document.createElement('div');
         row.className = 'ghost-key';
         // Named rather than hidden here: Mobile and Desktop share the item, the
         // card is rebuilt on a layout switch either way, and a row that CSS can
         // drop is one list instead of two. See HintRow in canvas/ghosts.ts.
         if (desktop) row.dataset.only = 'desktop';
-        const svg = document.createElementNS(SVG_NS, 'svg');
-        svg.setAttribute('class', 'ico');
-        // The words beside it say the same thing, so announcing the glyph as
-        // well reads the row out twice.
-        svg.setAttribute('aria-hidden', 'true');
-        const use = document.createElementNS(SVG_NS, 'use');
-        use.setAttribute('href', `assets/icons.svg#${icon}`);
-        svg.append(use);
         const word = document.createElement('span');
         word.textContent = label;
-        row.append(svg, word);
+        row.append(icon(glyph), word);
         list.append(row);
       }
       card.append(list);
@@ -1922,20 +1911,14 @@ function packCard(item: Item, kind: string, verb: string, foot: string | null) {
 }
 
 /** The pill under a card's name: Unzip, Open, Retry. Pressed by delegation. */
-function cardButton(item: Item, cls: string, icon: string, verb: string) {
+function cardButton(item: Item, cls: string, glyph: string, verb: string) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = cls;
   button.setAttribute('aria-label', `${verb} ${titleOf(item)}`);
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('class', 'ico');
-  svg.setAttribute('aria-hidden', 'true');
-  const use = document.createElementNS(SVG_NS, 'use');
-  use.setAttribute('href', `assets/icons.svg#${icon}`);
-  svg.append(use);
   const word = document.createElement('span');
   word.textContent = verb;
-  button.append(svg, word);
+  button.append(icon(glyph), word);
   return button;
 }
 

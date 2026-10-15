@@ -47,6 +47,25 @@ export function makeEl<K extends keyof HTMLElementTagNameMap>(
 export const div = (className = '') => makeEl('div', className);
 
 /**
+ * An icon from icons.svg, by symbol id. createElementNS because innerHTML
+ * would parse it into the HTML namespace. Here rather than in ui/ so canvas/
+ * can draw one too. Pass the id as a whole literal ('i-close'): that is how
+ * tests/icons.test.js finds the names asked for.
+ */
+export function icon(name: string, extra?: string) {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', extra ? `ico ${extra}` : 'ico');
+  // The label beside it already names it: announcing the glyph too would
+  // read the row out twice.
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(NS, 'use');
+  use.setAttribute('href', `assets/icons.svg#${name}`);
+  svg.append(use);
+  return svg;
+}
+
+/**
  * Put a string on the clipboard, answering whether it landed. Never throws.
  *
  * navigator.clipboard is gated on a secure context, so on a phone reaching the

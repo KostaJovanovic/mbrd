@@ -3,7 +3,7 @@
 // a given item. Boundary: markup here, node map/viewport/placement there.
 // Content is canvas/renderers.ts; this builds the shell around it.
 
-import { extOf, shuffle } from '../util.ts';
+import { extOf, icon, shuffle } from '../util.ts';
 import { formatName } from '../import/formats.ts';
 import { adjustFilter, baseStep, flipTransform, isFence, isLocked, itemBare, itemFaded } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
@@ -256,8 +256,7 @@ export function writeAdjust(el: HTMLElement, item: ItemLike): void {
   if (locked) el.dataset.locked = '';
   else delete el.dataset.locked;
   // An anchored card otherwise looks free until a press does nothing. The badge
-  // is a button that takes the anchor off (canvas/items.ts). Built by hand
-  // because canvas/ may not import ui/menu.ts's icon().
+  // is a button that takes the anchor off (canvas/items.ts).
   const badge = el.querySelector(':scope > .item-locked');
   if (locked && !badge) {
     const btn = document.createElement('button');
@@ -265,14 +264,7 @@ export function writeAdjust(el: HTMLElement, item: ItemLike): void {
     btn.className = 'item-badge item-locked';
     btn.setAttribute('aria-label', 'Unanchor');
     btn.title = 'Unanchor';
-    const NS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('class', 'ico');
-    svg.setAttribute('aria-hidden', 'true');
-    const use = document.createElementNS(NS, 'use');
-    use.setAttribute('href', 'assets/icons.svg#i-anchor');
-    svg.append(use);
-    btn.append(svg);
+    btn.append(icon('i-anchor'));
     el.append(btn);
   } else if (!locked && badge) {
     badge.remove();

@@ -6,6 +6,7 @@
 // through spotlessRects(), which trusts nothing in a file it did not write.
 
 import type { Item } from '../board-model.ts';
+import { icon } from '../util.ts';
 
 /**
  * One frame of the two, and the room round the board inside it. The card's whole
@@ -163,10 +164,7 @@ function songButton() {
   button.className = 'spotless-song';
   button.setAttribute('aria-label', 'Put the song on the board');
   button.title = 'Put the song on the board';
-  const svg = el('svg', { class: 'ico', 'aria-hidden': 'true' });
-  const use = el('use', { href: 'assets/icons.svg#i-music' });
-  svg.append(use);
-  button.append(svg);
+  button.append(icon('i-music'));
   return button;
 }
 

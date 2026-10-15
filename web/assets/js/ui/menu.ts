@@ -6,7 +6,9 @@
 // Imported directly — renaming is the drawn name, so the affordance stays here.
 import { canRenameItem, editItemName } from '../canvas/items.ts';
 import { cue } from '../cuelume/engine.ts';
-import { markClosed } from '../util.ts';
+import { icon, markClosed } from '../util.ts';
+// Re-exported for the modules that already take it from here.
+export { icon };
 import { tickSlider } from './controls.ts';
 import { STICKER_TINT_NAMES } from '../stickers/catalogue.ts';
 import type { ConnMeta, ConnColor, ConnWeight } from '../board-model.ts';
@@ -1678,20 +1680,6 @@ function chip(color: string | string[], className = 'ctx-chip') {
     dot.style.background = color;
   }
   return dot;
-}
-
-/** SVG icon from icons.svg. createElementNS required — innerHTML would parse into HTML namespace.
- * Exported: fence-prompt.ts reuses menu icons for the same actions. */
-export function icon(name: string, extra?: string) {
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('class', extra ? `ico ${extra}` : 'ico');
-  // Label already names it — icon announcing itself would double-speak.
-  svg.setAttribute('aria-hidden', 'true');
-  const use = document.createElementNS(NS, 'use');
-  use.setAttribute('href', `assets/icons.svg#${name}`);
-  svg.append(use);
-  return svg;
 }
 
 function moveFocus(step: number) {

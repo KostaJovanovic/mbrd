@@ -5,7 +5,7 @@
 
 import { board, bus, setSetting } from '../state.ts';
 import { addFile, assetURL } from '../storage/assets.ts';
-import { isFamily } from '../util.ts';
+import { icon, isFamily } from '../util.ts';
 import { toast } from '../notify.ts';
 import { allow, fileKey, mb } from '../consent.ts';
 import { addFontCard } from '../import/drop.ts';
@@ -197,7 +197,7 @@ function renderFontList() {
     rm.className = 'font-row-remove';
     rm.setAttribute('aria-label', `Remove ${family}`);
     rm.title = 'Remove this face';
-    rm.innerHTML = '<svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>';
+    rm.append(icon('i-close'));
     rm.addEventListener('click', () => removeFont(hash));
     row.append(name, rm);
     fontListHost.append(row);

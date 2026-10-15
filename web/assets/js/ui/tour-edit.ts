@@ -13,7 +13,7 @@ import type { MenuEntry } from './menu.ts';
 import { paintTourMarks, setSpot, setTourMarks } from '../canvas/items.ts';
 import { baseMs, reducedMotion } from '../canvas/viewport.ts';
 import { cue } from '../cuelume/engine.ts';
-import { markClosed, readToken } from '../util.ts';
+import { icon as iconOf, markClosed, readToken } from '../util.ts';
 import { previewStop, startTour, tourActive } from './tour.ts';
 
 /** The bar, built once by initTourEdit(). */
@@ -246,13 +246,7 @@ function iconButton(className: string, icon: string, label: string): HTMLButtonE
   btn.className = className;
   btn.setAttribute('aria-label', label);
   btn.title = label;
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'ico');
-  svg.setAttribute('aria-hidden', 'true');
-  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  use.setAttribute('href', `assets/icons.svg#${icon}`);
-  svg.append(use);
-  btn.append(svg);
+  btn.append(iconOf(icon));
   return btn;
 }
 

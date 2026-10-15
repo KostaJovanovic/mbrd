@@ -8,7 +8,7 @@ import {
   isFiltered, isPinned, settlesIn, setItemsLocked, startSettling,
 } from '../state.ts';
 import { quality } from '../quality.ts';
-import { caretToEnd, makeEditable, markClosed, readToken, selectContents, toHex } from '../util.ts';
+import { caretToEnd, icon, makeEditable, markClosed, readToken, selectContents, toHex } from '../util.ts';
 import { copyHex } from '../clipboard.ts';
 import { itemRadius, rotatedExtents } from '../geometry.ts';
 import type { Bounds } from '../geometry.ts';
@@ -673,13 +673,7 @@ function applyTourMark(el: HTMLElement, id: string) {
     const num = document.createElement('span');
     num.className = 'tour-mark-n';
     mark.append(num);
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('class', 'ico tour-mark-x');
-    svg.setAttribute('aria-hidden', 'true');
-    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', 'assets/icons.svg#i-close');
-    svg.append(use);
-    mark.append(svg);
+    mark.append(icon('i-close', 'tour-mark-x'));
     el.append(mark);
   }
   marked.add(id);
