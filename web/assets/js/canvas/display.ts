@@ -7,6 +7,7 @@ import { loadMatte, saveMatte, forgetMatte } from '../storage/matte-cache.ts';
 import { quality } from '../quality.ts';
 import { DISPLAY_SIDE } from '../optimize/picture.ts';
 import { blobDimensions } from '../image-header.ts';
+import { serial } from '../util.ts';
 import { cutout, MODEL_NAME, ORT_VERSION } from './matte.ts';
 import { surface, surfaceToBlob, type Surface } from './surface.ts';
 
@@ -70,7 +71,7 @@ export const matteVariant = (hash: string, crop: Crop, rot: Turn) =>
 
 const cache = new Map<string, { url: string; own: boolean }>();
 const pending = new Map<string, Promise<string | null>>();
-let queue: Promise<unknown> = Promise.resolve();
+const inTurn = serial();
 // Bumped by clearDisplay(); stale jobs check this and decline to publish.
 let epoch = 0;
 
@@ -132,9 +133,7 @@ async function start(
     if (dims && copyScale(Math.max(dims.w, dims.h)) === 1) return publish(hash, crop, rot, matte, null, mine);
     if (dims && baked && getAsset(baked)) return publish(hash, crop, rot, matte, baked, mine);
   }
-  const decode = queue.then(() => derive(hash, crop, rot, matte, mine));
-  queue = decode.catch(() => {});
-  return decode;
+  return inTurn(() => derive(hash, crop, rot, matte, mine));
 }
 
 async function derive(

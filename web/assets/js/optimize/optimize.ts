@@ -6,7 +6,7 @@
 import { board, byId, swapAssets, setItemThumb, setItemPoster, removeItems } from '../state.ts';
 import { toast } from '../notify.ts';
 import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
-import { formatBytes, itemHashes, extOf } from '../util.ts';
+import { formatBytes, itemHashes, extOf, serial } from '../util.ts';
 import { PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.ts';
 import { coverArt, audioTags } from '../import/artwork.ts';
 import { shrinkPicture, makeThumb, MAX_SIDE, MAX_SIDE_COVER, QUALITY } from './picture.ts';
@@ -842,12 +842,7 @@ async function encodeOne(asset: AssetEntry, job: Job) {
  * heap the size of the sensor several times over (see SENSOR_PIXELS in
  * optimize/demosaic.ts), and four of those at once is what loses a phone's tab.
  */
-let rawTurn: Promise<unknown> = Promise.resolve();
-function inTurn<T>(task: () => Promise<T>): Promise<T> {
-  const run = rawTurn.then(task, task);
-  rawTurn = run.catch(() => {});
-  return run;
-}
+const inTurn = serial();
 
 /**
  * What comes with a track: its tags, and its cover shrunk to a cover's size.

@@ -4,7 +4,7 @@
 // initSession() at the foot and never imports back. Re-exports at the foot
 // keep the split invisible to callers.
 
-import { uid, isRecord } from '../util.ts';
+import { uid, isRecord, serial } from '../util.ts';
 import { toast, busy } from '../notify.ts';
 // Platform abstraction — browser vs desktop file handling.
 import { platform, isDesktop, fileNameOf } from '../platform/platform.ts';
@@ -575,16 +575,10 @@ export function pushBoardToCloud(
   return run;
 }
 
-/** Cloud pushes, one after another. Never rejects. */
-let cloudWork: Promise<unknown> = Promise.resolve();
+/** Cloud pushes, one after another. */
+const cloudTurn = serial();
 /** A plain push queued behind another and not started yet, for sharing. */
 let waitingPush: ReturnType<typeof pushOnce> | null = null;
-
-function cloudTurn<T>(work: () => Promise<T>): Promise<T> {
-  const run = cloudWork.then(work);
-  cloudWork = run.catch(() => {});
-  return run;
-}
 
 async function pushOnce(force: boolean, onProgress?: (done: number, total: number) => void) {
   const { shareProvider } = await import('./cloud/cloud.ts');
@@ -1547,12 +1541,7 @@ for (const evt of ['items', 'geom', 'item', 'settings', 'board', 'trash'] as con
 
 /** File work, one piece at a time: a write, a rename, Save. A rename between
  *  a write's temp file and its rename would leave two files. */
-let fileWork: Promise<unknown> = Promise.resolve();
-function inTurn<T>(work: () => Promise<T>): Promise<T> {
-  const run = fileWork.then(work);
-  fileWork = run.catch(() => {});
-  return run;
-}
+const inTurn = serial();
 
 /** Set by adoptFolder(). A write waits for it, or the board on screen could
  *  get a second file before its first one is found. */

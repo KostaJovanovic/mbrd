@@ -227,6 +227,20 @@ export function emitter<E = Record<string, unknown>>(): Emitter<E> {
   };
 }
 
+/**
+ * A queue that runs work one piece at a time, in the order it was handed in.
+ * Each caller gets its own work's outcome; the queue itself survives a
+ * rejection, or one failed piece would stop everything queued after it.
+ */
+export function serial() {
+  let chain: Promise<unknown> = Promise.resolve();
+  return <T>(work: () => T | Promise<T>): Promise<T> => {
+    const run = chain.then(work);
+    chain = run.catch(() => {});
+    return run;
+  };
+}
+
 /** Collapse repeated calls into one per animation frame. */
 export function rafThrottle<A extends unknown[]>(fn: (...args: A) => void) {
   let id = 0;

@@ -6,6 +6,7 @@
 
 import { canvasReads, surface, type Surface } from './surface.ts';
 import { platform, isDesktop } from '../platform/platform.ts';
+import { serial } from '../util.ts';
 
 /** Pinned versions — tests/vendor.test.js checks these against the vendored files. */
 export const ORT_VERSION = '1.23.0';
@@ -34,8 +35,9 @@ let spawnFailed = false;
 let nextId = 1;
 const pending = new Map<number, Pending>();
 
-/** Serial queue — wasm inference is single-threaded and each job holds a tensor. */
-let queue: Promise<unknown> = Promise.resolve();
+/** Serial queue — wasm inference is single-threaded and each job holds a tensor.
+ *  It outlives a failure, so one bad picture does not stall the rest. */
+const inTurn = serial();
 
 /** Cheap sync check: can we offer the button? Worker + canvas reads + no prior spawn failure. */
 export function matteAvailable(): boolean {
@@ -48,10 +50,7 @@ export function matteAvailable(): boolean {
 /** Make non-subject pixels transparent, in place. Returns false if nothing was done. */
 export function cutout(face: Surface, w: number, h: number): Promise<boolean> {
   if (w < 1 || h < 1 || !matteAvailable()) return Promise.resolve(false);
-  // Chain kept alive past failures so one bad picture does not stall the rest.
-  const job = queue.then(() => run(face, w, h));
-  queue = job.catch(() => {});
-  return job.catch(() => false);
+  return inTurn(() => run(face, w, h)).catch(() => false);
 }
 
 async function run(face: Surface, w: number, h: number): Promise<boolean> {

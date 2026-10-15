@@ -3,6 +3,7 @@
 // when the worker is unavailable. One wasm heap, so files queue.
 
 import { oversize } from '../consent.ts';
+import { serial } from '../util.ts';
 import { MeshError, type Mesh, tooBig } from './shared.ts';
 
 /** The vendored build, pinned. tests/vendor.test.js checks this against
@@ -39,8 +40,9 @@ let worker: Worker | null = null;
 let unavailable = false;
 let next = 1;
 const waiting = new Map<number, (reply: Reply) => void>();
-/** The tail of the queue: every request awaits the one before it. */
-let queue: Promise<unknown> = Promise.resolve();
+/** Every request awaits the one before it. It survives a rejection, or one
+ *  oversize file would stop every CAD card after it from ever being read. */
+const inTurn = serial();
 
 function spawn(): Worker | null {
   if (unavailable) return null;
@@ -94,11 +96,7 @@ export function kernelMesh(
   maxTriangles: number,
 ): Promise<Mesh | null> {
   if (!usesKernel(kind)) return Promise.resolve(null);
-  const run = queue.then(() => attempt(kind, bytes, maxTriangles));
-  // The queue must survive a rejection, or one oversize file stops every CAD
-  // card after it from ever being read.
-  queue = run.catch(() => {});
-  return run;
+  return inTurn(() => attempt(kind, bytes, maxTriangles));
 }
 
 function attempt(kind: string, bytes: ArrayBuffer, maxTriangles: number): Promise<Mesh | null> {

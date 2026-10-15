@@ -5,6 +5,7 @@
 // CRUD only — orchestration (pack, swap, load) lives in storage.ts.
 
 import { idbGet, idbSet, idbDel, idbKeys, idbDelMany } from './idb.ts';
+import { serial } from '../util.ts';
 
 const STORE = 'library';
 const INDEX_KEY = 'library-index';
@@ -84,18 +85,9 @@ export async function setLibraryThumb(id: string, thumb: string) {
   });
 }
 
-/** Write chain — serialises index writes. Never rejects, so one failed stash
- *  does not wedge the shelf for the session. */
-let writes: Promise<void> = Promise.resolve();
-
-/** Run `work` after every earlier write, and hand its outcome to the caller.
- *  `then(work, () => {})` would skip `work` after a rejection and resolve,
- *  so the write after a failed one would report success and store nothing. */
-function inTurn<T>(work: () => Promise<T>): Promise<T> {
-  const run = writes.then(work);
-  writes = run.then(() => {}, () => {});
-  return run;
-}
+/** Index writes, one at a time, each caller handed its own outcome; one failed
+ *  stash does not wedge the shelf for the session. */
+const inTurn = serial();
 
 /** Remove orphaned blobs (tab closed between blob write and index write), and
  *  the snapshots of boards no longer on the shelf. Cheap — key walk only, no
