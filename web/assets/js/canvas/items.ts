@@ -8,7 +8,7 @@ import {
   isFiltered, isPinned, settlesIn, setItemsLocked, startSettling,
 } from '../state.ts';
 import { quality } from '../quality.ts';
-import { caretToEnd, icon, makeEditable, markClosed, readToken, selectContents, toHex } from '../util.ts';
+import { editInline, icon, readToken, toHex } from '../util.ts';
 import { copyHex } from '../clipboard.ts';
 import { itemRadius, rotatedExtents } from '../geometry.ts';
 import type { Bounds } from '../geometry.ts';
@@ -1723,55 +1723,30 @@ export function editItemName(id: string) {
   field.hidden = false;
 
   el!.classList.add('is-editing');
-  makeEditable(field);
-  field.textContent = item.name;
-
-  let done = false;
-  let keep = true;
-
-  const onKey = (e: KeyboardEvent) => {
-    e.stopPropagation();          // the canvas must not see Delete, space or Escape
-    if (e.key === 'Enter') { e.preventDefault(); finish(); }
-    else if (e.key === 'Escape') { keep = false; markClosed(e); finish(); }
-  };
-
-  function finish() {
-    if (done) return;
-    done = true;
-    // Read before anything is torn down: innerText is what the field *renders*,
-    // and both the class and the editable flag being dropped below are things
-    // stylesheets key off. A name is one line, so a pasted paragraph is
-    // flattened into one rather than refused - the alternative is a caption
-    // plate two thirds of a page tall - and renameItem() trims the ends.
-    const typed = field.innerText.replace(/\s+/g, ' ');
-    field.removeEventListener('keydown', onKey);
-    field.removeEventListener('blur', finish);
-    field.contentEditable = 'false';
-    field.blur();
-    el!.classList.remove('is-editing');
-    // Put the field back the way state has it *before* asking for the rename.
-    // A name that comes back unchanged commits nothing and so fires no rebuild,
-    // and without this the half-finished text would simply stay on screen.
-    field.textContent = item.name;
-    if (wasHidden && !item.name) field.hidden = true;
-    // Escape abandons, and must not travel through renameItem() as an empty
-    // string: empty means "put the original filename back", which is an edit of
-    // its own and the opposite of cancelling one.
-    const wasName = item.name;
-    if (keep) renameItem(id, typed);
-    // A cancel, or a rename that resolved to the same name, commits nothing and
-    // fires no rebuild - so the field is left showing the full filename put on it
-    // above instead of the stem a .card-name renders (baseName). Repaint to the
-    // canonical caption. A real change already rebuilt via renameItem's 'item'.
-    if (item.name === wasName) rebuild(id);
-  }
-
-  field.addEventListener('keydown', onKey);
-  field.addEventListener('blur', finish);
-  // Selected, not just focused: a rename usually replaces the name rather than
-  // appends to it, and a 60-character filename is a long way to hold backspace.
-  field.focus();
-  selectContents(field);
+  editInline(field, {
+    seed: item.name,
+    commit: (typed, keep) => {
+      el!.classList.remove('is-editing');
+      // Put the field back the way state has it *before* asking for the rename.
+      // A name that comes back unchanged commits nothing and so fires no rebuild,
+      // and without this the half-finished text would simply stay on screen.
+      field.textContent = item.name;
+      if (wasHidden && !item.name) field.hidden = true;
+      // Escape abandons, and must not travel through renameItem() as an empty
+      // string: empty means "put the original filename back", which is an edit of
+      // its own and the opposite of cancelling one.
+      const wasName = item.name;
+      // A name is one line, so a pasted paragraph is flattened into one rather
+      // than refused - the alternative is a caption plate two thirds of a page
+      // tall - and renameItem() trims the ends.
+      if (keep) renameItem(id, typed.replace(/\s+/g, ' '));
+      // A cancel, or a rename that resolved to the same name, commits nothing and
+      // fires no rebuild - so the field is left showing the full filename put on it
+      // above instead of the stem a .card-name renders (baseName). Repaint to the
+      // canonical caption. A real change already rebuilt via renameItem's 'item'.
+      if (item.name === wasName) rebuild(id);
+    },
+  });
 }
 
 /**
@@ -1799,66 +1774,28 @@ export function editFontText(id: string) {
   const custom = typeof item.meta?.text === 'string' ? item.meta.text : '';
   const field = document.createElement('div');
   field.className = 'font-edit';
-  makeEditable(field);
-  // Seed with the words on the card now - the custom text, or the face's name
-  // when there is none - so a first keystroke replaces what the reader sees.
-  field.textContent = custom || fontFamilyOf(item);
   box.replaceChildren(field);
   host.classList.add('is-editing');
-
-  let done = false;
-  let keep = true;
-
-  const onKey = (e: KeyboardEvent) => {
-    e.stopPropagation();          // the canvas must not see Delete, space or Escape
-    if (e.key === 'Enter') { e.preventDefault(); finish(); }
-    else if (e.key === 'Escape') { keep = false; markClosed(e); finish(); }
-  };
-
-  // One line: a pasted newline is folded to a space rather than growing the
-  // field, the same shape the board-name editor keeps. The caret jumped to the
-  // front when textContent was rewritten, so it is put back at the end.
-  const onInput = () => {
-    const clean = (field.textContent || '').replace(/[\r\n]+/g, ' ');
-    if (clean === field.textContent) return;
-    field.textContent = clean;
-    caretToEnd(field);
-  };
-
-  function finish() {
-    if (done) return;
-    done = true;
-    // Read before teardown: innerText is what the field renders. setFontText()
-    // trims and drops an empty value.
-    const typed = field.innerText.replace(/\s+/g, ' ').trim();
-    field.removeEventListener('keydown', onKey);
-    field.removeEventListener('input', onInput);
-    field.removeEventListener('blur', finish);
-    offRebuild?.();
-    offRebuild = null;
-    host.classList.remove('is-editing');
-    if (keep) setFontText(id, typed);
-    // Restore the fitted specimen from state. A real change already rebuilt via
-    // setFontText's 'item'; this covers Escape and an unchanged commit, and a
-    // second rebuild of one small card is cheap.
-    rebuild(id);
-  }
-
-  field.addEventListener('keydown', onKey);
-  field.addEventListener('input', onInput);
-  field.addEventListener('blur', finish);
-  // The card is culled and rebuilt on any 'items' emit; a rebuilt card is a new
-  // node, so the field would vanish and finish() never run. Commit what was
-  // typed - the same guard the title editor keeps.
-  let offRebuild: (() => void) | null = bus.on('items', () => {
-    if (!done && !field.isConnected) finish();
-  });
-  // Next frame, not now: the double-click that opens this is still settling, and
-  // focusing inside it now would be blurred by the click that follows.
-  requestAnimationFrame(() => {
-    if (done) return;
-    field.focus();
-    selectContents(field);
+  editInline(field, {
+    // The words on the card now - the custom text, or the face's name when
+    // there is none - so a first keystroke replaces what the reader sees.
+    seed: custom || fontFamilyOf(item),
+    // One line: a pasted newline is folded to a space rather than growing the
+    // field, the same shape the board-name editor keeps.
+    clean: text => text.replace(/[\r\n]+/g, ' '),
+    commit: (typed, keep) => {
+      host.classList.remove('is-editing');
+      // setFontText() trims and drops an empty value.
+      if (keep) setFontText(id, typed.replace(/\s+/g, ' ').trim());
+      // Restore the fitted specimen from state. A real change already rebuilt via
+      // setFontText's 'item'; this covers Escape and an unchanged commit, and a
+      // second rebuild of one small card is cheap.
+      rebuild(id);
+    },
+    // The card is culled and rebuilt on any 'items' emit.
+    watch: check => bus.on('items', check),
+    // The double-click that opens this is still settling.
+    nextFrame: true,
   });
 }
 

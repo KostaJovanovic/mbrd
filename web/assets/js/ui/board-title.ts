@@ -2,7 +2,7 @@
 // card). Here rather than sidebar.ts so the sanitizer and commit-on-change
 // rule stay in one place.
 
-import { el, makeEditable, markClosed, selectContents, caretToEnd } from '../util.ts';
+import { editInline, el } from '../util.ts';
 import {
   board, bus, renameBoard, cleanBoardTitle, cleanBoardTitleDraft, isDefaultTitle,
 } from '../state.ts';
@@ -159,79 +159,28 @@ export function editTitleCard() {
  */
 function editBoardName(node: HTMLElement | null) {
   if (!node || node.isContentEditable) return;
-  // Held as a const so the guard above still counts inside the handlers below:
-  // a parameter is a mutable binding and the narrowing would not follow it in.
-  const field = node;
-
-  makeEditable(field);
-  // The stored name, not the shown one - they are the same string today, and
-  // this is the line that keeps them the same if the masthead ever dresses it.
-  field.textContent = board.title;
-
-  let done = false;
-  let keep = true;
-
-  const onKey = (e: KeyboardEvent) => {
-    e.stopPropagation();          // the canvas must not see Delete, space or Escape
-    if (e.key === 'Enter') { e.preventDefault(); finish(); }
-    else if (e.key === 'Escape') { keep = false; markClosed(e); finish(); }
-  };
-
-  const onInput = () => {
-    // innerText omits a trailing space in a contenteditable. Reading it here
-    // made the sanitizer erase the separator before a second word could start;
-    // textContent keeps the character that the editor actually owns.
-    const clean = cleanBoardTitleDraft(field.textContent);
-    if (clean === field.textContent) return;
-    field.textContent = clean;
-    // The caret jumped to the front when textContent was rewritten; put it back
-    // at the end so typing continues where it left off.
-    caretToEnd(field);
-  };
-
-  function finish() {
-    if (done) return;
-    done = true;
-    // Read before the teardown: innerText is what the field renders, and a name
-    // is one line, so a pasted paragraph is flattened rather than refused.
-    const typed = cleanBoardTitle(field.innerText);
-    field.removeEventListener('keydown', onKey);
-    field.removeEventListener('input', onInput);
-    field.removeEventListener('blur', finish);
-    offRebuild?.();
-    offRebuild = null;
-    field.contentEditable = 'false';
-    field.blur();
-    // Put the stored name back first. A name that comes back unchanged commits
-    // nothing and emits nothing, and without this the half-typed text would
-    // simply stay on screen.
-    paintMobileTitle();
-    if (!keep || typed === board.title) return;
-    renameBoard(typed);
-    paintMobileTitle();
-  }
-
-  field.addEventListener('keydown', onKey);
-  field.addEventListener('input', onInput);
-  field.addEventListener('blur', finish);
-  // The case none of the three listeners above can see: the node going away
-  // underneath the edit. On Desktop `field` is inside the title card, which
-  // canvas/items.ts culls and rebuilds on scroll-out, a quality/whimsy change,
-  // or any 'items' emit - a rebuilt card is a new node, so finish() would
-  // never run and the typed name would vanish silently. Commits rather than
-  // cancels: the letters were typed on purpose, a remount isn't a change of
-  // mind. Masthead markup is never culled, so this only ever bit the card.
-  let offRebuild: (() => void) | null = bus.on('items', () => {
-    if (!done && !field.isConnected) finish();
-  });
-  // Next frame, not now: on the Desktop card this opens from the T button's
-  // pointerdown, and the button would then steal focus on the click that
-  // follows, blurring and closing the editor before it could be typed in.
-  // Selected rather than merely focused, since a rename usually replaces the
-  // whole name.
-  requestAnimationFrame(() => {
-    if (done) return;
-    field.focus();
-    selectContents(field);
+  editInline(node, {
+    // The stored name, not the shown one - they are the same string today, and
+    // this is the line that keeps them the same if the masthead ever dresses it.
+    seed: board.title,
+    clean: cleanBoardTitleDraft,
+    commit: (shown, keep) => {
+      // A name is one line, so a pasted paragraph is flattened rather than refused.
+      const typed = cleanBoardTitle(shown);
+      // Put the stored name back first. A name that comes back unchanged commits
+      // nothing and emits nothing, and without this the half-typed text would
+      // simply stay on screen.
+      paintMobileTitle();
+      if (!keep || typed === board.title) return;
+      renameBoard(typed);
+      paintMobileTitle();
+    },
+    // On Desktop the field is inside the title card, which canvas/items.ts
+    // culls and rebuilds on scroll-out, a quality/whimsy change, or any 'items'
+    // emit. Masthead markup is never culled, so this only ever bit the card.
+    watch: check => bus.on('items', check),
+    // On the Desktop card this opens from the T button's pointerdown, and the
+    // button would then steal focus on the click that follows.
+    nextFrame: true,
   });
 }

@@ -145,6 +145,70 @@ export function caretToEnd(node: Node) {
 }
 
 /**
+ * A one-line inline editor on a node already showing the text: the board name,
+ * an item's name, a font card's specimen. Enter keeps, Escape abandons, blur
+ * keeps. `commit` gets what the field renders (innerText, read before the
+ * teardown) and whether to keep it; every caller normalises it its own way.
+ *
+ * `clean` runs on every input, on textContent rather than innerText, which
+ * drops a trailing space and would erase the separator before a second word.
+ * `watch` subscribes a check for the node going away under the edit - a card
+ * culled and rebuilt is a new node, and its blur never comes - and answers the
+ * unsubscribe; injected, so this module needs no event bus. Such an edit
+ * commits: the letters were typed on purpose, a remount is not a change of mind.
+ * `nextFrame` focuses a frame late, for an editor opened by a press whose click
+ * is still to come and would blur it.
+ */
+export function editInline(field: HTMLElement, { seed, clean, commit, watch, nextFrame = false }: {
+  seed: string,
+  clean?: (text: string) => string,
+  commit: (typed: string, keep: boolean) => void,
+  watch?: (check: () => void) => () => void,
+  nextFrame?: boolean,
+}) {
+  makeEditable(field);
+  field.textContent = seed;
+  let done = false;
+  let keep = true;
+
+  const onKey = (e: KeyboardEvent) => {
+    e.stopPropagation();          // the canvas must not see Delete, space or Escape
+    if (e.key === 'Enter') { e.preventDefault(); finish(); }
+    else if (e.key === 'Escape') { keep = false; markClosed(e); finish(); }
+  };
+  const onInput = () => {
+    const tidy = clean!(field.textContent || '');
+    if (tidy === field.textContent) return;
+    field.textContent = tidy;
+    // The caret jumped to the front when textContent was rewritten.
+    caretToEnd(field);
+  };
+
+  function finish() {
+    if (done) return;
+    done = true;
+    const typed = field.innerText;
+    field.removeEventListener('keydown', onKey);
+    field.removeEventListener('input', onInput);
+    field.removeEventListener('blur', finish);
+    off?.();
+    field.contentEditable = 'false';
+    field.blur();
+    commit(typed, keep);
+  }
+
+  field.addEventListener('keydown', onKey);
+  if (clean) field.addEventListener('input', onInput);
+  field.addEventListener('blur', finish);
+  const off = watch?.(() => { if (!done && !field.isConnected) finish(); });
+  // Selected, not just focused: an edit usually replaces the text rather than
+  // appends to it.
+  const focus = () => { if (done) return; field.focus(); selectContents(field); };
+  if (nextFrame) requestAnimationFrame(focus);
+  else focus();
+}
+
+/**
  * Read a CSS custom property from :root, trimmed. Not cached — tokens change
  * under the whimsy dial and palette. Not free (style flush) — do not call per frame.
  */

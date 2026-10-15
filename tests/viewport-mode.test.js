@@ -228,10 +228,15 @@ test('no view frame writes an inherited custom property onto #viewport', async (
 test('Mobile masthead title preserves a trailing space while it is edited', async () => {
   // The shared inline board-name editor, used by both the masthead and the
   // Desktop title card. Lifted out of main.ts into ui/board-title.ts.
-  const mod = await readFile(
-    new URL('../web/assets/js/ui/board-title.ts', import.meta.url), 'utf8');
-  assert.match(mod, /cleanBoardTitleDraft\(field\.textContent\)/);
-  assert.doesNotMatch(mod, /cleanBoardTitleDraft\(field\.innerText\)/);
+  // The editor itself is util.ts's editInline(), which runs the sanitiser
+  // on textContent: innerText omits the trailing space a second word needs.
+  const [mod, util] = await Promise.all([
+    readFile(new URL('../web/assets/js/ui/board-title.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../web/assets/js/util.ts', import.meta.url), 'utf8'),
+  ]);
+  assert.match(mod, /clean: cleanBoardTitleDraft/);
+  assert.match(util, /clean!\(field\.textContent/);
+  assert.doesNotMatch(util, /clean!?\(field\.innerText/);
 });
 
 test('the top-stop pen opens persisted header typography controls', async () => {

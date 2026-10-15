@@ -4,7 +4,7 @@
 
 // Namespaced: activate only deletes its own PREFIX caches.
 // VERSION is literal because save.bat bumps it by regex.
-const VERSION = 'mbrd-v717';
+const VERSION = 'mbrd-v718';
 const PREFIX = 'mbrd-';
 
 // Local dev: pass-through so a refresh always shows the latest edit. 169.254 is
