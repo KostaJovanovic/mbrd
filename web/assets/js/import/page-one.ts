@@ -5,9 +5,8 @@
 // the built-in styles' default looks, tables as rows of text, no headers or floats.
 
 import { readZip } from '../storage/zip.ts';
-import { surface } from '../canvas/surface.ts';
+import { surface, surfaceToPicture } from '../canvas/surface.ts';
 import { MAX_CONTAINER, MAX_INFLATED } from './document.ts';
-import { encodeOpaque } from './slide.ts';
 import { oversize, isOversize, mb } from '../consent.ts';
 import {
   byLocal, childOf, relationships, resolveFrom, xmlPart,
@@ -369,6 +368,6 @@ async function draw(blocks: Block[], page: Page): Promise<{ blob: Blob, w: numbe
     ctx.fillText(piece.text, piece.x * scale, piece.y * scale);
   }
 
-  const blob = await encodeOpaque(face);
+  const blob = await surfaceToPicture(face, 0.82);
   return blob ? { blob, w, h } : null;
 }

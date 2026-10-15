@@ -2,7 +2,7 @@
 // from a phone is the common undecodable case. optimize/media.ts uses ffmpeg
 // when it matters enough.
 
-import { surface, surfaceToBlob, canvasReads, type Surface } from './surface.ts';
+import { surface, surfaceToPicture, canvasReads, type Surface } from './surface.ts';
 import { noPreview, canvasBlocked } from '../notify.ts';
 import { glFrame } from './gl-frame.ts';
 
@@ -228,7 +228,9 @@ async function capture(
       flat = looksFlat(face.ctx, w, h);
     }
   }
-  const out = await encodeFrame(face);
+  // WebP, or JPEG on Safari, which never encodes WebP from a canvas; a large
+  // PNG poster beats none. Video frames have no transparency to lose.
+  const out = await surfaceToPicture(face, 0.72);
   if (!out) return { shot: null, flat, why: 'the frame drew and this browser would not encode it' };
   return { shot: { blob: out, w: v.videoWidth, h: v.videoHeight }, flat, why: '' };
 }
@@ -292,20 +294,3 @@ export async function pictureIsFlat(blob: Blob): Promise<boolean> {
   }
 }
 
-/**
- * Encode the frame as WebP, falling back to JPEG. Safari never encodes WebP
- * from canvas (silently returns PNG), so the JPEG path is what keeps posters
- * working on iOS. Alpha is always false here — video frames, no transparency.
- */
-async function encodeFrame(face: Surface): Promise<Blob | null> {
-  const webp = await surfaceToBlob(face, 'image/webp', 0.72);
-  if (!webp) return null;
-  if (webp.type.toLowerCase() === 'image/webp') return webp;
-  // Falls back to `webp` (actually PNG) if JPEG also fails — large poster beats none.
-  try {
-    const jpeg = await surfaceToBlob(face, 'image/jpeg', 0.72);
-    return jpeg?.type.toLowerCase() === 'image/jpeg' ? jpeg : webp;
-  } catch {
-    return webp;
-  }
-}

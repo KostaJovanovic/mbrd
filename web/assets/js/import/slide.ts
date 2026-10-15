@@ -6,7 +6,7 @@
 // Placeholders without geometry are resolved from the slide layout.
 
 import { readZip } from '../storage/zip.ts';
-import { surface, surfaceToBlob, type Surface } from '../canvas/surface.ts';
+import { surface, surfaceToPicture, type Surface } from '../canvas/surface.ts';
 import { MAX_CONTAINER, MAX_INFLATED } from './document.ts';
 import { oversize, isOversize, mb } from '../consent.ts';
 import {
@@ -333,7 +333,8 @@ async function draw(
     drawText(ctx, piece.lines, x, y, pw, ph, scale);
   }
 
-  const blob = await encodeOpaque(face);
+  // Opaque canvas, so JPEG where WebP is refused.
+  const blob = await surfaceToPicture(face, 0.82);
   return blob ? { blob, w, h } : null;
 }
 
@@ -395,12 +396,3 @@ function wrap(ctx: Surface['ctx'], text: string, w: number, rows = Infinity): st
   return out;
 }
 
-/** Encode: WebP preferred, JPEG fallback (opaque canvas, no transparency).
- * Exported for import/page-one.ts, which draws the same kind of picture. */
-export async function encodeOpaque(face: Surface): Promise<Blob | null> {
-  const webp = await surfaceToBlob(face, 'image/webp', 0.82);
-  if (!webp) return null;
-  if (webp.type.toLowerCase() === 'image/webp') return webp;
-  const jpeg = await surfaceToBlob(face, 'image/jpeg', 0.82);
-  return jpeg?.type.toLowerCase() === 'image/jpeg' ? jpeg : webp;
-}

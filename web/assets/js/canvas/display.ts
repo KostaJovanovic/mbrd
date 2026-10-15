@@ -9,7 +9,7 @@ import { DISPLAY_SIDE } from '../optimize/picture.ts';
 import { blobDimensions } from '../image-header.ts';
 import { serial } from '../util.ts';
 import { cutout, MODEL_NAME, ORT_VERSION } from './matte.ts';
-import { surface, surfaceToBlob, type Surface } from './surface.ts';
+import { surface, surfaceToPicture, isJpeg } from './surface.ts';
 
 // Driven by the quality dial. Changing it invalidates the cache (resetItems → clearDisplay).
 const displayMax = () => quality.sharpness;
@@ -205,28 +205,14 @@ async function shrink(
     }
     // After the turn so the model sees the picture upright.
     const knocked = matte ? await cutout(face, dw, dh) : false;
-    return { blob: await encode(face, blob.type, knocked), knocked };
+    // JPEG only for an opaque JPEG source: a matted image must keep its alpha,
+    // so where WebP fails it stays as whatever the canvas produced (PNG).
+    const out = await surfaceToPicture(face, QUALITY, { jpeg: !knocked && isJpeg(blob.type) });
+    return { blob: out, knocked };
   } catch {
     return NOTHING;
   } finally {
     bmp.close?.();
-  }
-}
-
-// WebP first; JPEG fallback only for opaque JPEG sources (Safari cannot encode WebP).
-// A matted image must keep alpha, so it stays as whatever the canvas produced (PNG).
-async function encode(
-  face: Surface, sourceType: string, knocked = false,
-): Promise<Blob | null> {
-  const first = await surfaceToBlob(face, 'image/webp', QUALITY);
-  if (!first) return null;
-  if (first.type.toLowerCase() === 'image/webp') return first;
-  if (knocked || !/^image\/jpe?g$/i.test(sourceType)) return first;
-  try {
-    const jpeg = await surfaceToBlob(face, 'image/jpeg', QUALITY);
-    return jpeg?.type.toLowerCase() === 'image/jpeg' ? jpeg : first;
-  } catch {
-    return first;
   }
 }
 

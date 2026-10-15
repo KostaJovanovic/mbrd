@@ -12,7 +12,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { surface, surfaceToBlob, canvasReads } from '../web/assets/js/canvas/surface.ts';
+import { surface, surfaceToBlob, surfaceToPicture, canvasReads } from '../web/assets/js/canvas/surface.ts';
 
 /**
  * A 2D context with the members the Surface type names, and nothing else.
@@ -208,6 +208,38 @@ test('the element path substitutes for itself, and the type says which', async (
   try {
     const out = await surfaceToBlob(surface(8, 8), 'image/webp', 0.8);
     assert.equal(out.type, 'image/png', 'the caller cannot tell what it got');
+  } finally {
+    eng.restore();
+  }
+});
+
+test('surfaceToPicture: WebP where the engine writes it', async () => {
+  const eng = engine({ offscreen: 'works', encodes: ['image/png', 'image/webp', 'image/jpeg'] });
+  try {
+    assert.equal((await surfaceToPicture(surface(8, 8), 0.8)).type, 'image/webp');
+  } finally {
+    eng.restore();
+  }
+});
+
+test('surfaceToPicture: JPEG on Safari, and the PNG kept when alpha must survive', async () => {
+  // The posters, slides and display copies would rather have a JPEG than a
+  // forty-megabyte PNG; a cut-out would rather have the PNG than black corners.
+  for (const offscreen of ['works', 'none']) {
+    const eng = engine({ offscreen, encodes: ['image/png', 'image/jpeg'] });
+    try {
+      assert.equal((await surfaceToPicture(surface(8, 8), 0.8)).type, 'image/jpeg', offscreen);
+      assert.equal((await surfaceToPicture(surface(8, 8), 0.8, { jpeg: false })).type, 'image/png', offscreen);
+    } finally {
+      eng.restore();
+    }
+  }
+});
+
+test('surfaceToPicture: no JPEG encoder either is still a picture, not nothing', async () => {
+  const eng = engine({ offscreen: 'works', encodes: ['image/png'] });
+  try {
+    assert.equal((await surfaceToPicture(surface(8, 8), 0.8)).type, 'image/png');
   } finally {
     eng.restore();
   }

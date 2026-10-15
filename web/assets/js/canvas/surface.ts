@@ -104,6 +104,35 @@ export async function surfaceToPhoto(
 }
 
 /**
+ * A picture off this surface: WebP, else JPEG, else whatever the canvas wrote.
+ *
+ * surfaceToPhoto() with a last resort. The posters, slides and display copies
+ * would rather keep a large PNG than nothing, and the display copy and the
+ * shrink pass `jpeg: false` when the pixels need their alpha (a cut-out, a PNG
+ * source), because a JPEG would paint the transparency black. Null only when
+ * the first encode gives nothing at all.
+ */
+export async function surfaceToPicture(
+  face: Surface,
+  quality: number,
+  { jpeg = true }: { jpeg?: boolean } = {},
+): Promise<Blob | null> {
+  const first = await surfaceToBlob(face, 'image/webp', quality);
+  if (!first) return null;
+  if (first.type.toLowerCase() === 'image/webp' || !jpeg) return first;
+  try {
+    const out = await surfaceToBlob(face, 'image/jpeg', quality);
+    return out?.type.toLowerCase() === 'image/jpeg' ? out : first;
+  } catch {
+    // No JPEG encoder either: the PNG is still the right pixels.
+    return first;
+  }
+}
+
+/** Whether a picture of this type has no alpha to lose to a JPEG. */
+export const isJpeg = (type: string) => /^image\/jpe?g$/i.test(type);
+
+/**
  * Encode the surface as bytes. Caller must check blob.type — Safari substitutes
  * PNG for WebP silently (toBlob), while convertToBlob rejects instead. The
  * try/catch unifies both: unsupported type falls back to PNG, the one format

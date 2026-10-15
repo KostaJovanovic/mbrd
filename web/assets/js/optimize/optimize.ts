@@ -622,7 +622,7 @@ async function backfillPosters(onProgress: (p: Progress) => void): Promise<numbe
       // with nothing - it is a 32 MB download, and the ternary below is what
       // keeps it that way. Its result carries its own name and type; a frame
       // cut here is named from the blob instead, because what canvas/poster.ts
-      // hands back is no longer always a WebP (see encodeFrame there).
+      // hands back is no longer always a WebP (see surfaceToPicture()).
       const ff = shot ? null : await viaFfmpeg(asset.blob, asset.name || item.name || 'clip', asset.mime);
       const named = shot ? derivedFile(shot.blob, 'poster')
         : ff ? new File([ff.blob], ff.name, { type: ff.type })

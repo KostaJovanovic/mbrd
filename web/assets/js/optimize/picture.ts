@@ -2,7 +2,7 @@
 // Surface from canvas/surface.ts for OffscreenCanvas compat (Safari 16.4+).
 // The judgement is when NOT to swap — see WORTH_IT below.
 
-import { surface, surfaceToBlob, type Surface } from '../canvas/surface.ts';
+import { surface, surfaceToBlob, surfaceToPicture, isJpeg, type Surface } from '../canvas/surface.ts';
 import { getAsset, addFile, derivedFile } from '../storage/assets.ts';
 
 /** Max long edge — 1200px is where a card stops being pixel-limited. */
@@ -94,17 +94,9 @@ async function encodeShrunk(
   quality: number,
   sourceType: string,
 ): Promise<Blob | null> {
+  if (type === 'image/webp') return surfaceToPicture(face, quality, { jpeg: isJpeg(sourceType) });
   const out = await surfaceToBlob(face, type, quality);
-  if (!out) return null;
-  if (out.type.toLowerCase() === type) return out;
-  if (type !== 'image/webp') return null;
-  if (/^image\/jpe?g$/i.test(sourceType)) {
-    try {
-      const jpeg = await surfaceToBlob(face, 'image/jpeg', quality);
-      if (jpeg?.type.toLowerCase() === 'image/jpeg') return jpeg;
-    } catch { /* no JPEG encoder either: the PNG below is still the right pixels */ }
-  }
-  return out;
+  return out?.type.toLowerCase() === type ? out : null;
 }
 
 /**
