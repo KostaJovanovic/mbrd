@@ -14,11 +14,9 @@ import {
 import { DEFAULT_SCALE } from '../measure.ts';
 import { platform } from '../platform/platform.ts';
 import { clearQualityOverrides } from '../quality.ts';
-import { cueLogOn, dumpCueLog, setCueLog } from '../cuelume/engine.ts';
 import { drawingEnabled, setDrawingEnabled } from '../canvas/pen.ts';
 import { BASE_ZOOM, onNarrowScreen, travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
-import type { ViewPerf } from '../perf/view-perf.ts';
 
 /**
  * Where every app is downloaded from: the latest release of KostaJovanovic/mbrd.
@@ -29,8 +27,6 @@ import type { ViewPerf } from '../perf/view-perf.ts';
 export const RELEASES = 'https://github.com/KostaJovanovic/mbrd/releases/latest';
 /** Where Report a problem sends somebody, with the details on their clipboard. */
 export const ISSUES = 'https://github.com/KostaJovanovic/mbrd/issues/new';
-/** The source, for the About sheet. */
-export const SOURCE = 'https://github.com/KostaJovanovic/mbrd';
 import { togglePlayback } from '../canvas/audio.ts';
 import { currentLens, setLens } from '../ui/board-view.ts';
 import {
@@ -52,7 +48,6 @@ export type CommandViewport = Viewport;
 /** What main.ts hands in through createCommands, of which this run wants one. */
 export interface ViewDeps {
   resetAppearance: () => void;
-  perf: ViewPerf;
 }
 
 /** Back to the canvas, as the Canvas command does it. */
@@ -70,7 +65,7 @@ export function canvasOnly(message: string) {
   toast(message, '', { label: 'Switch to canvas', run: toCanvas });
 }
 
-export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: ViewDeps) {
+export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps) {
   return {
     /**
      * Tag filter — which tags the board is showing. Lives in this run (view),
@@ -204,41 +199,6 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
       const on = document.documentElement.toggleAttribute('data-debug-grips');
       document.querySelector('[data-cmd="debug-grips"]')?.setAttribute('aria-pressed', String(on));
       return on;
-    },
-    /** Arm/disarm the frame profiler. Writes its own aria-pressed — console and #perf also toggle it. */
-    debugPerf: () => {
-      const on = !perf.active;
-      if (on) perf.on(); else perf.off();
-      document.querySelector('[data-cmd="debug-perf"]')?.setAttribute('aria-pressed', String(on));
-      toast(on ? 'Profiling - pan and zoom for a while, then Print the report' : 'Profiling off');
-      return on;
-    },
-    /** Print the profiler report. Separate from the toggle so you can read mid-session. */
-    debugPerfReport: () => {
-      if (!perf.active) { toast('Turn profiling on first, then pan and zoom'); return; }
-      const r = perf.report();
-      toast(r ? 'Report printed to the console' : 'Nothing sampled yet - pan or zoom first');
-    },
-    /**
-     * Cue log: transcript of every interface sound and what became of it.
-     * Value is the lines that are *not* there — a missing cue means a call
-     * site is missing. Remembered across reload (unlike the profiler).
-     */
-    debugSound: () => {
-      const on = setCueLog(!cueLogOn());
-      document.querySelector('[data-cmd="debug-sound"]')?.setAttribute('aria-pressed', String(on));
-      toast(on
-        ? 'Logging cues - use the board, then Print the cue log'
-        : 'Cue logging off');
-      return on;
-    },
-    /** The transcript as a table. Its own row, for the reason the report is. */
-    debugSoundReport: () => {
-      if (!cueLogOn()) { toast('Turn cue logging on first, then use the board'); return; }
-      const rows = dumpCueLog();
-      toast(rows.length
-        ? `${rows.length} cue${rows.length === 1 ? '' : 's'} printed to the console`
-        : 'Nothing logged yet - press something first');
     },
     /** Offer drawing or not, while it is being finished (canvas/pen.ts). */
     debugDrawing: () => {

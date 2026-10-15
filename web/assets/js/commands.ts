@@ -70,7 +70,6 @@ import { viewCommands, canvasOnly } from './commands/view.ts';
 import { itemMetaCommands } from './commands/item-meta.ts';
 import { boardCommands } from './commands/boards.ts';
 import type { CommandViewport } from './commands/view.ts';
-import type { ViewPerf } from './perf/view-perf.ts';
 import type { BenchOptions, BenchResult } from './perf/bench.ts';
 import type { Item, ItemMeta } from './board-model.ts';
 import type { Point } from './arrange/arrangements.ts';
@@ -118,8 +117,6 @@ export interface CommandsViewport extends CommandViewport {
 export interface CommandDeps {
   resetAppearance: () => void;
   setWhimsy: (level: number | string) => void;
-  /** Frame profiler instance, injected because it closes over the live viewport. */
-  perf: ViewPerf;
   /**
    * The benchmark's screen (ui/bench-view.ts), injected because it is built
    * from these commands. Absent in a test, where both rows answer nothing.
@@ -270,7 +267,7 @@ function multiSelectHint() {
 }
 
 /** Build the command surface. Deps injected to avoid importing ui/appearance.ts (touches DOM at import). */
-export function createCommands(vp: CommandsViewport, { resetAppearance, setWhimsy, perf, bench }: CommandDeps) {
+export function createCommands(vp: CommandsViewport, { resetAppearance, setWhimsy, bench }: CommandDeps) {
   registerLayoutOps();
   // Function, not binding — board.settings is replaced on layout switch.
   const settingsBag = (): Record<string, unknown> => board.settings;
@@ -508,7 +505,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     },
 
     // --- the lenses, the camera, the chrome resets ---
-    ...viewCommands(vp, { resetAppearance, perf }),
+    ...viewCommands(vp, { resetAppearance }),
 
     // The benchmark (perf/bench.ts). The Debug row asks which board; the
     // console form takes the options and answers the file's own object.

@@ -162,12 +162,12 @@ const vp = new Viewport(el('viewport')!, el('world')!, el('origin-mark')!);
 // appearance is injected into createCommands() to keep commands.ts DOM-free.
 initBoardView(vp);
 initBoardActions(vp);
-// Profiler created here so cmds can arm it from the Debug fold.
+// The frame profiler, for the benchmark and mbrd.perf.
 const viewPerf = createViewPerf(vp);
 // The Look tab's Reset takes the picture count back with the look.
 // The benchmark's screen is built from cmds, so cmds reaches it late.
 const cmds = createCommands(vp, {
-  resetAppearance: resetLook, setWhimsy, perf: viewPerf,
+  resetAppearance: resetLook, setWhimsy,
   bench: { open: () => benchView.open(), run: opts => benchView.run(opts) },
 });
 const benchView = initBenchView({

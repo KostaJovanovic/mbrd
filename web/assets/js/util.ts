@@ -338,19 +338,3 @@ export const cameFrom = (
   return ext.toLowerCase();
 };
 
-/**
- * Whether this is a dev server (localhost/LAN). Memoised — deferred to first
- * call so util.ts stays loadable without a browser. Also the anchor half of
- * sw.test.js's parity check (sw.js carries the same regex).
- */
-let devHost: boolean | null = null;
-
-export function isDev() {
-  if (devHost === null) {
-    const h = location.hostname;
-    devHost = h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' ||
-              /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(h);
-  }
-  return devHost;
-}
-

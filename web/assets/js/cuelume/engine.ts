@@ -703,16 +703,6 @@ export function setCueLog(on: unknown = true): boolean {
   return true;
 }
 
-/**
- * Whether the transcript is running.
- *
- * Exported because this toggle *persists* and the other two development toggles
- * beside it in the panel do not - so the button has to be able to paint itself
- * from the truth on a fresh load rather than assuming it starts off. See the
- * Debug fold in ui/settings-schema.ts.
- */
-export const cueLogOn = (): boolean => logging;
-
 /** The transcript so far, newest last. Handed out as a copy. */
 export const cueLog = (): CueLogEntry[] => [...log];
 
