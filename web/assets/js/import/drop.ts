@@ -943,6 +943,107 @@ async function diskFolderDraft(folder: DiskFolder): Promise<Draft> {
   return folderDraft(folder.name, { files, count: files.length });
 }
 
+/** A decodable picture drawn in place of a file the board cannot draw itself. */
+type StandIn = { file: File, hash: string, size: DraftSize };
+
+/** A rendered page or slide as a stand-in. derivedFile() picks the extension from the blob's real type. */
+async function fromRaster(
+  r: { blob?: Blob | null, w: number, h: number } | null,
+  stem: string,
+): Promise<StandIn | null> {
+  if (!r?.blob) return null;
+  const file = derivedFile(r.blob, stem);
+  const size = { ...fitToBox('image', r.w, r.h), measured: true, decodable: true };
+  return { file, hash: await addFile(file), size };
+}
+
+/** A picture file as a stand-in, when this engine can measure it and so draw it. */
+async function fromPicture(file: File | null): Promise<StandIn | null> {
+  const size = file ? await measureSize('image', file) : null;
+  if (!file || !size?.decodable) return null;
+  return { file, hash: await addFile(file), size };
+}
+
+/**
+ * The documents that carry, or can be made to give, a picture of themselves,
+ * in the order they are tried. The first that answers wins; a file the list
+ * says nothing about, or every entry declines, keeps its own type.
+ */
+const STAND_INS: { when: (file: File) => boolean, make: (file: File) => Promise<StandIn | null> }[] = [
+  // PDF: page one via pdf.js, a dynamic import. Its own .catch rather than
+  // asking(): pdf.ts has no ceiling to ask about.
+  {
+    when: isPdf,
+    make: async file => {
+      const { firstPageRaster } = await import('./pdf.ts');
+      return fromRaster(await firstPageRaster(file).catch(() => null), 'page');
+    },
+  },
+  // Documents with baked-in thumbnails (OOXML, ODF, Krita, PSD, etc.).
+  // Pixel-budgeted too - a crafted thumbnail could be a decode bomb. A prior
+  // allow on the file itself carries over.
+  {
+    when: hasBakedPreview,
+    make: async file => {
+      const baked = await asking(file, l => bakedPreview(file, l));
+      const ok = baked && (isAllowed(fileKey(file)) || !(await overPixelBudget(baked)));
+      return fromPicture(ok ? baked : null);
+    },
+  },
+  // A deck, when the well above was dry - which for PowerPoint is nearly always.
+  // docProps/thumbnail is optional, current PowerPoint does not write it unless
+  // somebody turns it on, and the exporters most decks arrive from never write
+  // one at all, so the cheap path answers for almost no .pptx and the family was
+  // a grey card whatever was inside it. import/slide.ts composites the first
+  // slide instead: the pictures at their real positions, the text at its real
+  // size, the background behind both.
+  //
+  // After the baked thumbnail because it is the one that renders. A deck that
+  // *did* carry a thumbnail has already been answered and never reaches this.
+  {
+    when: file => isDeck(extOf(file.name)),
+    make: async file => fromRaster(await asking(file, l => slideOneRaster(file, l)), 'slide'),
+  },
+  // A Word file, for the same reason: Word bakes a thumbnail in only when "Save
+  // preview picture" is on. import/page-one.ts sets page one's text and
+  // pictures on a page of the document's own size.
+  {
+    when: file => isWordDoc(extOf(file.name)),
+    make: async file => fromRaster(await asking(file, l => pageOneRaster(file, l)), 'page'),
+  },
+  // And a TIFF, which is the same shape of problem as all three above and the
+  // one where the picture was simply out of reach: a scan or a print export is
+  // a photograph in a container no engine but Safari decodes, with no embedded
+  // JPEG for import/preview.ts to find and no thumbnail for import/document.ts
+  // to look up. import/tiff.ts decodes it outright, in a worker, through the
+  // vendored UTIF - see the head of that file for what that costs and why it is
+  // carried rather than fetched.
+  //
+  // Unconditional rather than gated on this engine failing to draw it, which is
+  // deliberate and is NOT_PORTABLE's argument in import/preview.ts: a board made
+  // on the one browser that *can* draw a TIFF would otherwise travel to every
+  // other browser as a grey card. The original file is untouched either way, and
+  // this raster is `meta.preview` like every other stand-in.
+  //
+  // Through asking() like the entries above it, because the ceiling it can stop
+  // at is a real question - a 1200-dpi flatbed scan is honestly 400 megapixels -
+  // and a no costs nothing but the picture.
+  {
+    when: isTiffFile,
+    make: async file => fromPicture(await asking(file, l => tiffRaster(file, l))),
+  },
+];
+
+/** The first stand-in STAND_INS can make for this file, or null. */
+async function standIn(file: File): Promise<StandIn | null> {
+  for (const { when, make } of STAND_INS) {
+    if (!when(file)) continue;
+    const made = await make(file);
+    if (made) return made;
+  }
+  return null;
+}
+
 /** Classify, measure, hash one file into a Draft. `stats` accumulates soft outcomes for importFiles. */
 async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draft> {
   // An internet shortcut is a pointer, not content: open it as the link it names
@@ -958,99 +1059,14 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     }
   }
   let type = classify(file);
-  let size: DraftSize | undefined;
-  // Decodable stand-in from an undecodable picture (HEIC, RAW). Null otherwise.
-  let previewHash: string | null = null;
-  let previewFile: File | null = null;
-  // PDF: render page one via pdf.js (dynamic import). Original stays asset.hash;
-  // rendered page becomes meta.preview. Failure falls through to a named card.
-  if (isPdf(file)) {
-    const { firstPageRaster } = await import('./pdf.ts');
-    const page = await firstPageRaster(file).catch(() => null);
-    if (page?.blob) {
-      // derivedFile() picks the right extension from the actual blob type.
-      previewFile = derivedFile(page.blob, 'page');
-      previewHash = await addFile(previewFile);
-      type = 'image';
-      size = { ...fitToBox('image', page.w, page.h), measured: true, decodable: true };
-    }
-  }
-  // Documents with baked-in thumbnails (OOXML, ODF, Krita, PSD, etc.).
-  // Gated on !size so a PDF hit above is not re-measured.
-  if (!size && hasBakedPreview(file)) {
-    const baked = await asking(file, l => bakedPreview(file, l));
-    // Pixel-budget the baked preview too — a crafted thumbnail could be a decode
-    // bomb. A prior allow on the file itself carries over.
-    const bakedOk = baked && (isAllowed(fileKey(file)) || !(await overPixelBudget(baked)));
-    const shot = bakedOk ? await measureSize('image', baked) : null;
-    // `baked` again rather than only `shot`: without a preview there is no
-    // measurement either, so the two are one condition said twice.
-    if (baked && shot?.decodable) {
-      previewFile = baked;
-      previewHash = await addFile(baked);
-      type = 'image';
-      size = shot;
-    }
-  }
-  // A deck, when the well above was dry - which for PowerPoint is nearly always.
-  // docProps/thumbnail is optional, current PowerPoint does not write it unless
-  // somebody turns it on, and the exporters most decks arrive from never write
-  // one at all, so the cheap path answers for almost no .pptx and the family was
-  // a grey card whatever was inside it. import/slide.ts composites the first
-  // slide instead: the pictures at their real positions, the text at its real
-  // size, the background behind both.
-  //
-  // Last of the three because it is the only one that renders. A deck that *did*
-  // carry a thumbnail has already been handled above and never reaches this, and
-  // the same `!size` gate keeps it that way.
-  if (!size && isDeck(extOf(file.name))) {
-    const slide = await asking(file, l => slideOneRaster(file, l));
-    if (slide?.blob) {
-      previewFile = derivedFile(slide.blob, 'slide');
-      previewHash = await addFile(previewFile);
-      type = 'image';
-      size = { ...fitToBox('image', slide.w, slide.h), measured: true, decodable: true };
-    }
-  }
-  // A Word file, for the same reason: Word bakes a thumbnail in only when "Save
-  // preview picture" is on. import/page-one.ts sets page one's text and
-  // pictures on a page of the document's own size.
-  if (!size && isWordDoc(extOf(file.name))) {
-    const page = await asking(file, l => pageOneRaster(file, l));
-    if (page?.blob) {
-      previewFile = derivedFile(page.blob, 'page');
-      previewHash = await addFile(previewFile);
-      type = 'image';
-      size = { ...fitToBox('image', page.w, page.h), measured: true, decodable: true };
-    }
-  }
-  // And a TIFF, which is the same shape of problem as all three above and the
-  // one where the picture was simply out of reach: a scan or a print export is
-  // a photograph in a container no engine but Safari decodes, with no embedded
-  // JPEG for import/preview.ts to find and no thumbnail for import/document.ts
-  // to look up. import/tiff.ts decodes it outright, in a worker, through the
-  // vendored UTIF - see the head of that file for what that costs and why it is
-  // carried rather than fetched.
-  //
-  // Unconditional rather than gated on this engine failing to draw it, which is
-  // deliberate and is NOT_PORTABLE's argument in import/preview.ts: a board made
-  // on the one browser that *can* draw a TIFF would otherwise travel to every
-  // other browser as a grey card. The original file is untouched either way, and
-  // this raster is `meta.preview` like every other stand-in.
-  //
-  // Through asking() like the three above it, because the ceiling it can stop at
-  // is a real question - a 1200-dpi flatbed scan is honestly 400 megapixels -
-  // and a no costs nothing but the picture.
-  if (!size && isTiffFile(file)) {
-    const raster = await asking(file, l => tiffRaster(file, l));
-    const shot = raster ? await measureSize('image', raster) : null;
-    if (raster && shot?.decodable) {
-      previewFile = raster;
-      previewHash = await addFile(raster);
-      type = 'image';
-      size = shot;
-    }
-  }
+  // A document's picture, drawn in its place (see STAND_INS). The original stays
+  // asset.hash and this becomes meta.preview; none found, it is a named card.
+  const stand = await standIn(file);
+  let size: DraftSize | undefined = stand?.size;
+  if (stand) type = 'image';
+  // Decodable stand-in from an undecodable picture (HEIC, RAW), or the one above.
+  let previewHash: string | null = stand?.hash ?? null;
+  let previewFile: File | null = stand?.file ?? null;
   // A decode bomb - a small file that declares enormous dimensions - is caught
   // from its header before measureSize() hands it to createImageBitmap(), which
   // would otherwise allocate gigabytes. Over budget it becomes a named card, the
@@ -1063,7 +1079,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // asked for it - the picture somebody chose to decode arriving as a grey card
   // with no explanation, which is the worst of both behaviours.
   if (size) {
-    // Already decided - the PDF branch above rendered a page and measured it.
+    // Already decided - a stand-in above was found and measured.
   } else if (type === 'image' && !isAllowed(fileKey(file)) && await overPixelBudget(file)) {
     type = 'generic';
     size = defaultSize('generic');
