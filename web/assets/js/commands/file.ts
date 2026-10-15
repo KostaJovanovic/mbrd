@@ -5,7 +5,7 @@
 import { busy, toast } from '../notify.ts';
 import { formatBytes } from '../util.ts';
 import {
-  board, historyDepth, historyState, historyWeight,
+  board, cleanBoardTitle, historyDepth, historyState, historyWeight,
 } from '../state.ts';
 import { ask } from '../ui/dialog.ts';
 import { hasContent } from '../onboarding.ts';
@@ -56,10 +56,10 @@ async function diagnostics(): Promise<string> {
   ].filter(Boolean).join('\n');
 }
 
-/** A filesystem-safe download name from the board title. */
+/** A filesystem-safe download name from the board title, by the rule the
+ *  .mbrd name follows: a letter outside ASCII is a letter, not a hazard. */
 function boardArtefactName(ext: string): string {
-  const base = (board.title || '').replace(/[^\w -]+/g, '').trim().slice(0, 60) || 'board';
-  return `${base}.${ext}`;
+  return `${cleanBoardTitle(board.title) || 'board'}.${ext}`;
 }
 
 /**
@@ -309,7 +309,7 @@ export function fileCommands() {
     save: () => isDesktop() ? exportBoard() : saveWithCooldown(),
     saveAs: async () => { if (await confirmEmptyExport()) await exportBoard({ pickNew: true }); },
     export: async () => { if (await confirmEmptyExport()) await exportBoard(); },
-    exportAs: async () => { if (await confirmEmptyExport()) await exportBoard({ pickNew: true }); },
+    exportAs: async () => { if (await confirmEmptyExport()) await exportBoard({ copy: true }); },
     // Hand the .mbrd to the OS share sheet; falls back to Export.
     share: async () => {
       if (!await confirmEmptyExport()) return;

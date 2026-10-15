@@ -3,7 +3,7 @@
 // geom, item, selection, settings, layout, board, trash, connections),
 // so renderer/HUD/sidebar stay in sync without knowing each other.
 
-import { isHash, isRecord, itemHashes, uid } from './util.ts';
+import { isHash, isRecord, itemHashes, META_HASH_KEYS, ORIGINAL_HASH_KEYS, uid } from './util.ts';
 import { toast } from './notify.ts';
 import { cue } from './cuelume/engine.ts';
 import { latticeBox, itemBounds } from './geometry.ts';
@@ -143,10 +143,7 @@ export function replaceOldVersions(doomed: Set<string>): number {
  * in it because they name the very thing being let go: a recorded copy that
  * kept them would point the sweep at bytes that no longer exist.
  */
-const RECORDED_HASH_KEYS = [
-  'cover', 'shot', 'thumb', 'preview', 'art', 'display', 'source', 'poster',
-  'archive', 'was', 'wasCover',
-];
+const RECORDED_HASH_KEYS = [...META_HASH_KEYS, ...ORIGINAL_HASH_KEYS];
 
 /** One recorded item, with today's files in place of the doomed ones. Null
  *  when it names none of them - rewriteRecorded() leaves those untouched. */

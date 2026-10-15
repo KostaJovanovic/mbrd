@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { itemHashes } from '../web/assets/js/util.ts';
+import { itemHashes, heldHashes, META_HASH_KEYS, ORIGINAL_HASH_KEYS } from '../web/assets/js/util.ts';
 import { makeItem } from '../web/assets/js/board-model.ts';
 import { packBoard } from '../web/assets/js/storage/mbrd.ts';
 
@@ -26,6 +26,18 @@ test('the walk reads the keys it is known to read', () => {
   for (const key of ['cover', 'preview', 'art', 'display', 'source']) {
     assert.ok(keys.includes(key), `itemHashes() no longer reads meta.${key}`);
   }
+});
+
+test('the walk reads META_HASH_KEYS and nothing else', () => {
+  assert.deepEqual(keysRead().sort(), [...META_HASH_KEYS].sort());
+});
+
+test('heldHashes() adds the optimiser originals and itemHashes() does not', () => {
+  const h = (c) => c.repeat(64);
+  const meta = Object.fromEntries(ORIGINAL_HASH_KEYS.map((k, i) => [k, h(String(i))]));
+  const item = { asset: { hash: h('a') }, meta };
+  assert.deepEqual(itemHashes(item), [h('a')]);
+  assert.deepEqual(heldHashes(item), [h('a'), ...Object.values(meta)]);
 });
 
 for (const key of keysRead()) {

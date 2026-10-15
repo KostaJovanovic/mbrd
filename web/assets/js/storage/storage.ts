@@ -310,21 +310,25 @@ export async function saveBoard() {
 
 /** Export as .mbrd. Handle remembered for overwrite; `pickNew` forces re-pick.
  *  `history` defaults true (Export never asks; Share does, and falls through
- *  here when Web Share is unavailable — the answer must survive the fallback). */
-export async function exportBoard({ pickNew = false, history = true } = {}) {
+ *  here when Web Share is unavailable — the answer must survive the fallback).
+ *  `copy` picks a new file and writes it without binding or renaming the
+ *  board: the open file stays the one Save writes, and stays unsaved. */
+export async function exportBoard({ pickNew = false, history = true, copy = false } = {}) {
   // Desktop: native dialog. Safari/Firefox: no picker, every export is a download.
   const picking = platform.files.canPick();
   try {
     // Picker runs first: choosing a filename renames the board, and the packed
     // title must match. Cancel throws AbortError before any state moves.
-    const picked = picking && (pickNew || !doc);
-    if (picked) {
+    const picked = picking && (copy || pickNew || !doc);
+    let copyTo: DocumentRef | null = null;
+    if (picked && copy) copyTo = await platform.files.pickSave(fileNameFor(fileTitle()), PICK_SPEC);
+    else if (picked) {
       doc = await platform.files.pickSave(fileNameFor(fileTitle()), PICK_SPEC);
       reportDocument();
     }
     // Only a name chosen now renames the board: a rename made since the last
     // pick must survive the next export to the same file.
-    if (picked) setFileTitle(titleFromFileName(doc!.name));
+    if (picked && !copy) setFileTitle(titleFromFileName(doc!.name));
 
     // Busy strip after the picker — packing is the slow half, and showing
     // "working" over a file browser would be a lie.
@@ -340,21 +344,23 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
       // (no picker = no rename). `picking &&` keeps the two paths distinct —
       // a stale doc must not write to a file the user never picked. In turn
       // with the file timer, which writes the same file (saveDocument()).
-      const target = picking && doc ? doc : { name: fileNameFor(data.title) };
+      const target = copyTo ?? (picking && doc ? doc : { name: fileNameFor(data.title) });
       await inTurn(() => writeBoardFile(target, data, {
         allowMissing: false,
         whole: picked,
         compact: true,
+        copy: !!copyTo,
         writing: () => { if (picking) job.label('Writing the file'); },
       }));
     } finally {
       job.end();
     }
 
-    // Exporting is also a save — bytes are on disk.
-    if (edits === gen) markDirty(false);
+    // Exporting is also a save — bytes are on disk. A copy is not: the
+    // board's own file is as unsaved as it was.
+    if (!copyTo && edits === gen) markDirty(false);
     sinceCopy = 0;
-    toast('Exported ' + (picking && doc ? doc.name : fileNameFor(fileTitle())));
+    toast('Exported ' + (copyTo?.name ?? (picking && doc ? doc.name : fileNameFor(fileTitle()))));
     return true;
   } catch (err) {
     if (isAbort(err)) return false;   // user closed the picker
@@ -1606,8 +1612,8 @@ export async function saveDocument(): Promise<boolean> {
  */
 async function writeBoardFile(
   ref: DocumentRef, data: PackedBoard,
-  { allowMissing, whole = false, compact = false, writing }:
-    { allowMissing: boolean, whole?: boolean, compact?: boolean, writing?: () => void },
+  { allowMissing, whole = false, compact = false, copy = false, writing }:
+    { allowMissing: boolean, whole?: boolean, compact?: boolean, copy?: boolean, writing?: () => void },
 ) {
   const append = platform.files.append;
   let prior = append && !whole ? await priorLayout(ref) : null;
@@ -1629,6 +1635,9 @@ async function writeBoardFile(
   } else {
     await platform.files.write(ref, packed.blob);
   }
+  // A copy is another file: the board's own layout, and an Optimize's
+  // pending whole write, still describe the board's file.
+  if (copy) return;
   fileLayout = ref.path ? { path: ref.path, layout: packed.layout } : null;
   writeWhole = false;
   if (ref === doc && (shot?.url ?? null) === thumb) shotFiled = true;

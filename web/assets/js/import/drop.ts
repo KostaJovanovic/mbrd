@@ -1312,7 +1312,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   //   preview - everything else undecodable: asset.hash is the untouched
   //             original and the image renderer draws this instead.
   //
-  // Both are preserved and packed like any other content id - see META_HASHES
+  // Both are preserved and packed like any other content id - see META_HASH_KEYS
   // in board-model.ts and itemHashes() in util.ts.
   if (decodedHere) meta.source = original;
   else if (previewHash !== null) meta.preview = previewHash;

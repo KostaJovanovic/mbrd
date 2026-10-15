@@ -15,7 +15,7 @@ import { allAssets, assetURL, getAsset, forgetAssets } from '../storage/assets.t
 import { travelMs } from '../canvas/viewport.ts';
 import { icon } from './menu.ts';
 import { ask } from './dialog.ts';
-import { itemHashes, el, clamp, formatBytes } from '../util.ts';
+import { itemHashes, originalHashes, el, clamp, formatBytes } from '../util.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { Item } from '../board-model.ts';
 
@@ -159,10 +159,7 @@ export function boardInventory(): Inventory {
   // being wrong about the one thing it is for. They are the Timeline's kind of
   // weight - what the past is holding - and counted with it.
   for (const item of [...board.items, ...board.trash.map(t => t.item)]) {
-    for (const key of ['was', 'wasCover']) {
-      const hash = item.meta?.[key];
-      if (typeof hash === 'string' && hash) inTimeline.add(hash);
-    }
+    for (const hash of originalHashes(item)) inTimeline.add(hash);
   }
 
   const counts = new Map<string, number>();

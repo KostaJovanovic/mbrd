@@ -4,7 +4,7 @@
 // On the web this is crash recovery and the durable artefact is an exported
 // .mbrd. In the apps the board's own file is the save, and the store keeps no copy.
 
-import { itemHashes, isRecord } from '../util.ts';
+import { heldHashes, itemHashes, isRecord } from '../util.ts';
 // Timeline references, read from the stored document like everything else.
 import { timelineHashes } from '../timeline.ts';
 import { toast, busy } from '../notify.ts';
@@ -244,19 +244,12 @@ function requestAutosave() {
  *  that do not survive a reload). */
 function referencedHashes(data: BoardLike) {
   const out = new Set<string>();
-  // One pass for item hashes + optimiser originals (meta.was/wasCover).
-  // Originals are NOT in itemHashes() (that drives the packer, which exports
-  // only the small copies). Here they are kept because the sweep would otherwise
-  // delete the bytes an undo entry needs to put back. Bin included — a binned
-  // optimised item still carries meta.was.
+  // Item hashes and the optimiser's originals together (heldHashes()): the
+  // sweep would otherwise delete the bytes an undo entry needs to put back.
+  // Bin included — a binned optimised item still carries meta.was.
   const add = (it: unknown) => {
     if (!isRecord(it)) return;
-    for (const h of itemHashes(it)) out.add(h);
-    const meta = isRecord(it.meta) ? it.meta : null;
-    const was = str(meta?.was);
-    const wasCover = str(meta?.wasCover);
-    if (was) out.add(was);
-    if (wasCover) out.add(wasCover);
+    for (const h of heldHashes(it)) out.add(h);
   };
   const level = (doc: BoardLike) => {
     for (const it of listOf(doc.items)) add(it);

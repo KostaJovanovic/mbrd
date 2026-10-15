@@ -134,7 +134,7 @@ export type Board = {
 
 export type TrashEntry = { item: Item; at: number };
 
-import { uid, isHash, isRecord, baseName } from './util.ts';
+import { uid, isHash, isRecord, baseName, META_HASH_KEYS } from './util.ts';
 import { MIN_SIZE, MAX_SIZE } from './geometry.ts';
 import { DEFAULT_SCALE } from './measure.ts';
 import { splitAppearance, mergeAppearance } from './layout-settings.ts';
@@ -706,10 +706,6 @@ export function makeItem(partial: Record<string, unknown>): Item {
   };
 }
 
-// Must match itemHashes() in util.ts; tests/meta-hashes.test.js holds the two
-// in step. A key missing here lets a bad value reach packBoard(), which throws.
-// `archive` is the file a folder card points into (import/unpack.ts).
-const META_HASHES = ['cover', 'shot', 'thumb', 'preview', 'art', 'display', 'poster', 'archive', 'source'];
 
 // For PDFs, RAWs, PSDs, etc. the displayed picture is meta.preview, not asset.hash.
 export function shownHash(item: Item): string | null {
@@ -720,7 +716,9 @@ export function shownHash(item: Item): string | null {
 
 function normalizeMeta(meta: ItemMeta): ItemMeta {
   let out = meta;
-  for (const key of META_HASHES) {
+  // The keys itemHashes() reads: a malformed value left under one reaches
+  // packBoard(), which throws (tests/meta-hashes.test.js).
+  for (const key of META_HASH_KEYS) {
     if (!(key in out) || isHash(out[key])) continue;
     const { [key]: _drop, ...rest } = out;
     out = rest;

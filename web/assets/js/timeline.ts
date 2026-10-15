@@ -5,7 +5,7 @@
 import { board, byId, dropIdIndex, layoutSettingsOf, unmarkNoteLine } from './board-model.ts';
 import type { Geometry, Item, LayoutMode } from './board-model.ts';
 import { bus, selection, markDirty } from './board-store.ts';
-import { itemHashes, isRecord, uid } from './util.ts';
+import { heldHashes, isRecord, uid } from './util.ts';
 
 // ---------------------------------------------------------------------------
 // The shape of a snapshot, and of the difference between two
@@ -1380,16 +1380,12 @@ export function timelineHashes(raw: unknown = serializeTimeline()): Set<string> 
     if (typeof text !== 'string') return;
     let parsed: unknown;
     try { parsed = JSON.parse(text); } catch { return; }
-    // Bin entry = wrapper; item = itself. Both reach itemHashes().
+    // Bin entry = wrapper; item = itself. Both reach heldHashes(), which
+    // counts the optimiser's originals: stepping back through an optimise
+    // restores them.
     const item = isRecord(parsed) && isRecord(parsed.item) ? parsed.item : parsed;
     if (!isRecord(item)) return;
-    for (const hash of itemHashes(item)) out.add(hash);
-    // Optimiser's memo — stepping back through an optimise restores original bytes.
-    const meta = isRecord(item.meta) ? item.meta : null;
-    for (const key of ['was', 'wasCover']) {
-      const value = meta?.[key];
-      if (typeof value === 'string' && value) out.add(value);
-    }
+    for (const hash of heldHashes(item)) out.add(hash);
   };
   const eatKeyed = (section: unknown) => {
     if (!isRecord(section) || !isRecord(section.changed)) return;

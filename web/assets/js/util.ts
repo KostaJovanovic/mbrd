@@ -211,9 +211,40 @@ export const isFamily = (v: unknown): v is string =>
   typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$/.test(v);
 
 /**
- * All content hashes an item claims: asset hash, cover, shot, thumb, preview,
- * art, poster. Filtered for presence only — validity is the packer's job.
- * Structurally typed so board-model.ts need not be imported.
+ * The meta keys that hold one content id. makeItem() (board-model.ts) drops a
+ * malformed value under any of them, and state.ts's replaceOldVersions() remaps
+ * them, both from this list, so a key added here reaches every walk.
+ */
+export const META_HASH_KEYS: readonly string[] = [
+  'cover', 'shot', 'thumb', 'preview', 'art',
+  // The baked ~1024px display copy (optimize/picture.ts, import/drop.ts). A
+  // derived asset like the thumb, so it packs and syncs by the same walk.
+  'display',
+  // The file a picture was decoded from, kept beside it: the .heic or the
+  // camera RAW a card's WebP was made out of (import/drop.ts). Packed and
+  // synced like any other reference, and dropped by the optimiser, which is
+  // the one thing on the board that deliberately throws an original away.
+  'source',
+  // Legacy key — nothing writes it but old boards still carry it.
+  'poster',
+  // A folder card out of an archive points into it (import/unpack.ts).
+  'archive',
+];
+
+/** The optimiser's memo of what it replaced, so undo can put it back. Not in
+ *  itemHashes(): exports carry only the small copies. Every store that must
+ *  keep bytes alive for undo or the timeline reads these too (heldHashes()). */
+export const ORIGINAL_HASH_KEYS: readonly string[] = ['was', 'wasCover'];
+
+type HashBearer = { asset?: { hash?: string } | null, meta?: Record<string, unknown> | null } | null | undefined;
+
+const presentHashes = (list: unknown[]) =>
+  list.filter((h): h is string => typeof h === 'string' && h.length > 0);
+
+/**
+ * All content hashes an item claims: its asset, every META_HASH_KEYS entry
+ * and a folder's listed files. Filtered for presence only — validity is the
+ * packer's job. Structurally typed so board-model.ts need not be imported.
  *
  * This is the one list every asset walk is built on: storage/mbrd.ts's
  * boardAssetHashes() and timeline.ts's timelineHashes() both come through here,
@@ -221,28 +252,23 @@ export const isFamily = (v: unknown): v is string =>
  * free - which is why meta.art (a link card's fetched album cover) is here and
  * not only where it is written.
  */
-export const itemHashes = (
-  item: { asset?: { hash?: string } | null, meta?: Record<string, unknown> | null } | null | undefined,
-): string[] =>
-  [
-    item?.asset?.hash, item?.meta?.cover, item?.meta?.shot,
-    item?.meta?.thumb, item?.meta?.preview, item?.meta?.art,
-    // The baked ~1024px display copy (optimize/picture.ts, import/drop.ts). A
-    // derived asset like the thumb, so it packs and syncs by the same walk.
-    item?.meta?.display,
-    // The file a picture was decoded from, kept beside it: the .heic or the
-    // camera RAW a card's WebP was made out of (import/drop.ts). Packed and
-    // synced like any other reference, and dropped by the optimiser, which is
-    // the one thing on the board that deliberately throws an original away.
-    item?.meta?.source,
-    // Legacy key — nothing writes it but old boards still carry it.
-    item?.meta?.poster,
-    // A folder card out of an archive points into it; a folder dropped from
-    // the disk lists its own files. Both are what the card holds until it is
-    // opened, so both pack and sync with it (import/unpack.ts).
-    item?.meta?.archive,
+export const itemHashes = (item: HashBearer): string[] =>
+  presentHashes([
+    item?.asset?.hash,
+    ...META_HASH_KEYS.map(key => item?.meta?.[key]),
+    // A folder dropped from the disk lists its own files: what the card holds
+    // until it is opened, so they pack and sync with it.
     ...(Array.isArray(item?.meta?.files) ? item.meta.files.map(f => (isRecord(f) ? f.hash : null)) : []),
-  ].filter((h): h is string => typeof h === 'string' && h.length > 0);
+  ]);
+
+/** The optimiser originals an item still names (ORIGINAL_HASH_KEYS). */
+export const originalHashes = (item: HashBearer): string[] =>
+  presentHashes(ORIGINAL_HASH_KEYS.map(key => item?.meta?.[key]));
+
+/** Every hash whose bytes must stay stored for this item: what it shows and
+ *  packs, plus the originals an undo or a timeline step would put back. */
+export const heldHashes = (item: HashBearer): string[] =>
+  [...itemHashes(item), ...originalHashes(item)];
 
 /**
  * What a card arrived as, which is not always what it holds.

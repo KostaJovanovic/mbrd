@@ -15,7 +15,7 @@ import type { Item, TrashEntry } from './board-model.ts';
 import { stuckTo, isSticky, stuckPlacement } from './sticky.ts';
 import { refenceArrivals } from './fences.ts';
 import { fitBoardMode } from './layout.ts';
-import { itemHashes, isRecord, extOf } from './util.ts';
+import { heldHashes, isRecord, extOf } from './util.ts';
 // emptyTrash() rewrites the ledger's copies via this.
 import { rewriteRecorded } from './timeline.ts';
 import { clippedItems } from './clipboard.ts';
@@ -383,18 +383,14 @@ export function setAssetPurge(fn: AssetPurge | null | undefined) {
 }
 
 /**
- * All content hashes an item claims: itemHashes() plus meta.was/wasCover
- * (the optimiser's original, which only matters here — exports carry small
- * copies). Takes unknown because ledger entries are JSON, not Items.
+ * All content hashes an item claims, the optimiser's originals included
+ * (heldHashes()). Takes unknown because ledger entries are JSON, not Items.
  */
 function allHashes(raw: unknown): string[] {
   if (!isRecord(raw)) return [];
-  // SAFETY: lets untyped JSON reach itemHashes(). isRecord() above, itemHashes() reads each
-  // field through ?., and the filter below keeps only strings.
-  const item = raw as { asset?: { hash?: string } | null, meta?: Record<string, unknown> | null };
-  const meta = isRecord(raw.meta) ? raw.meta : null;
-  return [...itemHashes(item), meta?.was, meta?.wasCover]
-    .filter((h): h is string => typeof h === 'string' && !!h);
+  // SAFETY: lets untyped JSON reach heldHashes(). isRecord() above, and it
+  // reads each field through ?. and keeps only non-empty strings.
+  return heldHashes(raw as { asset?: { hash?: string } | null, meta?: Record<string, unknown> | null });
 }
 
 /**
