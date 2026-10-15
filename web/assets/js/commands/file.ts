@@ -143,6 +143,21 @@ const HEAVY_SHARE = 100 * 1024 * 1024;
 const VIEWING_FROM = 20 * 1024 * 1024;
 const VIEWING_GAIN = 0.6;
 
+/** The Drive provider, loaded on first use rather than at boot: the cloud
+ *  code stays a dynamic import. The one place a provider picker would go. */
+async function drive() {
+  const { shareProvider } = await import('../storage/cloud/cloud.ts');
+  return shareProvider('gdrive');
+}
+
+/** Drive, signed in; or null, after saying so. */
+async function signedInDrive(missing = 'Connect an account first', kind: '' | 'error' = 'error') {
+  const provider = await drive();
+  if (provider?.signedIn()) return provider;
+  toast(missing, kind);
+  return null;
+}
+
 // Copy the share link to the clipboard, or show it in a dialog if the
 // clipboard write is refused (stale gesture, no secure context, etc.).
 async function handOverLink(link: string): Promise<void> {
@@ -308,8 +323,7 @@ export function fileCommands() {
     // before the work, because browsers block popups without a fresh gesture.
     shareLink: async () => {
       if (!await confirmEmptyExport()) return;
-      const { shareProvider } = await import('../storage/cloud/cloud.ts');
-      const provider = shareProvider('gdrive');
+      const provider = await drive();
       if (!provider?.canSignIn()) { toast('Sharing a link is not set up in this build', 'error'); return; }
 
       if (!provider.signedIn()) {
@@ -409,8 +423,7 @@ export function fileCommands() {
       const btn = document.querySelector<HTMLElement>('[data-cmd="shared-links"]');
       // Before any await: the press that closed this menu must not reopen it.
       if (justDismissed(btn)) return;
-      const { shareProvider } = await import('../storage/cloud/cloud.ts');
-      const provider = shareProvider('gdrive');
+      const provider = await drive();
       if (!provider?.signedIn() || !provider.store) { toast('Connect an account first', 'error'); return; }
       const store = provider.store;
 
@@ -439,9 +452,8 @@ export function fileCommands() {
     connectGdrive: async () => { await connectCloud('gdrive'); },
     /** Log out of the cloud account. Asks first — Drive copies are kept. */
     cloudSignOut: async () => {
-      const { shareProvider } = await import('../storage/cloud/cloud.ts');
-      const provider = shareProvider('gdrive');
-      if (!provider?.signedIn()) { toast('No account is connected'); return; }
+      const provider = await signedInDrive('No account is connected', '');
+      if (!provider) return;
 
       const answer = await ask({
         title: `Log out of ${provider.label}?`,
@@ -459,9 +471,8 @@ export function fileCommands() {
     },
     cloudSync: async () => {
       if (!await confirmEmptyExport()) return;
-      const { shareProvider } = await import('../storage/cloud/cloud.ts');
-      const provider = shareProvider('gdrive');
-      if (!provider?.signedIn()) { toast('Connect an account first', 'error'); return; }
+      const provider = await signedInDrive();
+      if (!provider) return;
 
       const job = busy(`Copying the board to ${provider.label}`);
       try {
@@ -503,9 +514,8 @@ export function fileCommands() {
     // Trash every file this app put in Drive. drive.file scope means only
     // mbrd's own files are reachable. Local table cleared after, not before.
     cloudPurge: async () => {
-      const { shareProvider } = await import('../storage/cloud/cloud.ts');
-      const provider = shareProvider('gdrive');
-      if (!provider?.signedIn()) { toast('Connect an account first', 'error'); return; }
+      const provider = await signedInDrive();
+      if (!provider) return;
       const store = provider.store;
       if (!store) { toast(`${provider.label} cannot do that`, 'error'); return; }
 
