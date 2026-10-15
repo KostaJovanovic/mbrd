@@ -8,7 +8,7 @@ import {
 } from '../state.ts';
 import { whimsyControlsSnap, AXIS_TOKENS } from '../layout-settings.ts';
 import { DEFAULT_PALETTE_SOURCES } from '../board-schema.ts';
-import { readToken, toHex } from '../util.ts';
+import { cssMs, readToken, reducedMotion, toHex } from '../util.ts';
 import { readPrefJSON, writePref } from '../prefs.ts';
 import { paletteFromAccent, darkSheet, PALETTE_TOKENS } from './pigments.ts';
 import { markScheme, isDarkShown, setDarkHandler } from './scheme.ts';
@@ -293,7 +293,7 @@ let fadeEnd = 0, fading = false;
 // Drive per-frame canvas repaint during palette fade (canvas caches colours).
 function followFade() {
   if (typeof requestAnimationFrame !== 'function') return;
-  const still = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const still = reducedMotion();
   fadeEnd = performance.now() + (still ? 0 : paletteMs());
   if (fading) return;
   fading = true;
@@ -317,12 +317,7 @@ function followFade() {
 }
 
 /** --dur-palette in milliseconds: how long the sheet fades, and the corners travel. */
-function paletteMs() {
-  const raw = readToken('--dur-palette');
-  const ms = raw.endsWith('ms') ? parseFloat(raw)
-    : raw.endsWith('s') ? parseFloat(raw) * 1000 : NaN;
-  return Number.isFinite(ms) ? ms : FADE_MS;
-}
+const paletteMs = () => cssMs('--dur-palette', FADE_MS);
 
 let reshapeTimer = 0;
 let reshapeFrame = 0;
@@ -340,7 +335,7 @@ const SEEN = 'is-reshape-seen';
  * flush after the write would lay the new corners out with no transition.
  */
 function reshapeCorners() {
-  if (typeof window !== 'object' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  if (typeof window !== 'object' || reducedMotion()) return;
   clearTimeout(reshapeTimer);
   for (const el of document.querySelectorAll(`.${SEEN}`)) el.classList.remove(SEEN);
   const world = document.getElementById('world');

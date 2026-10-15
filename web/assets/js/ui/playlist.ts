@@ -9,7 +9,7 @@ import {
   select, selection, setAudioOrder, trackTitle,
 } from '../state.ts';
 import {
-  clamp, div, actAsButton, makeEditable, markClosed, readToken, selectContents,
+  animMs, clamp, div, actAsButton, makeEditable, markClosed, readToken, reducedMotion, selectContents,
 } from '../util.ts';
 import {
   bindScrub, clock, seekInnerHTML, sizeSeekWave, reportPlayError, trackLength,
@@ -733,13 +733,7 @@ function finishDrag(commit: boolean) {
 // ---------------------------------------------------------------------------
 
 /** --dur-base in ms, or 0 where motion is off. */
-function motionMs(): number {
-  if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return 0;
-  const raw = readToken('--dur-base');
-  const n = parseFloat(raw) || 0;
-  const ms = raw.endsWith('ms') ? n : n * 1000;
-  return ms >= 1 ? ms : 0;
-}
+const motionMs = () => (reducedMotion() ? 0 : animMs());
 
 /** The dropped row eases into its slot from where it was let go. */
 function settle(el: HTMLElement, dy: number, lift: { scale: string, rotate: string }) {

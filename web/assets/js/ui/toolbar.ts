@@ -3,7 +3,7 @@
 // disarms (Shift to stay armed). cmds is injected because commands.ts imports
 // this module — the arrow may only go one way.
 
-import { el, readToken } from '../util.ts';
+import { animMs, el, readToken, reducedMotion } from '../util.ts';
 import { board, bus, isJoinEnd, toggleConnection } from '../state.ts';
 import { toast, runCommand } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
@@ -245,14 +245,6 @@ function drawn(b: HTMLElement, row: HTMLElement): Drawn {
   return { width: b.getBoundingClientRect().width, at };
 }
 
-/** --dur-base in ms, or 0 where Animations are off (the quality dial writes 0.01ms). */
-function baseMs(): number {
-  const raw = readToken('--dur-base');
-  const n = parseFloat(raw) || 0;
-  const ms = raw.endsWith('ms') ? n : n * 1000;
-  return ms >= 1 ? ms : 0;
-}
-
 /**
  * The step between two fits, drawn rather than cut. The bar's width runs from
  * what was drawn to what fits, on the tier's own --dur-base and --ease - the
@@ -274,7 +266,7 @@ function baseMs(): number {
  * quality dial plays nothing.
  */
 function morph(b: HTMLElement, row: HTMLElement, from: Drawn): void {
-  const ms = baseMs();
+  const ms = animMs();
   if (!ms) return;
   const to = drawn(b, row);
   // Not even the last step fits: the row is clipped at rest, and a morph that
@@ -282,7 +274,7 @@ function morph(b: HTMLElement, row: HTMLElement, from: Drawn): void {
   if (row.getBoundingClientRect().width > to.width + 0.5) return;
   const opts: KeyframeAnimationOptions = { duration: ms, easing: readToken('--ease') || 'ease' };
   const run = (target: Element, frames: Keyframe[]) => { morphs.push(target.animate(frames, opts)); };
-  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  if (!reducedMotion()) {
     if (Math.abs(to.width - from.width) > 0.5) {
       const held = { maxWidth: 'none', justifyContent: 'center' };
       run(b, [{ width: `${from.width}px`, ...held }, { width: `${to.width}px`, ...held }]);

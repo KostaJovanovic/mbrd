@@ -1800,8 +1800,7 @@ export function revealInFeed(id: string): boolean {
   }
   const gridTop = gridEl.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
   const top = gridTop + s.box.y - (root.clientHeight - s.box.h) / 2;
-  const still = !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  root.scrollTo({ top: Math.max(0, top), behavior: still ? 'auto' : 'smooth' });
+  root.scrollTo({ top: Math.max(0, top), behavior: reducedMotion() ? 'auto' : 'smooth' });
   if (foundId) tiles.get(foundId)?.el.classList.remove('is-found');
   foundId = id;
   tiles.get(id)?.el.classList.add('is-found');

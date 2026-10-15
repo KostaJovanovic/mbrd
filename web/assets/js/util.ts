@@ -215,6 +215,29 @@ export function editInline(field: HTMLElement, { seed, clean, commit, watch, nex
 export const readToken = (name: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
+/** A CSS time token in milliseconds - CSS writes `0.24s` and `150ms` alike -
+ *  or `fallback` where there is no stylesheet to read or no number in it. */
+export function cssMs(name: string, fallback: number): number {
+  // No stylesheet to read in a test with no browser; a command still runs there.
+  if (typeof getComputedStyle !== 'function') return fallback;
+  const raw = readToken(name);
+  const n = parseFloat(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return raw.endsWith('ms') ? n : n * 1000;
+}
+
+/** A duration token for a script-run animation, 0 when Animations are off:
+ *  the quality dial writes 0.01ms, which is no animation, not a very fast one. */
+export const animMs = (name = '--dur-base') => {
+  const ms = cssMs(name, 0);
+  return ms >= 1 ? ms : 0;
+};
+
+/** Whether the system asks for reduced motion. Read on every call, never at
+ *  import, so a module asking stays loadable with no browser. */
+export const reducedMotion = () =>
+  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
 /**
  * Any CSS colour as `#rrggbb`, or null. Here rather than in ui/ because the
  * style tile's swatches (canvas/items.ts) copy a token's hex, and so does the

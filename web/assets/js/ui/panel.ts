@@ -4,7 +4,7 @@
 
 // Layout mode decides what is on screen — ui/sidebar.ts owns the subscription.
 import { board } from '../state.ts';
-import { makeEl as make } from '../util.ts';
+import { cssMs, makeEl as make, readToken, reducedMotion } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
 import { isPatchPage } from '../page.ts';
 import { field, fieldStops } from './controls.ts';
@@ -249,17 +249,6 @@ function buildFold(spec: Section) {
   return details;
 }
 
-/** A CSS time token as milliseconds. Both `0.24s` and `150ms` arrive here. */
-function tokenMs(name: string): number {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  const n = Number.parseFloat(raw);
-  if (!Number.isFinite(n)) return 0;
-  return raw.endsWith('ms') ? n : n * 1000;
-}
-
-const token = (name: string) =>
-  getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-
 /**
  * How a fold moves, read off the sheet rather than written here - so the
  * whimsy tier owns the pace, and quality.css's flattened durations are obeyed
@@ -280,10 +269,9 @@ const token = (name: string) =>
  * step of a close runs 12px down to 5px.
  */
 function foldMotion(opening: boolean) {
-  const still = !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   return {
-    duration: still ? 0 : tokenMs('--dur-base'),
-    easing: token(opening ? '--ease' : '--ease-in'),
+    duration: reducedMotion() ? 0 : cssMs('--dur-base', 0),
+    easing: readToken(opening ? '--ease' : '--ease-in'),
   };
 }
 

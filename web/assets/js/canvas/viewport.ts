@@ -3,7 +3,7 @@
 // translate+scale, and one GPU layer only while the view moves (see _pin).
 // Items lay out at cssY = -worldY, so the vertical translate is +panY*zoom.
 
-import { clamp, rafThrottle, emitter, readToken } from '../util.ts';
+import { clamp, cssMs, rafThrottle, emitter, reducedMotion } from '../util.ts';
 import { qualityLevel } from '../quality.ts';
 import type { Emitter } from '../util.ts';
 import { itemBounds } from '../geometry.ts';
@@ -449,8 +449,7 @@ export const thumbZoom = (full = false) => (full ? FULL_THUMB_ZOOM : lodZoom());
 //
 // Both answer 0 under prefers-reduced-motion: the CSS flatten (status.css)
 // cannot reach a duration read here, so the reading itself has to.
-export const reducedMotion = () =>
-  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+export { reducedMotion };
 export const zoomMs = () => (reducedMotion() ? 0 : cssMs('--dur-zoom', 190));
 export const travelMs = () => (reducedMotion() ? 0 : cssMs('--dur-travel', 400));
 /** --dur-fast in ms: a fade standing in for a flight. Not zeroed for reduced
@@ -458,15 +457,6 @@ export const travelMs = () => (reducedMotion() ? 0 : cssMs('--dur-travel', 400))
 export const fastMs = () => cssMs('--dur-fast', 130);
 /** --dur-base in ms, for a JS-timed fade that should keep the interface's pace. */
 export const baseMs = () => cssMs('--dur-base', 240);
-
-function cssMs(name: string, fallback: number): number {
-  // No stylesheet to read in a test with no browser; a command still runs there.
-  if (typeof getComputedStyle !== 'function') return fallback;
-  const raw = readToken(name);
-  const n = parseFloat(raw);
-  if (!Number.isFinite(n)) return fallback;
-  return raw.endsWith('ms') ? n : n * 1000;   // CSS times are ms or s
-}
 
 /** Decelerating: fast off the mark, settling at the end. */
 const ease = (t: number) => 1 - Math.pow(1 - t, 3);

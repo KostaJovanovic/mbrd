@@ -13,7 +13,7 @@ import {
   lastCommand, takeBack, removeItems,
 } from '../state.ts';
 import { nodeFor, onViewChange, refreshRings, screenBoxOf, viewportClientRect } from './items.ts';
-import { travelMs } from './viewport.ts';
+import { onNarrowScreen, travelMs } from './viewport.ts';
 import { makeEditable, markClosed, readToken } from '../util.ts';
 import { rotatedExtents } from '../geometry.ts';
 import { linkDraft } from './renderers.ts';
@@ -723,8 +723,7 @@ export function editNote(
   // Bar in screen space (#viewport) — never scaled by zoom or clipped by the item.
   const viewportEl = document.getElementById('viewport');
   // Narrow viewport (phone showing Desktop board) uses mobile pinning too.
-  // matchMedia read here, not at module load (tests/imports.test.js).
-  const narrow = typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches;
+  const narrow = onNarrowScreen();
   // Composer dialog: bar is inline in the dialog flow, not pinned or floating.
   const mobile = !surface && (board.layoutMode === 'mobile' || narrow);
   if (surface) {

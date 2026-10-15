@@ -9,7 +9,7 @@ import { deviceRatio, onTouch, mobilePerfFlags } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 import { MM_PER_INCH, PX_PER_INCH } from '../measure.ts';
 import { viewShift } from '../geometry.ts';
-import { wrap } from '../util.ts';
+import { reducedMotion, wrap } from '../util.ts';
 
 /** The screen-space box the lattice is drawn in - see inkBox(). */
 type InkBox = {
@@ -475,7 +475,7 @@ function tierFade(step: number, vp: Viewport) {
 }
 
 /** The reader asked for less motion, so a lattice arrives rather than fades. */
-const still = () => !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const still = reducedMotion;
 
 /**
  * The whimsy level that draws crosses. Compared as a string because that is
