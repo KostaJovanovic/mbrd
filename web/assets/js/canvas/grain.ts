@@ -1,12 +1,13 @@
 // Paper-grain texture layer, anchored to the board origin and scaled with zoom.
 // Tile is styled in base.css; this file positions and fades it.
-// Travels on pan + scales on zoom so flecks belong to the paper, not the glass.
+// Travels on pan + scales on zoom so flecks belong to the paper, not the glass
+// (below Full, on the frame the view settles rather than every frame).
 // Fades out below 30% zoom to avoid resampling cost and moire.
 
 import { deviceRatio } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 import { sheetBox } from './mobile-frame.ts';
-import { quality } from '../quality.ts';
+import { quality, qualityLevel } from '../quality.ts';
 import { wrap } from '../util.ts';
 
 // Tile side in world units (matches base.css #grain background-size).
@@ -78,6 +79,16 @@ export function paintGrain(vp: Viewport): void {
   }
   // Faded out — skip positioning (also avoids costly resample at small tile).
   if (fade === 0) return;
+
+  // Below Full the texture holds still while the board moves, and lands where
+  // it belongs on the settling frame, which _moving() in viewport.ts announces.
+  // A new tile size or offset repaints the whole window-sized layer; holding it
+  // makes a pan or a pinch only composite it. Measured on a Nothing Phone (4a)
+  // at Balanced, 2026-10-16: a pan at 35% went from 27% of frames missed to 18%,
+  // where taking the grain away altogether gave 16%, and the zoom sweep from 32%
+  // to 20%. The grain is noise, so the jump when it lands does not read as one.
+  // Same split as the held grid (paintGridOnView() in grid.ts): Full keeps it moving.
+  if (vp.moving && qualityLevel() !== 'full') return;
 
   const d = deviceRatio();
   const q = (n: number) => Math.round(n * d) / d;

@@ -514,6 +514,7 @@ export class Viewport {
   // _constrainMobile() for why the raw value has to be the one kept.
   _rawY: number | null;
   _still: number;                   // timer that ends the cheap mode - see _moving()
+  _changes: number;                 // view changes counted, so a late timer can tell - see _moving()
   _pinned: number;                  // the zoom #world's layer was rastered at, 0 unpinned - see _pin()
   _repin: number;                   // rAF id of a re-pin in flight - see _pin()
   _shadowsHidden: boolean;          // #item-shadows taken off for a far gesture - see _shadowsOut()
@@ -549,6 +550,7 @@ export class Viewport {
     this._anim = null;
     this._zoomTo = null;
     this._still = 0;
+    this._changes = 0;
     this._pinned = 0;
     this._repin = 0;
     this._shadowsHidden = false;
@@ -1220,23 +1222,39 @@ export class Viewport {
     this.moving = true;
     this._pin();
     clearTimeout(this._still);
+    const seen = ++this._changes;
+    // The gap can be a stall rather than a stop. A frame that takes longer than
+    // the gap - a raster, a decode - lets this timer fire before the gesture's
+    // next move has been read, and the board settled mid-pinch: unpinned,
+    // re-rastered whole at the new zoom, the rungs flipped and the display
+    // copies landed, which made the next frames long too, and so on down the
+    // gesture. So the timer asks one frame more: a move read in that frame was
+    // a gesture still going, and it has restarted this timer already. Measured
+    // on a Nothing Phone (4a) at Balanced, 2026-10-16: the zoom sweep went from
+    // 25% of frames missed to 6%, a pinch from 14% to 7%.
     this._still = setTimeout(() => {
-      this._still = 0;
-      this.moving = false;
-      this.world.classList.remove('is-viewing');
-      this._unpin();
-      // And the board is still, so what was held for the gesture lands: the
-      // chrome goes back to exactly the size it claims to be, and the zoom
-      // rungs catch up with where the zoom ended - see _setIz() and _rungs().
-      this._setIz(1 / this.zoom);
-      this._rungs(this.zoom);
-      this._shadowsOut(false);
-      // One more pass over everything that draws the view, now that it has
-      // stopped: this is the frame where the cheap versions are exchanged for
-      // the proper ones. Announced directly rather than through apply(), which
-      // would call this method again and restart the timer it is ending.
-      this.bus.emit('change', this);
+      if (typeof requestAnimationFrame !== 'function') { this._settle(); return; }
+      requestAnimationFrame(() => { if (this._changes === seen) this._settle(); });
     }, VIEW_SETTLE_MS);
+  }
+
+  /** The view has stopped - see _moving(). */
+  _settle() {
+    this._still = 0;
+    this.moving = false;
+    this.world.classList.remove('is-viewing');
+    this._unpin();
+    // And the board is still, so what was held for the gesture lands: the
+    // chrome goes back to exactly the size it claims to be, and the zoom
+    // rungs catch up with where the zoom ended - see _setIz() and _rungs().
+    this._setIz(1 / this.zoom);
+    this._rungs(this.zoom);
+    this._shadowsOut(false);
+    // One more pass over everything that draws the view, now that it has
+    // stopped: this is the frame where the cheap versions are exchanged for
+    // the proper ones. Announced directly rather than through apply(), which
+    // would call this method again and restart the timer it is ending.
+    this.bus.emit('change', this);
   }
 
   /**

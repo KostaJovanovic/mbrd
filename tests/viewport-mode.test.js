@@ -13,7 +13,6 @@ import { webVisible } from '../web/assets/js/canvas/web.ts';
 import { setSetting } from '../web/assets/js/state.ts';
 import {
   createMobileSliderFocus,
-  mobileLayoutDetected,
   panelFillsScreen,
 } from '../web/assets/js/ui/sidebar.ts';
 
@@ -56,13 +55,6 @@ test('Mobile zoom fits the selected board width and never enlarges it', () => {
   assert.equal(mobileZoom(360, 384), 328 / 384);
   assert.equal(mobileZoom(360, 512), 328 / 512);
   assert.equal(mobileZoom(1000, 384), 1);
-});
-
-test('the Mobile board follows the responsive layout on first use', () => {
-  assert.equal(mobileLayoutDetected(query => ({
-    matches: query === '(max-width: 700px)',
-  })), true);
-  assert.equal(mobileLayoutDetected(() => ({ matches: false })), false);
 });
 
 test('the panel fills the screen from 600px down, narrower than the phone layout', () => {

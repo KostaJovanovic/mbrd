@@ -152,10 +152,12 @@ let lastView:
  * precision wheel delivering a zoom in fractions too small to show.
  */
 export function paintGridOnView(vp: Viewport) {
-  // Moving below Full quality, the canvases are not painted at all - a stand-in
-  // carries the grid (holdGrid). The first still frame takes it back and paints
-  // the real one at wherever the view ended up. Full keeps the real grid moving.
-  if (vp.moving && (held || qualityLevel() !== 'full')) { holdGrid(vp); paintHeld(vp); return; }
+  // Moving at Light, the canvases are not painted at all - a stand-in carries
+  // the grid (holdGrid). The first still frame takes it back and paints the real
+  // one at wherever the view ended up. Full and Balanced keep the real grid
+  // moving: on a Nothing Phone (4a), 2026-10-16, the stand-in was the dearer of
+  // the two, a pinch at Balanced missing 14% of frames with it and 6% without.
+  if (vp.moving && (held || qualityLevel() === 'light')) { holdGrid(vp); paintHeld(vp); return; }
   if (held) { releaseGrid(vp); paintGrid(vp); return; }
   if (viewSettledForGrid(vp)) return;
   paintGrid(vp);

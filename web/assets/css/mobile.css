@@ -70,12 +70,13 @@
 /* The card stock rather than white in the dark, as the Canvas's phone sheet. */
 :root[data-scheme="dark"] .feed-sheet { background: color-mix(in srgb, var(--accent) 6%, var(--paper-card)); }
 
-/* On a phone the Feed's sheet is the width of the screen, with square corners,
-   and the cards stand one card gap (GAP in ui/feed.ts) from its edges. Its top
-   and foot stay under the buttons and over the bar
-   (research/old/done-2026-09-15.md, R19). */
+/* On a phone the Feed's sheet is the width of the screen, and the cards stand
+   one card gap (GAP in ui/feed.ts) from its edges. Its top and foot stay under
+   the buttons and over the bar (research/old/done-2026-09-15.md, R19), and
+   keep the sheet's rounded corners: squared off, its top and foot read as a
+   board cut short rather than a sheet. */
 @media (max-width: 600px) {
-  #mobile-feed .feed-sheet { width: 100%; border-radius: 0; }
+  #mobile-feed .feed-sheet { width: 100%; }
   #mobile-feed .feed-grid { width: calc(100% - 20px); }
 }
 

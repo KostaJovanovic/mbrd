@@ -1,5 +1,5 @@
-// Touch on an emulated phone (the `touch` project): the Feed it boots into,
-// and the canvas switched to by hand, with one-finger pans, the tap a card
+// Touch on an emulated phone (the `touch` project): the canvas it boots into,
+// with one-finger pans, the tap a card
 // needs before it moves, and two-finger pinches including a finger lifted and
 // put back mid-pinch. Real touch events through CDP, since Playwright's own
 // touchscreen only taps.
@@ -26,8 +26,8 @@ async function fingers(page) {
   };
 }
 
-test('a phone opens on the Feed', async ({ app }) => {
-  expect(await app.evaluate(() => window.mbrd.board.layoutMode)).toBe('mobile');
+test('a phone opens on the canvas', async ({ app }) => {
+  expect(await app.evaluate(() => window.mbrd.board.layoutMode)).toBe('desktop');
 });
 
 test.describe('the canvas on a phone', () => {

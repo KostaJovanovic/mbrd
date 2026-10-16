@@ -6,7 +6,7 @@ import { bus, setSetting } from '../state.ts';
 import { TITLE_ID } from '../board-model.ts';
 import { VERSION } from '../version.js';
 import { el } from '../util.ts';
-import { readPref, writePref } from '../prefs.ts';
+import { readPref, removePref, writePref } from '../prefs.ts';
 import { runCommand } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import { buildPanel, paintPanel } from './panel.ts';
@@ -32,20 +32,15 @@ let sidebar: HTMLElement | null, menuBtn: HTMLElement | null;
 let sliderFocus: SliderFocus;
 /** The board's view, which the panel pans as it comes and goes. */
 let view: Viewport | null = null;
-const MODE_PREF = 'mbrd.boardMode';
-const MOBILE_LAYOUT_QUERY = '(max-width: 700px)';
+// A new key, not 'mbrd.boardMode': every phone wrote 'mobile' under the old one
+// on its first boot, back when a narrow screen opened in the Feed, so the old
+// value records that default rather than anybody's choice.
+const MODE_PREF = 'mbrd.layout';
+const OLD_MODE_PREF = 'mbrd.boardMode';
 
-/** Narrower still, the panel is the whole screen rather than a sheet at the
- *  side (mobile.css). Between the two it floats over a board you can see. */
+/** From 600px down the panel is the whole screen rather than a sheet at the
+ *  side (mobile.css). Above it, it floats over a board you can see. */
 const PANEL_SCREEN_QUERY = '(max-width: 600px)';
-
-/** Match the same narrow-screen breakpoint used by the CSS. */
-export function mobileLayoutDetected(
-  media: (query: string) => MediaQueryList | undefined =
-    query => globalThis.matchMedia?.(query),
-): boolean {
-  return typeof media === 'function' && !!media(MOBILE_LAYOUT_QUERY)?.matches;
-}
 
 /** Whether an open panel covers the whole screen, by the same query as the CSS. */
 export function panelFillsScreen(
@@ -157,9 +152,10 @@ export function initSidebar(cmds: SidebarCommands, viewport: Viewport | null = n
     close();
   });
 
-  // Each device remembers its preferred layout independently.
-  const detected = mobileLayoutDetected() ? 'mobile' : 'desktop';
-  cmds.setBoardMode(readPref(MODE_PREF, detected));
+  // Each device remembers its preferred layout independently. Every screen,
+  // a phone's included, opens on the canvas until somebody picks the Feed.
+  removePref(OLD_MODE_PREF);
+  cmds.setBoardMode(readPref(MODE_PREF, 'desktop'));
 
   wirePaperOrientation();
   // May be null if the tab has not been built yet — board-title.ts handles that.

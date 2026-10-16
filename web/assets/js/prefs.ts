@@ -29,6 +29,13 @@ export function writePref(key: string, value: unknown): boolean {
   catch { return false; }
 }
 
+/** Forget a value, for a key that has been retired. False if frozen or storage refused. */
+export function removePref(key: string): boolean {
+  if (frozen) return false;
+  try { localStorage.removeItem(key); return true; }
+  catch { return false; }
+}
+
 /** Read a JSON preference. Parse failure returns fallback, same as absence. */
 export function readPrefJSON<T = unknown>(key: string, fallback: T | null = null): T | null {
   try {
