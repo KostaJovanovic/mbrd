@@ -152,12 +152,17 @@ let lastView:
  * precision wheel delivering a zoom in fractions too small to show.
  */
 export function paintGridOnView(vp: Viewport) {
-  // Moving at Light, the canvases are not painted at all - a stand-in carries
-  // the grid (holdGrid). The first still frame takes it back and paints the real
-  // one at wherever the view ended up. Full and Balanced keep the real grid
-  // moving: on a Nothing Phone (4a), 2026-10-16, the stand-in was the dearer of
-  // the two, a pinch at Balanced missing 14% of frames with it and 6% without.
-  if (vp.moving && (held || qualityLevel() === 'light')) { holdGrid(vp); paintHeld(vp); return; }
+  // Moving below Full quality, the canvases are not painted at all - a stand-in
+  // carries the grid (holdGrid). The first still frame takes it back and paints
+  // the real one at wherever the view ended up. Full keeps the real grid moving.
+  //
+  // Not a speed question, so do not settle it with frame counts. Painting the
+  // canvases mid-gesture did drop fewer frames on a Nothing Phone (4a) at
+  // Balanced, 2026-10-16 (a pinch missed 6% of frames against 14%), and it
+  // splits the board back into a layer per card (see the held grid below): the
+  // same pinch then drew 100 to 130 frames with tiles missing, every card
+  // blinking out, where the stand-in draws 3 to 7.
+  if (vp.moving && (held || qualityLevel() !== 'full')) { holdGrid(vp); paintHeld(vp); return; }
   if (held) { releaseGrid(vp); paintGrid(vp); return; }
   if (viewSettledForGrid(vp)) return;
   paintGrid(vp);
