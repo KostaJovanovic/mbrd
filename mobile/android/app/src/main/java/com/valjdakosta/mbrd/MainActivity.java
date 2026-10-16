@@ -1,6 +1,7 @@
 package com.valjdakosta.mbrd;
 
 import android.Manifest;
+import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.res.ColorStateList;
@@ -62,6 +63,8 @@ public class MainActivity extends BridgeActivity {
      *  nothing. Null until the first. Calling hide or show on every resume and
      *  every configuration change made the bars flicker. */
     private Boolean fullscreen = null;
+    /** The storage screen's (?) pop-up, while it is up. */
+    private Dialog helpBox = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -138,8 +141,12 @@ public class MainActivity extends BridgeActivity {
         // uiMode is in configChanges, so the phone going dark lands here too.
         applyBars(newConfig);
         applyFullscreen(newConfig, false);
-        // The storage screen is drawn for one scheme and one width: draw it again.
-        if (bridge == null) explain();
+        // The storage screen is drawn for one scheme and one width: draw it again,
+        // and close its pop-up, which was drawn for the old one.
+        if (bridge == null) {
+            if (helpBox != null) helpBox.dismiss();
+            explain();
+        }
     }
 
     @Override
@@ -276,7 +283,8 @@ public class MainActivity extends BridgeActivity {
     /** The explanation screen, in place of the WebView until there is an answer.
      *  Drawn in the app's own palette (tokens.css, light and dark) rather than
      *  stock Material: a serif heading, the folder named as a path on a card,
-     *  one filled pill for Allow and a quiet Not now. No WebView exists yet, so
+     *  one filled pill for Allow and a quiet Not now. What the two buttons do
+     *  sits behind a (?) beside the path, see help(). No WebView exists yet, so
      *  the woff2 faces are out of reach; the system serif and sans stand in. */
     private void explain() {
         boolean dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
@@ -311,18 +319,25 @@ public class MainActivity extends BridgeActivity {
         body.setLineSpacing(dp(3), 1f);
         col.addView(body, gap(0, 20));
 
-        // The folder, as a path on a card: what Allow is actually for.
+        // The folder, as a path on a card: what Allow is actually for. The (?)
+        // beside it holds how the two buttons work, which most people never need.
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
         TextView path = text("Documents / mbrd", 15, p.ink, Typeface.MONOSPACE);
         path.setPadding(dp(16), dp(14), dp(16), dp(14));
         path.setBackground(rounded(p.card, p.rule, dp(12)));
-        col.addView(path, gap(0, 20));
-
-        TextView how = text(
-            "Allow opens Android's All files access page. Turn mbrd on there, then switch back to mbrd.",
-            14, p.ink3, Typeface.create("sans-serif", Typeface.NORMAL)
-        );
-        how.setLineSpacing(dp(2), 1f);
-        col.addView(how, gap(0, 28));
+        row.addView(path, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        Button ask = button("?", p.ink2, Color.TRANSPARENT, p.ink);
+        ask.setBackground(new RippleDrawable(
+            ColorStateList.valueOf((p.ink & 0x00FFFFFF) | 0x24000000), rounded(p.card, p.rule, dp(999)), null));
+        ask.setPadding(0, 0, 0, 0);
+        ask.setContentDescription("How this works");
+        ask.setOnClickListener(v -> help(p));
+        LinearLayout.LayoutParams askLp = new LinearLayout.LayoutParams(dp(48), dp(48));
+        askLp.leftMargin = dp(10);
+        row.addView(ask, askLp);
+        col.addView(row, gap(0, 32));
 
         Button allow = button("Allow access", p.paper, p.ink, p.paper);
         allow.setOnClickListener(v -> allow());
@@ -333,14 +348,43 @@ public class MainActivity extends BridgeActivity {
             notNow = true;
             recreate();
         });
-        col.addView(later, gap(dp(48), 6));
-
-        TextView note = text("Not now keeps your boards inside the app until the next start.", 13, p.ink3,
-            Typeface.create("sans-serif", Typeface.NORMAL));
-        note.setGravity(Gravity.CENTER);
-        col.addView(note, gap(0, 0));
+        col.addView(later, gap(dp(48), 0));
 
         setContentView(scroll);
+    }
+
+    /** The (?) pop-up: what Allow and Not now each do, on a card of the screen's own paper. */
+    private void help(Palette p) {
+        if (helpBox != null && helpBox.isShowing()) return;
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(24), dp(24), dp(16));
+        box.setBackground(rounded(p.paper, p.rule, dp(20)));
+
+        box.addView(text("How this works", 20, p.ink, Typeface.create(Typeface.SERIF, Typeface.NORMAL)), gap(0, 12));
+        Typeface sans = Typeface.create("sans-serif", Typeface.NORMAL);
+        TextView allow = text("Allow opens Android's All files access page. Turn mbrd on there, then switch back to mbrd.", 15, p.ink2, sans);
+        allow.setLineSpacing(dp(2), 1f);
+        box.addView(allow, gap(0, 10));
+        TextView later = text("Not now keeps your boards inside the app until the next start, which asks again.", 15, p.ink2, sans);
+        later.setLineSpacing(dp(2), 1f);
+        box.addView(later, gap(0, 16));
+
+        Dialog dialog = new Dialog(this);
+        Button ok = button("Got it", p.ink, Color.TRANSPARENT, p.ink);
+        ok.setOnClickListener(v -> dialog.dismiss());
+        box.addView(ok, gap(dp(44), 0));
+
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(box);
+        Window w = dialog.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            int width = Math.min(getResources().getDisplayMetrics().widthPixels - dp(48), dp(380));
+            w.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
+        }
+        helpBox = dialog;
+        dialog.show();
     }
 
     /** tokens.css's default palette, light and dark. */
