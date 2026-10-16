@@ -3,9 +3,13 @@ package com.valjdakosta.mbrd;
 import android.Manifest;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -17,6 +21,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.app.ActivityCompat;
@@ -133,6 +138,8 @@ public class MainActivity extends BridgeActivity {
         // uiMode is in configChanges, so the phone going dark lands here too.
         applyBars(newConfig);
         applyFullscreen(newConfig, false);
+        // The storage screen is drawn for one scheme and one width: draw it again.
+        if (bridge == null) explain();
     }
 
     @Override
@@ -208,7 +215,9 @@ public class MainActivity extends BridgeActivity {
     private void applyBars(Configuration config) {
         boolean dark = (config.uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         Window window = getWindow();
-        window.setBackgroundDrawable(new ColorDrawable(dark ? Color.BLACK : Color.WHITE));
+        // While the storage screen is up the bands take its sheet, so it is one piece.
+        int bg = bridge == null ? (dark ? Palette.DARK : Palette.LIGHT).paper : (dark ? Color.BLACK : Color.WHITE);
+        window.setBackgroundDrawable(new ColorDrawable(bg));
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
         controller.setAppearanceLightStatusBars(!dark);
         controller.setAppearanceLightNavigationBars(!dark);
@@ -264,48 +273,141 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    /** The explanation screen, in place of the WebView until there is an answer. */
+    /** The explanation screen, in place of the WebView until there is an answer.
+     *  Drawn in the app's own palette (tokens.css, light and dark) rather than
+     *  stock Material: a serif heading, the folder named as a path on a card,
+     *  one filled pill for Allow and a quiet Not now. No WebView exists yet, so
+     *  the woff2 faces are out of reach; the system serif and sans stand in. */
     private void explain() {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setGravity(Gravity.CENTER);
-        box.setBackgroundColor(PAPER);
-        int pad = dp(32);
-        box.setPadding(pad, pad, pad, pad);
+        boolean dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        Palette p = dark ? Palette.DARK : Palette.LIGHT;
 
-        box.addView(line("Keep your boards as files", 24));
-        box.addView(
-            line(
-                "mbrd keeps your boards as files in Documents/mbrd, so they survive an uninstall and show in Files. "
-                    + "Allow opens the Android page for this. Turn on the access there, then come back.",
-                16
-            )
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(p.paper);
+
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setGravity(Gravity.CENTER);
+        int pad = dp(28);
+        page.setPadding(pad, pad, pad, pad);
+        scroll.addView(page, new ScrollView.LayoutParams(ScrollView.LayoutParams.MATCH_PARENT, ScrollView.LayoutParams.MATCH_PARENT));
+
+        // A column no wider than a reading line, on a phone turned sideways too.
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        int screen = getResources().getDisplayMetrics().widthPixels - pad * 2;
+        page.addView(col, new LinearLayout.LayoutParams(Math.min(screen, dp(420)), LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        // Broken by hand: left to wrap, "files" sat alone on the second line.
+        TextView title = text("Keep your boards\nas files", 30, p.ink, Typeface.create(Typeface.SERIF, Typeface.NORMAL));
+        title.setLineSpacing(0, 1.05f);
+        col.addView(title, gap(0, 14));
+
+        TextView body = text(
+            "Each board is saved as its own file, so it shows in Files and stays when the app is uninstalled.",
+            16, p.ink2, Typeface.create("sans-serif", Typeface.NORMAL)
         );
+        body.setLineSpacing(dp(3), 1f);
+        col.addView(body, gap(0, 20));
 
-        Button allow = new Button(this);
-        allow.setText("Allow");
+        // The folder, as a path on a card: what Allow is actually for.
+        TextView path = text("Documents / mbrd", 15, p.ink, Typeface.MONOSPACE);
+        path.setPadding(dp(16), dp(14), dp(16), dp(14));
+        path.setBackground(rounded(p.card, p.rule, dp(12)));
+        col.addView(path, gap(0, 20));
+
+        TextView how = text(
+            "Allow opens Android's All files access page. Turn mbrd on there, then switch back to mbrd.",
+            14, p.ink3, Typeface.create("sans-serif", Typeface.NORMAL)
+        );
+        how.setLineSpacing(dp(2), 1f);
+        col.addView(how, gap(0, 28));
+
+        Button allow = button("Allow access", p.paper, p.ink, p.paper);
         allow.setOnClickListener(v -> allow());
-        box.addView(allow);
+        col.addView(allow, gap(dp(52), 8));
 
-        Button later = new Button(this);
-        later.setText("Not now");
+        Button later = button("Not now", p.ink2, Color.TRANSPARENT, p.ink);
         later.setOnClickListener(v -> {
             notNow = true;
             recreate();
         });
-        box.addView(later);
+        col.addView(later, gap(dp(48), 6));
 
-        setContentView(box);
+        TextView note = text("Not now keeps your boards inside the app until the next start.", 13, p.ink3,
+            Typeface.create("sans-serif", Typeface.NORMAL));
+        note.setGravity(Gravity.CENTER);
+        col.addView(note, gap(0, 0));
+
+        setContentView(scroll);
     }
 
-    private TextView line(String text, int sp) {
+    /** tokens.css's default palette, light and dark. */
+    private enum Palette {
+        LIGHT(PAPER, 0xFFFDFDFA, INK, 0xFF615141, 0xFF968371, 0xFFDAD7CD),
+        DARK(0xFF211914, 0xFF2C241E, 0xFFF4E5D7, 0xFFCFBCAA, 0xFFA38F7D, 0xFF4E463F);
+
+        final int paper, card, ink, ink2, ink3, rule;
+
+        Palette(int paper, int card, int ink, int ink2, int ink3, int rule) {
+            this.paper = paper;
+            this.card = card;
+            this.ink = ink;
+            this.ink2 = ink2;
+            this.ink3 = ink3;
+            this.rule = rule;
+        }
+    }
+
+    private TextView text(String s, int sp, int color, Typeface face) {
         TextView view = new TextView(this);
-        view.setText(text);
-        view.setTextColor(INK);
+        view.setText(s);
+        view.setTextColor(color);
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
-        view.setGravity(Gravity.CENTER);
-        view.setPadding(0, 0, 0, dp(20));
+        view.setTypeface(face);
         return view;
+    }
+
+    /** A pill with a ripple, without Material's caps, tint or raised shadow. */
+    private Button button(String label, int fg, int bg, int ripple) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setAllCaps(false);
+        b.setTextColor(fg);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        b.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        b.setStateListAnimator(null);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        b.setBackgroundTintList(null);
+        GradientDrawable mask = new GradientDrawable();
+        mask.setCornerRadius(dp(999));
+        mask.setColor(Color.WHITE);
+        GradientDrawable fill = new GradientDrawable();
+        fill.setCornerRadius(dp(999));
+        fill.setColor(bg);
+        int wash = (ripple & 0x00FFFFFF) | 0x24000000;
+        b.setBackground(new RippleDrawable(ColorStateList.valueOf(wash), fill, mask));
+        return b;
+    }
+
+    private GradientDrawable rounded(int fill, int stroke, int radius) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(fill);
+        d.setStroke(Math.max(1, dp(1)), stroke);
+        d.setCornerRadius(radius);
+        return d;
+    }
+
+    /** Full width, `height` px (0 for wrap), and `belowDp` of space under it. */
+    private LinearLayout.LayoutParams gap(int height, int belowDp) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            height > 0 ? height : LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        lp.bottomMargin = dp(belowDp);
+        return lp;
     }
 
     private int dp(int value) {
