@@ -162,8 +162,24 @@ const VIEW_SETTLE_MS = 140;
  * Measured on a Galaxy S10: pinned 1 -> 0.25 gave a hundred of those warnings per
  * zoom, re-pinned at every halving about fifteen. In only costs sharpness, which
  * the release restores, so it is allowed to go further before paying a raster.
+ *
+ * Out is measured from the highest zoom since the last raster, not from the
+ * zoom the pin was taken at, because the pin does not hold a zoom-in: Chromium
+ * rasters the layer sharper as it grows and keeps that scale on the way back
+ * out. A pinch from fit to 3x and back, pinned at fit, ended at fit with the
+ * texture of 3x - nine screens of it. On a Nothing Phone (4a) at Balanced,
+ * 2026-10-17, that pinch drew 80 to 150 frames with tiles missing; re-pinned
+ * from the peak, 5 to 12.
+ *
+ * Two ways to earn the re-pin, because each one costs a raster, which at 35%
+ * on that phone took a 1 Hz pinch-in-and-out from 5% of frames missed to 20-30%
+ * when it re-pinned on every swing. A zoom-out that has kept going for
+ * PIN_OUT_RUN_MS is a pinch out, and gets one at every PIN_OUT; a swing that
+ * turns back sooner gets one only past PIN_OUT_DEEP of the gesture's peak.
  */
-const PIN_OUT = 2;
+const PIN_OUT = 1.25;
+const PIN_OUT_RUN_MS = 600;
+const PIN_OUT_DEEP = 1.8;
 const PIN_IN = 4;
 /** In at Full off a touch screen, which spends a raster per quarter of zoom so
  *  a zoom-in sharpens as it goes rather than on release. Not on touch: a
@@ -517,6 +533,10 @@ export class Viewport {
   _changes: number;                 // view changes counted, so a late timer can tell - see _moving()
   _pinned: number;                  // the zoom #world's layer was rastered at, 0 unpinned - see _pin()
   _repin: number;                   // rAF id of a re-pin in flight - see _pin()
+  _peak: number;                    // highest zoom since the last raster - see _pin()
+  _top: number;                     // highest zoom this gesture - see _pin()
+  _outAt: number;                   // when the zoom-out in progress began, 0 none - see _pin()
+  _outLow: number;                  // and the lowest zoom it has reached
   _shadowsHidden: boolean;          // #item-shadows taken off for a far gesture - see _shadowsOut()
   _iz: number;                     // what --iz was last written as
   _dpr: number;                     // what --dpr was last written as - see _setDpr()
@@ -553,6 +573,10 @@ export class Viewport {
     this._changes = 0;
     this._pinned = 0;
     this._repin = 0;
+    this._peak = 0;
+    this._top = 0;
+    this._outAt = 0;
+    this._outLow = 0;
     this._shadowsHidden = false;
     this._iz = 0;
     this._dpr = 0;
@@ -1275,19 +1299,29 @@ export class Viewport {
    */
   _pin() {
     const z = this.zoom;
+    const now = performance.now();
     if (!this._pinned) {
-      this._pinned = z;
+      this._pinned = this._peak = this._top = z;
+      this._outAt = 0;
       this.world.style.willChange = 'transform';
       return;
     }
+    this._peak = Math.max(this._peak, z);
+    this._top = Math.max(this._top, z);
+    // A zoom-out runs until the zoom climbs back past a hair above its low, so
+    // a finger's tremble does not restart it.
+    if (!this._outAt || z > this._outLow * 1.02) { this._outAt = now; this._outLow = z; }
+    else this._outLow = Math.min(this._outLow, z);
+    const out = z <= this._peak / PIN_OUT
+      && (now - this._outAt >= PIN_OUT_RUN_MS || z <= this._top / PIN_OUT_DEEP);
     const pinIn = sharpensMidGesture() ? PIN_IN_FULL : PIN_IN;
-    if (this._repin || (z > this._pinned / PIN_OUT && z < this._pinned * pinIn)) return;
+    if (this._repin || (!out && z < this._pinned * pinIn)) return;
     if (typeof requestAnimationFrame !== 'function') return;
     this.world.style.willChange = 'auto';
     this._repin = requestAnimationFrame(() => {
       this._repin = 0;
       if (!this.moving) return;
-      this._pinned = this.zoom;
+      this._pinned = this._peak = this.zoom;
       this.world.style.willChange = 'transform';
     });
   }
