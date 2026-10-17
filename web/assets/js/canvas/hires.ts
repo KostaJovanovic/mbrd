@@ -11,11 +11,11 @@ import { byId } from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
 import { quality, qualityPreset } from '../quality.ts';
 import { copyEdge } from './display.ts';
-import { deviceRatio } from './viewport.ts';
+import { deviceRatio, sharpensMidGesture } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 
-/** Minimal viewport dependency: the zoom level and a change listener. */
-type ZoomSource = Pick<Viewport, 'zoom' | 'onChange'>;
+/** Minimal viewport dependency: the zoom level, whether it is moving, and a change listener. */
+type ZoomSource = Pick<Viewport, 'zoom' | 'moving' | 'onChange'>;
 
 // A margin so a card sitting near 1:1 with its copy does not swap source on tiny
 // zoom jitter, and so the original is asked for a touch before it is needed.
@@ -66,7 +66,14 @@ let lastCount = -1;
 
 export function initHires(world: HTMLElement, vp: ZoomSource): void {
   worldEl = world;
-  const update = () => sweep(vp.zoom);
+  // Held while the board moves, and answered on the settling frame, which the
+  // viewport emits as a change of its own: the cards sharpen when the fingers
+  // lift, as the thumbnails land (stills.ts). Swapping mid-gesture changed a
+  // source on a frame of the zoom, each one a decode, a repaint and a pass over
+  // the layers. On a Nothing Phone (4a) at Balanced, 2026-10-17, the zoom sweep
+  // swapped 192 sources in 430 frames. Full off a touch screen keeps swapping as
+  // it goes, the stop that sharpens mid-gesture (sharpensMidGesture()).
+  const update = () => { if (!vp.moving || sharpensMidGesture()) sweep(vp.zoom); };
   vp.onChange(update);
   update();
 }

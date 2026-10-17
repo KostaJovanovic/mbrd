@@ -236,17 +236,10 @@ export function paintGrid(vp: Viewport) {
 // So for the length of a gesture they are taken off the page, and a plain
 // <div> in the same place carries the grid: the two lattices as SVG tiles made
 // once, at the step and zoom the gesture started from, and the axes as two bars.
-// The marks move and scale with the cards, so a pinch visibly grows or shrinks
-// them until the fingers lift and the real lattice is painted again.
-//
-// The tiles are laid once on a sheet larger than the screen, and each frame
-// only slides and scales that sheet, a transform the compositor applies, and
-// slides the bars. Rewriting the tiles' size and offset instead repainted a
-// screen of pattern into the page's own layer on every frame: on a Nothing
-// Phone (4a) at Balanced, 2026-10-17, that alone took a pinch from 5% of frames
-// missed to 12-16%. The sheet is a layer of its own under the board, which only
-// the origin mark and the paper outline sit between, and the board is one layer
-// while it moves (_pin() in viewport.ts), so nothing is split for it.
+// Each frame writes only the tiles' size and offset and the bars' positions -
+// an image-pattern repaint of one screen, in the page's own layer, under the
+// board. The marks move and scale with the cards, so a pinch visibly grows or
+// shrinks them until the fingers lift and the real lattice is painted again.
 //
 // Screen-sized and not board-sized on purpose. A copy inside #world was tried
 // first: free to move, but it filled every tile of the pinned layer with marks,
@@ -256,25 +249,13 @@ export function paintGrid(vp: Viewport) {
 // Only below Full quality. Full keeps the real grid painting every frame, at
 // the cost of the layer split above - the maintainer's call, 2026-09-23.
 
-/**
- * How far a gesture may zoom out from where the stand-in was laid before the
- * sheet no longer covers the screen. The sheet is 1 / HOLD_OUT screens across
- * (plus a tile), so this is also how much larger than the screen it is; past it
- * the sheet is laid again at the zoom reached, one repaint.
- */
-const HOLD_OUT = 0.5;
-
 /** The stand-in while a gesture is on, with what it was made for; null when none is up. */
 let held: {
   node: HTMLElement;
-  /** The tiled sheet the transform moves, or null when the grid is off. */
-  sheet: HTMLElement | null;
   bars: HTMLElement[];
   /** Zoom and board step the tiles were drawn for. */
   zoom: number;
   step: number;
-  /** What paintHeld() last wrote to the box, so a still box writes nothing. */
-  box: string;
 } | null = null;
 
 function holdGrid(vp: Viewport) {
@@ -286,27 +267,14 @@ function holdGrid(vp: Viewport) {
   const z = vp.zoom;
   const s = board.settings;
   const step = boardGridStep(s.gridStep, vp);
-  let sheet: HTMLElement | null = null;
   if (s.grid && z > 0) {
     // Majors first, so they paint on top - as paintGrid() lists them. Drawn in
-    // CSS pixels at this zoom; the transform scales them from here. A major
-    // mark sits mid-tile, at half a major from the sheet's corner, and the
-    // minors are shifted to fall on the same points (MAJOR is even, so half a
-    // major is not a whole number of half-minors).
+    // CSS pixels at this zoom; background-size stretches them from here.
     const ink = gridInk();
     const minor = step * z, major = minor * MAJOR;
-    const box = inkBox(vp);
-    sheet = document.createElement('div');
-    sheet.className = 'grid-hold-sheet';
-    sheet.style.width = `${box.w / HOLD_OUT + major}px`;
-    sheet.style.height = `${box.h / HOLD_OUT + major}px`;
-    sheet.style.backgroundImage = harshGrid()
+    node.style.backgroundImage = harshGrid()
       ? `${crossTile(major, ink.major, ink.dot, 1.5)}, ${crossTile(minor, ink.minor, ink.dot, 1)}`
       : `${dotTile(major, ink.major, ink.dot, 1.5)}, ${dotTile(minor, ink.minor, ink.dot, 1)}`;
-    const shift = wrap(major / 2 - minor / 2, minor);
-    sheet.style.backgroundSize = `${major}px ${major}px, ${minor}px ${minor}px`;
-    sheet.style.backgroundPosition = `0 0, ${shift}px ${shift}px`;
-    node.append(sheet);
   }
   const bars: HTMLElement[] = [];
   if (axesVisible()) {
@@ -321,35 +289,25 @@ function holdGrid(vp: Viewport) {
   }
   grid.after(node);
   grid.style.display = axis.style.display = 'none';
-  held = { node, sheet, bars, zoom: z, step, box: '' };
+  held = { node, bars, zoom: z, step };
 }
 
-/** Lay the stand-in on this frame's view: its box, where the sheet sits and how large, the two bars. */
+/** Lay the stand-in on this frame's view: its box, its tiles' size and offset, the two bars. */
 function paintHeld(vp: Viewport) {
   if (!held) return;
-  // Zoomed out past what the sheet covers: lay it again at this zoom.
-  if (held.sheet && vp.zoom < held.zoom * HOLD_OUT) { held.node.remove(); held = null; holdGrid(vp); }
-  if (!held) return;
   const box = inkBox(vp);
-  const { node, sheet } = held;
-  const key = `${box.x},${box.y},${box.w},${box.h}`;
-  if (key !== held.box) {
-    held.box = key;
-    node.style.left = `${box.x}px`;
-    node.style.top = `${box.y}px`;
-    node.style.width = `${box.w}px`;
-    node.style.height = `${box.h}px`;
-  }
+  const { node } = held;
+  node.style.left = `${box.x}px`;
+  node.style.top = `${box.y}px`;
+  node.style.width = `${box.w}px`;
+  node.style.height = `${box.h}px`;
   const o = vp.toScreen(0, 0);
   const ox = o.x - box.x, oy = o.y - box.y;
-  if (sheet) {
-    // Scaled from its top-left corner, where a major mark is half a major in;
-    // slid by less than one major so that one lands on the origin and the sheet
-    // still covers the box.
-    const k = vp.zoom / held.zoom;
-    const major = held.step * held.zoom * MAJOR * k;
-    const at = (v: number) => (wrap(v - major / 2, major) - major).toFixed(2);
-    sheet.style.transform = `translate(${at(ox)}px, ${at(oy)}px) scale(${k.toFixed(5)})`;
+  if (node.style.backgroundImage) {
+    const minor = held.step * vp.zoom, major = minor * MAJOR;
+    const at = (size: number) => `${wrap(ox - size / 2, size).toFixed(1)}px ${wrap(oy - size / 2, size).toFixed(1)}px`;
+    node.style.backgroundSize = `${major}px ${major}px, ${minor}px ${minor}px`;
+    node.style.backgroundPosition = `${at(major)}, ${at(minor)}`;
   }
   const [across, down] = held.bars;
   if (across) across.style.transform = `translateY(${(oy - AXIS_PX / 2).toFixed(2)}px)`;

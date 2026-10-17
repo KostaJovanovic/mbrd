@@ -228,23 +228,15 @@
   pointer-events: none;
 }
 
-/* The lattice and axes while the view moves, in #grid-ink's place, placed by
-   holdGrid() in canvas/grid.ts while #grid-ink and #axis-ink are off the page.
-   The sheet and the bars are layers that only move, so a frame of a gesture
-   repaints nothing here - see there. */
+/* The lattice and axes while the view moves, in #grid-ink's place, placed and
+   painted by holdGrid() in canvas/grid.ts while #grid-ink and #axis-ink are off
+   the page. Not composited, which is the point of it - see there. */
 #grid-hold {
   position: absolute;
   pointer-events: none;
   overflow: hidden;
 }
-#grid-hold > i { position: absolute; left: 0; top: 0; will-change: transform; }
-.grid-hold-sheet {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform-origin: 0 0;
-  will-change: transform;
-}
+#grid-hold > i { position: absolute; left: 0; top: 0; }
 
 /* Paper outline in screen space (canvas/paper.ts) — a border inside the
    transform would scale with zoom and stop reading as a drawn edge. */
