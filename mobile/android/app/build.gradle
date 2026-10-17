@@ -7,8 +7,8 @@ android {
         applicationId "com.valjdakosta.mbrd"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 737
-        versionName "0.737"
+        versionCode 738
+        versionName "0.738"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // The update feed MbrdUpdate.java reads. Empty means no update check at
         // all, and it stays empty unless the build passes -PmbrdUpdateFeed=<url>.

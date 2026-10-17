@@ -481,6 +481,8 @@ export class Viewport {
   el: HTMLElement;
   world: HTMLElement;
   originMark: HTMLElement | null;
+  /** #web-plane: the connection lines, moved with #world but never pinned with it - see _paint(). */
+  plane: HTMLElement | null;
   pan: Point;
   zoom: number;
   // Where the pointer last was, in client coordinates - written by
@@ -546,10 +548,11 @@ export class Viewport {
   // room that leaves - see _shift(). Unwired it is 0, and the room is the window.
   _cover: () => number;
 
-  constructor(viewportEl: HTMLElement, worldEl: HTMLElement, originMark?: HTMLElement | null) {
+  constructor(viewportEl: HTMLElement, worldEl: HTMLElement, originMark?: HTMLElement | null, plane?: HTMLElement | null) {
     this.el = viewportEl;
     this.world = worldEl;
     this.originMark = originMark || null;
+    this.plane = plane || null;
     this.pan = { x: 0, y: 0 };
     this.zoom = BASE_ZOOM;
     this.cursor = null;
@@ -1470,8 +1473,16 @@ export class Viewport {
     // translate has to undo that flip as well as apply the pan.
     // No promotion written here: #world is a layer only while the view moves,
     // and _pin() is what makes it one - see there for why not translateZ(0).
-    this.world.style.transform =
-      `translate(${(-this.pan.x * z).toFixed(3)}px, ${(this.pan.y * z).toFixed(3)}px) scale(${z})`;
+    const t = `translate(${(-this.pan.x * z).toFixed(3)}px, ${(this.pan.y * z).toFixed(3)}px) scale(${z})`;
+    this.world.style.transform = t;
+    // The lines take the same transform from outside #world. Inside it they
+    // were one paint stretching across the board, and Chromium merged every
+    // card they crossed into a single layer with them; held at the pinned
+    // scale below 30%, that layer outgrew the WebView's tile memory and the
+    // board blanked in strips (Galaxy S22+: 80-95 out-of-memory passes on a
+    // sweep through 20-45%, to 3-7). Unpinned, they repaint into the layer
+    // under the board that the grid already redraws every frame.
+    if (this.plane) this.plane.style.transform = t;
     // The rungs restyle every card, so they are held while the board moves and
     // caught up when it stops (_moving). `moving` is still last frame's answer
     // here, since _moving() runs below; that is right, because the frame that

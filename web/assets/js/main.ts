@@ -156,7 +156,7 @@ setBoardProbe(boardSafety);
 addEventListener('error', () => dismissSplash());
 
 // Non-null: these ids are in index.html's static markup.
-const vp = new Viewport(el('viewport')!, el('world')!, el('origin-mark')!);
+const vp = new Viewport(el('viewport')!, el('world')!, el('origin-mark')!, el('web-plane'));
 
 // Viewport-only modules, before anything calls into them.
 // appearance is injected into createCommands() to keep commands.ts DOM-free.
@@ -341,7 +341,7 @@ initMobileHeaderEditor(vp);
 initItems(el('world')!, vp);
 // Photo cards follow their pictures' shapes, and a print's at Softish.
 initPictureShapes();
-initWeb(el('world')!, vp);
+initWeb(el('web-plane')!, vp);
 // The konami-code easter egg (ui/clean/). Nothing happens until the code is
 // typed; this only hands it the camera and wires its bar.
 initClean(vp);

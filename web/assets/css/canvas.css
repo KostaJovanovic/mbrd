@@ -841,10 +841,22 @@
    rather than worked out from the board - the id and the class kept the names
    they had, for the reason that module's header gives.
 
-   Inside #world, so pan and zoom are the layer's transform rather than
-   anything this has to redraw.
-   It sits below the shared item-shadow underlay; #world paints no background
-   of its own, so there is nothing for either backdrop to disappear behind. */
+   In #web-plane, just under #world, which canvas/viewport.ts gives #world's
+   own transform. Not inside #world: there the lines were one paint across the
+   board, every card they crossed merged into one layer with them, and held at
+   the pinned scale that layer ran the WebView out of tile memory below 30% -
+   the board blanked in strips. The plane is never pinned, so the lines
+   repaint with the layer under the board, which a zoom redraws anyway.
+   Under #world, so under the shared item-shadow underlay as before. */
+#web-plane {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
 #web {
   position: absolute;
   overflow: visible;
@@ -1154,9 +1166,9 @@
    of colour vision, to check a board for it. The filters are an SVG the module
    puts in the page. The board alone, so the panel used to turn it off stays
    readable. */
-:root[data-cvd-sim="deutan"] #world { filter: url(#mbrd-sim-deutan); }
-:root[data-cvd-sim="protan"] #world { filter: url(#mbrd-sim-protan); }
-:root[data-cvd-sim="tritan"] #world { filter: url(#mbrd-sim-tritan); }
+:root[data-cvd-sim="deutan"] :is(#world, #web-plane) { filter: url(#mbrd-sim-deutan); }
+:root[data-cvd-sim="protan"] :is(#world, #web-plane) { filter: url(#mbrd-sim-protan); }
+:root[data-cvd-sim="tritan"] :is(#world, #web-plane) { filter: url(#mbrd-sim-tritan); }
 
 /* The line in flight, from the picked card to the pointer.
    Dashed and in the accent so it never reads as a connection that exists: a

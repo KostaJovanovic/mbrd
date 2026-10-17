@@ -1,4 +1,4 @@
-// Connection lines between cards, drawn behind everything in #world. Stored as
+// Connection lines between cards, drawn in #web-plane under #world. Stored as
 // pairs in board.connections (not derived). Two jobs: build() resolves geometry,
 // paint() culls to the viewport and writes the SVG `d` string. Non-scaling
 // stroke. Do not rename the module or `settings.web` — older builds read that key.
@@ -236,7 +236,7 @@ export function holdRoutes(on: boolean): void {
   if (!on) scheduleRoute();
 }
 
-export function initWeb(worldEl: HTMLElement, viewport?: Viewport | null) {
+export function initWeb(planeEl: HTMLElement, viewport?: Viewport | null) {
   svg = document.createElementNS(SVG_NS, 'svg');
   svg.id = 'web';
   svg.setAttribute('aria-hidden', 'true');
@@ -285,7 +285,7 @@ export function initWeb(worldEl: HTMLElement, viewport?: Viewport | null) {
   decoLayer = document.createElementNS(SVG_NS, 'g');
   svg.append(defs, activePath, hoverPath, path, blockedPath, focusPath, fadeLayer, decoLayer, draftPath);
 
-  worldEl.prepend(svg);
+  planeEl.prepend(svg);
 
   vp = viewport || null;
 
