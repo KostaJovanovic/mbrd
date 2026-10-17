@@ -16,6 +16,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.util.TypedValue;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
@@ -80,6 +81,7 @@ public class MainActivity extends BridgeActivity {
         setUpInsets();
         applyFullscreen(getResources().getConfiguration(), true);
         setUpBack();
+        askForTopRate();
         // Returns at once, and does nothing unless the build has an update feed.
         // Not while the storage screen is up: the answer recreates the activity,
         // which would take the dialog with it, and the check waits six hours.
@@ -228,6 +230,31 @@ public class MainActivity extends BridgeActivity {
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
         controller.setAppearanceLightStatusBars(!dark);
         controller.setAppearanceLightNavigationBars(!dark);
+    }
+
+    // ---- refresh rate ---------------------------------------------------------
+
+    /** The screen's top rate while the app is open. Left alone, Android 15 and
+     *  later run the WebView at 60 Hz, and at 90 with a finger down (category
+     *  High), on a 120 Hz screen. The window asks, not the WebView: a rate set
+     *  on the view (setRequestedFrameRate) never reached SurfaceFlinger, since
+     *  the WebView's frames do not pass through the view's own draw. Both
+     *  fields, because a screen with one mode and several rates (the S22's)
+     *  takes the mode and still lowers the rate unless asked for that too. */
+    private void askForTopRate() {
+        if (bridge == null) return;
+        Display display = getWindowManager().getDefaultDisplay();
+        Display.Mode now = display.getMode();
+        Display.Mode top = now;
+        for (Display.Mode m : display.getSupportedModes()) {
+            if (m.getPhysicalWidth() == now.getPhysicalWidth() && m.getPhysicalHeight() == now.getPhysicalHeight()
+                && m.getRefreshRate() > top.getRefreshRate()) top = m;
+        }
+        if (top.getRefreshRate() <= 61f) return;
+        WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.preferredDisplayModeId = top.getModeId();
+        lp.preferredRefreshRate = top.getRefreshRate();
+        getWindow().setAttributes(lp);
     }
 
     // ---- Back -----------------------------------------------------------------
