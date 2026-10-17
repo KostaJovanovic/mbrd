@@ -2,6 +2,21 @@
    HUD, toolbar, now-playing bar
    --------------------------------------------------------- */
 
+/* The chrome over the board keeps a compositor layer of its own for good.
+   Without one it is drawn into whichever layer it overlaps, and while a zoom
+   moves the board the cards are layers of their own: as they slid under and
+   out from under these, Chromium re-sorted the chrome into new layers, which
+   start with no pixels, and the whole interface vanished for a frame at a time
+   (Galaxy S22+, a sweep through 20-45%: in 30 frames of 440, to 2). Opacity and
+   not transform: a transform hint would become the containing block of the
+   fixed children (#drawer-dock's #history-ctl on a phone), and none of these blur what is
+   behind them, which is what an opacity hint would cut off. */
+#menu-btn, #mobile-header-edit-btn, #mobile-find-btn, #mobile-board-header,
+#drawer-dock, #corner, #toolbar, #pen-bar, #board-path,
+#timeline-strip, #nowplaying, #tour, #sidebar, #header-panel {
+  will-change: opacity;
+}
+
 /* Corner stack: zoom controls + coordinate readout. */
 #corner {
   position: fixed;

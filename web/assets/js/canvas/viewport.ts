@@ -1294,8 +1294,13 @@ export class Viewport {
    * the point while fingers are down - nothing is re-rastered per frame - and the
    * danger if it is left on: a zoom-out asks for texture at the old scale. So it
    * is set only while the view moves, and re-set whenever the zoom has travelled
-   * out of PIN_OUT / PIN_IN of the scale it was rastered at: dropped for a frame,
-   * which makes the next pin raster at the scale the zoom has reached.
+   * out of PIN_OUT / PIN_IN of the scale it was rastered at: swapped for an
+   * opacity hint for a frame, which makes the next pin raster at the scale the
+   * zoom has reached. Swapped, not dropped: with no hint #world leaves the
+   * compositor for that frame, everything stacked over it is re-layered with it
+   * (36 layers to 16 and back, on a phone), and every one of them is drawn again
+   * from nothing, the interface included. The opacity hint keeps the layer, so
+   * the old raster shows until the new one is ready.
    */
   _pin() {
     const z = this.zoom;
@@ -1317,7 +1322,7 @@ export class Viewport {
     const pinIn = sharpensMidGesture() ? PIN_IN_FULL : PIN_IN;
     if (this._repin || (!out && z < this._pinned * pinIn)) return;
     if (typeof requestAnimationFrame !== 'function') return;
-    this.world.style.willChange = 'auto';
+    this.world.style.willChange = 'opacity';
     this._repin = requestAnimationFrame(() => {
       this._repin = 0;
       if (!this.moving) return;
