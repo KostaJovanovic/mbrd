@@ -4,7 +4,7 @@
 // `advanced` → inside the section fold. `external` → another module wires it.
 
 import {
-  board, setSetting, setArrangement, selection, atTop, followsLook, setFollowsLook,
+  board, setSetting, setArrangement, selection, atTop, followsLook, setFollowsLook, isBenchBoard,
 } from '../state.ts';
 
 const selectionSize = () => selection.size;
@@ -1310,6 +1310,14 @@ export const SECTIONS: Section[] = [
         // the way either way.
         { cmd: 'run-benchmark', label: 'Run benchmark', closesPanel: true,
           title: () => 'About two minutes of preset zooms and pans, then a file of the timings' },
+        // The benchmark's standard board with nothing run, to try a gesture by
+        // hand on the board the numbers come from. Thrown away like the run's;
+        // on it, the same row is the way back.
+        { cmd: 'bench-board', label: 'Open benchmark board', closesPanel: true,
+          says: () => (isBenchBoard() ? 'Back to your board' : 'Open benchmark board'),
+          title: () => (isBenchBoard()
+            ? 'Leave the benchmark board for your own'
+            : 'The benchmark\'s board of about 120 cards, to try by hand. Nothing on it is kept') },
         // Drawing is held back here while it is being finished: off, the Draw
         // button, D and the More menu's row are gone (canvas/pen.ts).
         { cmd: 'debug-drawing', label: 'Enable drawing',

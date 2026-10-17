@@ -168,7 +168,7 @@ const viewPerf = createViewPerf(vp);
 // The benchmark's screen is built from cmds, so cmds reaches it late.
 const cmds = createCommands(vp, {
   resetAppearance: resetLook, setWhimsy,
-  bench: { open: () => benchView.open(), run: opts => benchView.run(opts) },
+  bench: { open: () => benchView.open(), board: () => benchView.board(), run: opts => benchView.run(opts) },
 });
 const benchView = initBenchView({
   bench: createBench({

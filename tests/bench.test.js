@@ -175,8 +175,17 @@ test('the address carries the switches, and says what it did not understand', ()
   assert.deepEqual(p.options.only, ['zoom-sweep', 'pan-fit']);
   assert.equal(p.seed, 42);
   assert.deepEqual(p.unknown, ['bogus=1']);
-  assert.deepEqual(parseBenchHash('#bench'), { options: {}, seed: null, unknown: [] });
+  assert.deepEqual(parseBenchHash('#bench'), { options: {}, seed: null, unknown: [], open: false });
   assert.deepEqual(parseBenchHash('#bench:repeat=9').unknown, ['repeat=9'], 'five repeats at most');
+});
+
+test('#bench:board opens the standard board with nothing run, and nothing else does', () => {
+  assert.equal(parseBenchHash('#bench:board').open, true);
+  assert.equal(parseBenchHash('#bench:board,seed=7').seed, 7);
+  assert.equal(parseBenchHash('#bench').open, false);
+  // A value on it is not the bare word, so it is not understood rather than half-read.
+  assert.deepEqual(parseBenchHash('#bench:board=1').unknown, ['board=1']);
+  assert.equal(parseBenchHash('#bench:board=1').open, false);
 });
 
 test('a result is named by device, version, time and switches', () => {

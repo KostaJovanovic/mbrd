@@ -124,6 +124,8 @@ export interface CommandDeps {
    */
   bench?: {
     open(): void,
+    /** The standard board to use by hand, or back from it. */
+    board(): void,
     run(opts?: BenchOptions): Promise<BenchResult | null>,
   };
 }
@@ -511,6 +513,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // The benchmark (perf/bench.ts). The Debug row asks which board; the
     // console form takes the options and answers the file's own object.
     runBenchmark: () => bench?.open(),
+    benchBoard: () => bench?.board(),
     bench: (opts?: BenchOptions) => (bench ? bench.run(opts) : Promise.resolve(null)),
 
     selectAll,

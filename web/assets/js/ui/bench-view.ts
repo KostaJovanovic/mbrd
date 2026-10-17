@@ -1,6 +1,7 @@
 // The benchmark's way in and its screen: the Debug row's one question, the
 // overlay a run sits behind (inert, opaque to input, repainted only between
-// scenarios), and the result with Save, Copy and the way back. The engine is
+// scenarios), and the result with Save, Copy and the way back. Also the other
+// Debug row, the standard board on its own to use by hand. The engine is
 // perf/bench.ts; this module only asks, shows and hands the file over.
 
 import { toast } from '../notify.ts';
@@ -193,10 +194,36 @@ export function initBenchView({ bench, save, standardPage }: BenchViewDeps) {
     }
   }
 
+  /** `#bench:board`: the overlay only while the board is built, then the board to use by hand. */
+  async function openBoard(seed: number | null) {
+    unmount();
+    mount();
+    say(['Benchmark board', 'Building the standard board'], [], 0);
+    try {
+      await bench.openBoard(seed ?? undefined, f => say(['Benchmark board', 'Building the standard board'], [], f));
+      unmount();
+      toast('The benchmark board. Nothing on it is kept; Back to your board is under Debug');
+    } catch (err) {
+      unmount();
+      toast(`The board could not be built: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      console.error('[bench]', err);
+    }
+  }
+
+  /** Whether this page is `#bench:board`, the board with nothing run. */
+  const boardOnly = () => standardPage && parseBenchHash(location.hash).open;
+
+  /** Onto `fragment` as a fresh page; no history entry, for the reason open() gives. */
+  const go = (fragment: string) => {
+    history.replaceState(null, '', homePath() + fragment);
+    location.reload();
+  };
+
   /** The #bench boot: build, run, show. Options ride the address. */
-  function boot() {
-    const { options, seed, unknown } = parseBenchHash(location.hash);
+  async function boot(): Promise<BenchResult | null> {
+    const { options, seed, unknown, open } = parseBenchHash(location.hash);
     if (unknown.length) toast(`Not understood, and left out: ${unknown.join(', ')}`, 'error');
+    if (open) { await openBoard(seed); return null; }
     if (seed !== null) options.seed = seed;
     return start(options);
   }
@@ -205,6 +232,9 @@ export function initBenchView({ bench, save, standardPage }: BenchViewDeps) {
     /** The Debug row: one question, then a navigation or a run in place. */
     async open() {
       if (bench.running) return;
+      // From the board alone a run starts from a freshly built board, since this
+      // one may have been moved about by hand.
+      if (boardOnly()) { go('#bench'); return; }
       if (standardPage) { void boot(); return; }
       const answer = await ask({
         title: 'Run the benchmark',
@@ -220,11 +250,18 @@ export function initBenchView({ bench, save, standardPage }: BenchViewDeps) {
         // No history entry: the browser's Back from #bench would be a fragment
         // change on the same document and leave the benchmark's board on screen.
         // The board being left is flushed on the way out, as for Patch notes.
-        history.replaceState(null, '', homePath() + '#bench');
-        location.reload();
+        go('#bench');
       } else if (answer === 'keep') {
         await start({ board: 'this' });
       }
+    },
+    /** The Debug row's other way in: the standard board to use by hand, or back from it. */
+    board() {
+      if (bench.running) return;
+      // A navigation, not a load, either way: the page boots again as the
+      // board it is going to, and nothing of the one it leaves comes along.
+      if (standardPage) location.replace(homePath());
+      else go('#bench:board');
     },
     /** `mbrd.cmds.bench(opts)`: the same run, from a console or over CDP. */
     run: (opts: BenchOptions = {}) => start(opts),

@@ -553,12 +553,16 @@ export function summaryLine(r: BenchResult): string {
  * not understood is left out rather than guessed at, and named in `unknown` so
  * the overlay can say so - a switch that silently did nothing is a run that
  * has to be taken again.
+ *
+ * `#bench:board` is the board alone: built and left on screen with nothing run,
+ * for trying a gesture by hand on the board the numbers come from (`open`).
  */
-export function parseBenchHash(hash: string): { options: BenchOptions, seed: number | null, unknown: string[] } {
+export function parseBenchHash(hash: string): { options: BenchOptions, seed: number | null, unknown: string[], open: boolean } {
   const options: BenchOptions = {};
   const switches: BenchSwitches = {};
   const unknown: string[] = [];
   let seed: number | null = null;
+  let open = false;
   const body = /^#bench:(.*)$/.exec(hash)?.[1] ?? '';
   const onOff = (v: string) => (v === 'on' || v === '1' ? true : v === 'off' || v === '0' ? false : null);
   for (const part of body.split(',').filter(Boolean)) {
@@ -571,10 +575,11 @@ export function parseBenchHash(hash: string): { options: BenchOptions, seed: num
     else if (key === 'repeat' && /^[1-5]$/.test(value)) options.repeat = Number(value);
     else if (key === 'seed' && /^\d{1,9}$/.test(value)) seed = Number(value);
     else if (key === 'only' && value) options.only = value.split('.');
+    else if (key === 'board' && !value) open = true;
     else unknown.push(part);
   }
   if (Object.keys(switches).length) options.switches = switches;
-  return { options, seed, unknown };
+  return { options, seed, unknown, open };
 }
 
 // ---------------------------------------------------------------------------
@@ -908,10 +913,19 @@ export function createBench(deps: BenchDeps) {
     return out;
   }
 
+  /** The standard board, built and left on the canvas with nothing run - `#bench:board`. */
+  async function openBoard(seed?: number, onBuild: (f: number) => void = () => {}): Promise<void> {
+    if (!isBenchBoard()) throw new Error('the standard board opens at #bench - open the app at index.html#bench:board');
+    if (!built) built = await deps.buildBoard(seed, onBuild);
+    if (board.layoutMode === 'mobile') cmds.canvas();
+    fitNow();
+  }
+
   return {
     get running() { return running; },
     /** The scenarios a run on this board would attempt, for the overlay's count. */
     planned: (standard: boolean) => planned(standard).map(s => ({ id: s.id, name: s.name })),
     run,
+    openBoard,
   };
 }
