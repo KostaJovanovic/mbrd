@@ -17,11 +17,43 @@
 .item[data-type="fence"][data-tint="2"] { --fence-tint: var(--note-2); }
 .item[data-type="fence"][data-tint="3"] { --fence-tint: var(--note-3); }
 .item[data-type="fence"][data-tint="4"] { --fence-tint: var(--note-4); }
+/* The dashed edge is painted, not a `dashed` border. Chromium dashes a border
+   by walking the whole perimeter for every tile it rasters, and a fence's runs
+   to thousands of units: a pan at 35% on a Nothing Phone (4a) at Balanced,
+   2026-10-17, missed 20-28% of frames with two fences on screen and 2% with
+   their edges drawn this way. Gradients are worked out per pixel, so a tile
+   costs the same whatever the fence's size. The dash is Chromium's for a 2px
+   border, twice the width on and once off; the rounded corners are drawn
+   whole, where Chromium would carry the dashes round them. The border stays,
+   transparent, so the box and everything inset from it keep their places. */
 .fence-card {
-  background: none;
-  border: 2px dashed var(--rule-2);
-  border-radius: var(--radius);
+  --edge: var(--rule-2);
+  --edge-w: 2px;
+  --dash: calc(2 * var(--edge-w));
+  --gap: var(--edge-w);
+  --r: var(--radius);
+  --ri: calc(var(--r) - var(--edge-w));
+  border: var(--edge-w) solid transparent;
+  border-radius: var(--r);
   box-shadow: none;
+  background-origin: border-box;
+  background-repeat: no-repeat;
+  background-image:
+    repeating-linear-gradient(90deg, var(--edge) 0 var(--dash), transparent 0 calc(var(--dash) + var(--gap))),
+    repeating-linear-gradient(90deg, var(--edge) 0 var(--dash), transparent 0 calc(var(--dash) + var(--gap))),
+    repeating-linear-gradient(180deg, var(--edge) 0 var(--dash), transparent 0 calc(var(--dash) + var(--gap))),
+    repeating-linear-gradient(180deg, var(--edge) 0 var(--dash), transparent 0 calc(var(--dash) + var(--gap))),
+    radial-gradient(circle at 100% 100%, transparent calc(var(--ri) - 0.5px), var(--edge) var(--ri), var(--edge) var(--r), transparent calc(var(--r) + 0.5px)),
+    radial-gradient(circle at 0 100%, transparent calc(var(--ri) - 0.5px), var(--edge) var(--ri), var(--edge) var(--r), transparent calc(var(--r) + 0.5px)),
+    radial-gradient(circle at 100% 0, transparent calc(var(--ri) - 0.5px), var(--edge) var(--ri), var(--edge) var(--r), transparent calc(var(--r) + 0.5px)),
+    radial-gradient(circle at 0 0, transparent calc(var(--ri) - 0.5px), var(--edge) var(--ri), var(--edge) var(--r), transparent calc(var(--r) + 0.5px));
+  background-size:
+    calc(100% - 2 * var(--r)) var(--edge-w), calc(100% - 2 * var(--r)) var(--edge-w),
+    var(--edge-w) calc(100% - 2 * var(--r)), var(--edge-w) calc(100% - 2 * var(--r)),
+    var(--r) var(--r), var(--r) var(--r), var(--r) var(--r), var(--r) var(--r);
+  background-position:
+    var(--r) 0, var(--r) 100%, 0 var(--r), 100% var(--r),
+    0 0, 100% 0, 0 100%, 100% 100%;
 }
 
 /* Grain: the board's own paper texture. Same tile, blend and dials as #grain
@@ -78,7 +110,7 @@
   mix-blend-mode: normal;
   opacity: calc(var(--grain-fade, 1) * 0.5);
 }
-.item[data-type="fence"].is-selected .fence-card { border-color: var(--select); }
+.item[data-type="fence"].is-selected .fence-card { --edge: var(--select); }
 
 /* Rolled up (meta.rolled): only the name bar is left, a tab that holds the
    region's place. The face, its grain and the grips go, and the cards inside
