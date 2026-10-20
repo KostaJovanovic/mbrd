@@ -5,8 +5,19 @@ at the Softish end of the whimsy dial, chosen and coloured by the board's
 palette. Plants, gemstones, rocks, feathers, shells and the like. Anybody
 can also upload their own picture, and mbrd cuts its subject out of the
 background before setting it in. "Plant" below means any piece.
-Nothing here is built yet. The decisions below are the maintainer's answers;
-the open questions at the end are not decided.
+Built 2026-10-20: `ui/wallpaper.ts`, `ui/wallpaper-pieces.ts`,
+`css/wallpaper.css`, the board's `wallpaper` key, and the art under
+`web/assets/img/wallpaper/`. A late addition not in the sections below: an
+arrangement may be up to three pieces (`g.wp-item` with a `data-pivot`), each
+its own layer, sliding in together and landing at its own time and angle. The
+drawn stand-ins were cut to two per family (a plant and a stone or feather),
+and five for green (monstera, majesty palm, haworthia, fritillaria,
+malachite with jade), and every piece extends past
+the window and is cropped by it, with no ground under anything. The
+decisions below are the maintainer's answers. The open questions at the end
+were settled by default where the build needed an answer: the Mobile sheet
+hides the pieces, the art is fetched on first use and cached by the service
+worker at runtime, and cards simply cover the pieces.
 
 ## The look
 

@@ -114,6 +114,8 @@ export type Board = {
   titleHidden: boolean;
   mediaFit: string;
   paletteSources: number;
+  /** The pieces at the window's edges at Softish (ui/wallpaper.ts). */
+  wallpaper: Wallpaper;
   connections: Connection[];
   audioOrder: string[];
   tour: TourStop[];
@@ -133,6 +135,17 @@ export type Board = {
 // carry the key are silently dropped on load.
 
 export type TrashEntry = { item: Item; at: number };
+
+/**
+ * The wallpaper pieces at Softish. `show` is the switch, on unless somebody
+ * turned it off. `asset` is the board's own picture, already cut out, which
+ * stands in for the built-in pieces whatever the palette; `tone` draws it in
+ * the palette's tones rather than its own colours. Board-level, like mediaFit:
+ * one answer for both layouts.
+ */
+export type Wallpaper = { show: boolean, asset: string | null, tone: boolean };
+
+export const DEFAULT_WALLPAPER: Readonly<Wallpaper> = Object.freeze({ show: true, asset: null, tone: false });
 
 import { uid, isHash, isRecord, baseName, META_HASH_KEYS } from './util.ts';
 import { MIN_SIZE, MAX_SIZE } from './geometry.ts';
@@ -323,6 +336,7 @@ export const board: Board = {
   titleHidden: false,
   mediaFit: 'contain',
   paletteSources: 12,
+  wallpaper: { ...DEFAULT_WALLPAPER },
   connections: [],
   audioOrder: [],
   // SAFETY: assertion prevents never[] inference.

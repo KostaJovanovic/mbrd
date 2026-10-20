@@ -4,7 +4,7 @@
 
 // Namespaced: activate only deletes its own PREFIX caches.
 // VERSION is literal because save.bat bumps it by regex.
-const VERSION = 'mbrd-v744';
+const VERSION = 'mbrd-v745';
 const PREFIX = 'mbrd-';
 
 // Local dev: pass-through so a refresh always shows the latest edit. 169.254 is
@@ -27,6 +27,7 @@ const SHELL = [
   './assets/css/fonts.css',
   './assets/css/tokens.css',
   './assets/css/base.css',
+  './assets/css/wallpaper.css',
   './assets/css/canvas.css',
   './assets/css/items.css',
   './assets/css/ghosts.css',

@@ -9,7 +9,7 @@ import type { Asset } from './assets.ts';
 import { sha256 } from '../crypto.ts';
 // Aliased — this module has its own fileKey() and nameOf().
 import { withLift, fileKey as consentKey, nameOf as blobName } from '../consent.ts';
-import { isHash, isRecord, itemHashes } from '../util.ts';
+import { isHash, isRecord, itemHashes, wallpaperHash } from '../util.ts';
 // Read from stored document, not live ledger — must match what the file carries.
 import { timelineHashes } from '../timeline.ts';
 import { VERSION } from '../version.js';
@@ -63,6 +63,9 @@ export type PackedBoard = {
   items: Item[];
   trash?: TrashEntry[];
   settings?: { fonts?: FontSpec[] };
+  /** The board's own wallpaper picture (ui/wallpaper.ts), on no item. `unknown`
+   *  for the timeline's reason: only the hash is asked of it, by wallpaperHash(). */
+  wallpaper?: unknown;
   /**
    * The step ledger, as board-schema.ts writes it. `unknown` on purpose: this
    * module asks it for asset ids and nothing else, and timelineHashes() is the
@@ -114,7 +117,7 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 const json = (obj: unknown) => enc.encode(JSON.stringify(obj, null, 2));
 
-/** Every asset hash the board references (items, bin, fonts, timeline).
+/** Every asset hash the board references (items, bin, fonts, timeline, wallpaper).
  *  Used by cloud sync. Kept in sync with packBoard() via tests/mbrd.test.js —
  *  shared code was rejected because pack needs labels, error handling and
  *  fatal/non-fatal distinction this function does not.
@@ -133,6 +136,8 @@ export function boardAssetHashes(boardData: PackedBoard): Set<string> {
       if (isHash(font?.hash)) out.add(font.hash);
     }
     for (const hash of timelineHashes(level.timeline)) if (isHash(hash)) out.add(hash);
+    const wall = wallpaperHash(level.wallpaper);
+    if (wall) out.add(wall);
   }
   return out;
 }
@@ -302,6 +307,16 @@ async function boardEntries(
     const asset = getAsset(font.hash);
     // Family name, not filename (Inter.woff2 on disk is often a long variant name).
     if (asset) assets.push({ hash: font.hash, asset, label: font.family || '' });
+  }
+
+  // The board's wallpaper picture - missing is non-fatal, as a face is: the
+  // built-in pieces stand in for it (ui/wallpaper.ts).
+  for (const { data } of levels) {
+    const hash = wallpaperHash(data.wallpaper);
+    if (!hash || seen.has(hash)) continue;
+    seen.add(hash);
+    const asset = getAsset(hash);
+    if (asset) assets.push({ hash, asset, label: 'wallpaper' });
   }
 
   // Timeline assets — a step that deleted a photo is the only thing naming it.

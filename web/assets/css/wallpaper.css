@@ -1,0 +1,129 @@
+/* The wallpaper at Softish (ui/wallpaper.ts): pieces coming in from the
+   window's left and right edges, fixed to the window, over the paper and under
+   #grain, which comes after it in index.html and so prints over them. The
+   pieces carry no colour of their own: every fill is a class naming one of the
+   tones ui/wallpaper-pieces.ts mixes from the palette, set on #wallpaper.
+   Motion is transform and opacity only, on two layers per piece: the entrance
+   on .wp-piece, the float on .wp-float, both the compositor's. */
+
+#wallpaper {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.wp-defs { position: absolute; width: 0; height: 0; }
+
+/* A side is as tall as the window and up to about a quarter of it wide, so a
+   piece is generous on a desktop and a sliver on a phone. The art is drawn as
+   the left side, its edge at x=0, and sliced to the box's height (xMinYMid
+   slice), so what a narrow box loses is the far side of the piece rather than
+   its size. */
+.wp-side {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: clamp(56px, 24vw, 560px);
+}
+.wp-left { left: 0; }
+/* The right side is the left one turned over, so its x=0 lies on the window's
+   right edge and every piece below moves and turns as its twin does, mirrored. */
+.wp-right { right: 0; transform: scaleX(-1); }
+
+/* Each piece is a layer of its own (ui/wallpaper.ts gives each its own copy of
+   the file). They all start together from past the edge, each from its own
+   angle, and land one after another at their own rest angle, about their own
+   pivot (transform-origin, set in px from the file's data-pivot). */
+.wp-piece {
+  position: absolute;
+  inset: 0;
+  will-change: transform, opacity;
+  transform: rotate(var(--wp-rest, 0deg));
+  transition:
+    transform var(--wp-dur, 1.2s) cubic-bezier(0.16, 0.8, 0.24, 1),
+    opacity var(--wp-dur, 1.2s) cubic-bezier(0.16, 0.8, 0.24, 1);
+}
+.wp-side.is-out .wp-piece {
+  transform: translateX(-70%) rotate(var(--wp-from, -8deg));
+  opacity: 0;
+}
+.wp-side.is-leaving .wp-piece {
+  transition-duration: 0.5s;
+  transition-delay: var(--wp-leave, 0s);
+  transition-timing-function: cubic-bezier(0.5, 0, 0.75, 0);
+}
+
+/* Barely there: a few pixels and under half a degree about the same pivot, each
+   piece on its own period and phase (set inline from the board's seed). */
+.wp-float {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+  animation: wp-float 17s ease-in-out infinite alternate;
+}
+@keyframes wp-float {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  50%  { transform: translate(3px, -4px) rotate(0.4deg); }
+  100% { transform: translate(-1px, 2px) rotate(-0.3deg); }
+}
+
+.wp-float > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* A board's own picture: cut to its subject, crossing the edge, low of centre. */
+.wp-own {
+  position: absolute;
+  left: -12%;
+  bottom: 8%;
+  max-width: 112%;
+  max-height: 78%;
+  object-fit: contain;
+  object-position: left bottom;
+}
+.wp-own.is-toned { filter: url(#wp-tone); }
+
+/* The tones, as classes the art names. Bare on purpose: a piece draws much of
+   itself through <use>, and a selector naming an ancestor (.f-1)
+   never matches inside a <use> copy. Nothing else in the app uses these names;
+   the --wp-* values still come down from #wallpaper by inheritance. */
+.f-hi { fill: var(--wp-hi); }
+.f-1 { fill: var(--wp-1); }
+.f-2 { fill: var(--wp-2); }
+.f-3 { fill: var(--wp-3); }
+.f-4 { fill: var(--wp-4); }
+.f-5 { fill: var(--wp-5); }
+.f-eye { fill: var(--wp-eye); }
+.k-hi { stroke: var(--wp-hi); }
+.k-1 { stroke: var(--wp-1); }
+.k-2 { stroke: var(--wp-2); }
+.k-3 { stroke: var(--wp-3); }
+.k-4 { stroke: var(--wp-4); }
+.k-5 { stroke: var(--wp-5); }
+.k-eye { stroke: var(--wp-eye); }
+.s-hi { stop-color: var(--wp-hi); }
+.s-1 { stop-color: var(--wp-1); }
+.s-2 { stop-color: var(--wp-2); }
+.s-3 { stop-color: var(--wp-3); }
+.s-4 { stop-color: var(--wp-4); }
+.s-5 { stop-color: var(--wp-5); }
+.s-eye { stop-color: var(--wp-eye); }
+
+/* Animated at Full only. Below it, on a phone and for reduced motion: a still
+   picture that fades in and out, with no slide and no float. */
+:root:not([data-quality="full"]) .wp-float { animation: none; }
+:root:not([data-quality="full"]) .wp-piece { transition-property: opacity; transition-duration: 0.3s; }
+:root:not([data-quality="full"]) .wp-side.is-out .wp-piece { transform: rotate(var(--wp-rest, 0deg)); }
+@media (pointer: coarse), (prefers-reduced-motion: reduce) {
+  .wp-float { animation: none; }
+  .wp-piece { transition-property: opacity; transition-duration: 0.3s; }
+  .wp-side.is-out .wp-piece { transform: rotate(var(--wp-rest, 0deg)); }
+}
+
+/* The Mobile sheet is not paper, as base.css says of the grain. */
+:root[data-board-mode="mobile"] #wallpaper { display: none; }

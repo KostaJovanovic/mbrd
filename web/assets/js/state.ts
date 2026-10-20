@@ -9,7 +9,7 @@ import { cue } from './cuelume/engine.ts';
 import { latticeBox, itemBounds } from './geometry.ts';
 import { splitAppearance, mergeAppearance } from './layout-settings.ts';
 import {
-  normalizeBoard, normalizeFonts, normalizeMediaFit, normalizeMobileHeader,
+  normalizeBoard, normalizeFonts, normalizeMediaFit, normalizeMobileHeader, normalizeWallpaper,
   normalizePaletteSources, serializeBoard, serializeLevel,
 } from './board-schema.ts';
 
@@ -1719,6 +1719,18 @@ export function setSetting(key: string, value: unknown) {
     bus.emit('settings', key);
     return;
   }
+  if (key === 'wallpaper') {
+    // Board-level, like mediaFit, and written whole: the switch, the picture
+    // and its tone are one record (ui/wallpaper.ts).
+    const next = normalizeWallpaper(value);
+    const was = board.wallpaper;
+    if (was.show === next.show && was.asset === next.asset && was.tone === next.tone) return;
+    board.wallpaper = next;
+    markDirty();
+    bus.emit('settings', key);
+    if (was.show !== next.show) cue(next.show ? 'on' : 'off');
+    return;
+  }
   if (key === 'fonts') {
     const fonts = normalizeFonts(value);
     board.settings.fonts = fonts;
@@ -2267,6 +2279,7 @@ function loadLevel(data: unknown, level = false) {
   board.titleHidden = next.titleHidden;
   board.mediaFit = next.mediaFit;
   board.paletteSources = next.paletteSources;
+  board.wallpaper = next.wallpaper;
   board.trash = next.trash;
   board.connections = next.connections;
   board.audioOrder = next.audioOrder;

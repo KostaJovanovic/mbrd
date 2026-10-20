@@ -335,6 +335,8 @@ const KEYS: readonly KeyRow[] = [
 ];
 
 const desktop = (ctx: Ctx) => !ctx.mobile;
+/** The whimsy dial at its scrapbook end, the only one that draws the wallpaper. */
+const softish = () => Number(board.settings.appearance.whimsy) === 0;
 
 /** The long side of the box round every item - the board's own extent. */
 function spread() {
@@ -892,6 +894,24 @@ export const SECTIONS: Section[] = [
       // color-mix(), which the dark palette is built on (ui/scheme.ts).
       { id: 'opt-dark', type: 'check', label: 'Dark theme', idle: () => !canDark(),
         get: () => board.settings.appearance.dark === true, set: v => setDark(v) },
+      // The pieces at the window's edges (ui/wallpaper.ts), which only Softish
+      // draws, so the rows are there only at Softish. Board-level and saved in
+      // the .mbrd, like the palette they are chosen by. A board's own picture
+      // stands in for the built-in pieces whatever the palette.
+      { id: 'opt-wallpaper', type: 'check', label: 'Wallpaper graphics', reveal: true, when: softish,
+        get: () => board.wallpaper.show,
+        set: v => setSetting('wallpaper', { ...board.wallpaper, show: v }) },
+      { type: 'buttons', reveal: true, when: softish, buttons: [
+        { cmd: 'wallpaper-add', label: 'Add your own…',
+          title: () => 'A picture of your own on the edges, its subject cut out of the background' },
+        { cmd: 'wallpaper-remove', label: 'Remove my picture', when: () => !!board.wallpaper.asset,
+          title: () => 'Back to the pieces the palette picks' },
+      ] },
+      // Outside the run above: it comes and goes with the picture as well as the tier.
+      { id: 'opt-wallpaper-tone', type: 'check', label: 'Tone my picture to the palette',
+        when: () => softish() && !!board.wallpaper.asset,
+        get: () => board.wallpaper.tone,
+        set: v => setSetting('wallpaper', { ...board.wallpaper, tone: v }) },
       // The two face menus, in the fold with everything else that sets one
       // token at a time. They stood above it for a year on the argument that a
       // dropped face appears in them and a feature nobody can find is a feature

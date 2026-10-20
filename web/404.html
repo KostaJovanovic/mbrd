@@ -97,6 +97,7 @@
 <link rel="stylesheet" href="assets/css/fonts.css">
 <link rel="stylesheet" href="assets/css/tokens.css">
 <link rel="stylesheet" href="assets/css/base.css">
+<link rel="stylesheet" href="assets/css/wallpaper.css">
 <link rel="stylesheet" href="assets/css/canvas.css">
 <link rel="stylesheet" href="assets/css/items.css">
 <link rel="stylesheet" href="assets/css/ghosts.css">
@@ -261,6 +262,10 @@
     });
   })();
 </script>
+
+<!-- The pieces at the window's edges at Softish (ui/wallpaper.ts). Before
+     #grain, so the grain prints over them as it does over the paper. -->
+<div id="wallpaper" aria-hidden="true"></div>
 
 <!-- Paper grain texture. Outside #viewport (paint containment would break the
      blend). canvas/grain.js moves it with the board. -->

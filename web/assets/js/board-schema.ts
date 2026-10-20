@@ -10,12 +10,12 @@ import { splitAppearance } from './layout-settings.ts';
 import {
   board, makeItem, dedupeIds, cleanBoardTitle, cloneSettings, layoutSettingsOf, isJoinEnd,
   settingsFor, MAX_ITEMS, TRASH_LIMIT, MOBILE_COLUMNS, MOBILE_APPEARANCE_VARS,
-  DEFAULT_SETTINGS, DEFAULT_MOBILE_HEADER, mobileColumnCount,
+  DEFAULT_SETTINGS, DEFAULT_MOBILE_HEADER, DEFAULT_WALLPAPER, mobileColumnCount,
   normalizeConnections, normalizeAudioOrder, normalizeTour,
 } from './board-model.ts';
 import type {
   Board, BoardSettings, FontAxis, FontSpec, Geometry, Item,
-  LayoutMode, MobileHeader,
+  LayoutMode, MobileHeader, Wallpaper,
 } from './board-model.ts';
 import type { Look } from './layout-settings.ts';
 import {
@@ -77,6 +77,7 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
     titleHidden: !!src.titleHidden,
     mediaFit: normalizeMediaFit(src.mediaFit),
     paletteSources: normalizePaletteSources(src.paletteSources),
+    wallpaper: normalizeWallpaper(src.wallpaper),
     sharedAppearance,
     layoutSettings: {
       desktop: desktopRecord.settings
@@ -115,7 +116,7 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
  * rather than carried for ever.
  */
 const KNOWN_KEYS = new Set([
-  'title', 'view', 'mobileHeader', 'titleHidden', 'mediaFit', 'paletteSources',
+  'title', 'view', 'mobileHeader', 'titleHidden', 'mediaFit', 'paletteSources', 'wallpaper',
   'settings', 'arrangement', 'items', 'layouts', 'trash', 'connections',
   'audioOrder', 'tour', 'timeline', 'hadMusic', 'ownLook', 'versions',
   // The boards inside this one, and a child's picture of itself: the tree's
@@ -370,6 +371,24 @@ export function normalizePaletteSources(value: unknown) {
   return n === 0 ? 0 : Math.max(1, Math.min(24, n));
 }
 
+/**
+ * The wallpaper record, held to the three values ui/wallpaper.ts reads. Absent
+ * is the default - on, the built-in pieces - and so is anything that is not a
+ * record. `show` is off only for a literal false; the picture only for a hash.
+ */
+export function normalizeWallpaper(raw: unknown): Wallpaper {
+  const w: Record<string, unknown> = isRecord(raw) ? raw : {};
+  return {
+    show: w.show !== false,
+    asset: isHash(w.asset) ? w.asset : null,
+    tone: w.tone === true,
+  };
+}
+
+/** Whether a wallpaper record says anything a file has to carry. */
+const wallpaperSaysSomething = (w: Wallpaper) =>
+  w.show !== DEFAULT_WALLPAPER.show || w.asset !== DEFAULT_WALLPAPER.asset || w.tone !== DEFAULT_WALLPAPER.tone;
+
 export function normalizeMobileHeader(raw: unknown): MobileHeader {
   const header: Record<string, unknown> = isRecord(raw) ? raw : {};
   const axes: Record<string, number> = {};
@@ -586,8 +605,14 @@ export function serializeLevel() {
   // conditionally, so that readers of a filed board - storage.ts asks for
   // `doc.timeline` twice - still see one type with an optional key rather than
   // a union of two shapes.
-  const doc: typeof base & { timeline?: typeof timeline, hadMusic?: true, ownLook?: true } = base;
+  const doc: typeof base & {
+    timeline?: typeof timeline, hadMusic?: true, ownLook?: true, wallpaper?: Wallpaper,
+  } = base;
   if (timeline) doc.timeline = timeline;
+  // Omitted while it is the default, for the same reason: a board that never
+  // touched its wallpaper saves as it did before the key existed.
+  const wallpaper = normalizeWallpaper(board.wallpaper);
+  if (wallpaperSaysSomething(wallpaper)) doc.wallpaper = wallpaper;
   // Omitted rather than written false, for the timeline's reason: a board with
   // no music saves exactly as it did before the key existed.
   if (board.hadMusic) doc.hadMusic = true;

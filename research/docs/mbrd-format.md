@@ -321,6 +321,19 @@ that ceiling instead of naming a bigger number. An older reader that clamps this
 field to `[1, 24]` will read `0` as `1` and take its colours from the newest
 picture alone: a duller palette, not a broken board.
 
+`wallpaper` is the pieces drawn at the window's edges at the Softish end of the
+whimsy dial: `{ "show": bool, "asset": hash | absent, "tone": bool }`.
+**Absent means the default** (shown, the built-in pieces the palette picks),
+and is written only when one of the three differs from it. `show` is off only
+for a literal `false`. `asset` is the board's own picture, already cut to its
+subject, in `assets/` like any other; it stands in for the built-in pieces
+whatever the palette. A missing asset is not an error: the built-in pieces show
+instead, as a missing face falls back to the stack. `tone` (default `false`)
+draws that picture in the palette's tones rather than its own colours.
+Board-level, one value for both layouts. It names a hash on no item, so a
+reader that walks only items for the assets to keep will drop the picture on
+save; this one keeps it beside the faces.
+
 `settings.fonts` is the faces the board carries with it, at most eight, each
 `{ "hash", "family" }`, the hash naming bytes in `assets/`, the family becoming
 a CSS family name. A record filtered out for a bad hash or an unusable family

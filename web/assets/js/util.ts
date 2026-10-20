@@ -467,6 +467,14 @@ export const itemHashes = (item: HashBearer): string[] =>
     ...(Array.isArray(item?.meta?.files) ? item.meta.files.map(f => (isRecord(f) ? f.hash : null)) : []),
   ]);
 
+/** The picture a board's `wallpaper` names (ui/wallpaper.ts), or null. On no
+ *  item, like a face, so every walk that keeps a face's bytes asks this too:
+ *  the packer, boardAssetHashes() and the session's sweep. Read out of files,
+ *  so nothing about its shape is trusted. */
+export function wallpaperHash(raw: unknown): string | null {
+  return isRecord(raw) && isHash(raw.asset) ? raw.asset : null;
+}
+
 /** The optimiser originals an item still names (ORIGINAL_HASH_KEYS). */
 export const originalHashes = (item: HashBearer): string[] =>
   presentHashes(ORIGINAL_HASH_KEYS.map(key => item?.meta?.[key]));

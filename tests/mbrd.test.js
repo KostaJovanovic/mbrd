@@ -147,6 +147,9 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
   const binned = await stubAsset('binned', { body: 'binned-bytes' });
   const face = await stubAsset('face', { ext: 'woff2', mime: 'font/woff2', body: 'face-bytes' });
   const stepped = await stubAsset('stepped', { body: 'stepped-bytes' });
+  // The board's own wallpaper picture (ui/wallpaper.ts): on no item, like a face.
+  const wall = await stubAsset('wall', { body: 'wall-bytes' });
+  const insideWall = await stubAsset('inside-wall', { body: 'inside-wall-bytes' });
   // A folder card out of an archive points into it; one off the disk lists its files.
   const zipped = await stubAsset('zipped', { ext: 'zip', mime: 'application/zip', body: 'zip-bytes' });
   const filed = await stubAsset('filed', { body: 'filed-bytes' });
@@ -161,12 +164,14 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
   const insideBinned = await stubAsset('inside-binned', { body: 'inside-binned-bytes' });
   const child = boardOf([withAsset(inside, { id: 'c1', name: 'c.png' })], {
     trash: [{ at: 1, item: withAsset(insideBinned, { id: 'c9', name: 'd.png' }) }],
+    wallpaper: { asset: insideWall },
   });
 
   const board = boardOf([withAsset(live, { id: 'i1', name: 'a.png', meta: { cover, display, source } }), ...folders], {
     boards: { kid: child },
     trash: [{ at: 1, item: withAsset(binned, { id: 'i9', name: 'b.png' }) }],
     settings: { fonts: [{ hash: face, family: 'Test Face' }] },
+    wallpaper: { asset: wall, tone: true },
     timeline: {
       steps: [{
         delta: {
@@ -193,7 +198,7 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
   );
   // The guard on the guard: two empty sets are deepEqual, so a stubAsset()
   // that stopped registering anything would pass while proving nothing.
-  assert.equal(written.size, 11);
+  assert.equal(written.size, 13);
 });
 
 // ---------------------------------------------------------------------------

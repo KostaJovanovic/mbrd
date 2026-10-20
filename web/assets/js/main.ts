@@ -33,6 +33,7 @@ import { Viewport, travelMs } from './canvas/viewport.ts';
 import { setMissingCheck } from './canvas/item-dom.ts';
 import { paintGrid, paintGridOnView } from './canvas/grid.ts';
 import { initGrain, paintGrain } from './canvas/grain.ts';
+import { initWallpaper } from './ui/wallpaper.ts';
 import { initFarLands } from './canvas/farlands.ts';
 import { initClean, dealSong } from './ui/clean/clean.ts';
 import { initPaper } from './canvas/paper.ts';
@@ -299,6 +300,8 @@ initAppearance({
   },
 });
 initGrain(vp);
+// The pieces at the edges at Softish; follows the look by watching :root.
+initWallpaper();
 // Board-edge warning mark.
 initFarLands(vp);
 initAudio();

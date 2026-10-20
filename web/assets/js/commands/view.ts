@@ -37,6 +37,7 @@ import { deleteStop, stopTourEdit, toggleTourEdit, tourEditing } from '../ui/tou
 import { togglePlayerWindow } from '../ui/playlist.ts';
 import { openCredits } from '../ui/credits.ts';
 import { openInventory } from '../ui/inventory.ts';
+import { addWallpaperPicture, removeWallpaperPicture } from '../ui/wallpaper.ts';
 import { toggleTimeline } from '../ui/timeline-view.ts';
 import { paintZoom, zoomText } from '../ui/hud.ts';
 import { ask } from '../ui/dialog.ts';
@@ -248,6 +249,9 @@ export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps)
     credits: () => openCredits(),
     // Board inventory report.
     inventory: () => openInventory(),
+    // The board's own wallpaper picture, at Softish (ui/wallpaper.ts).
+    wallpaperAdd: () => addWallpaperPicture(),
+    wallpaperRemove: () => removeWallpaperPicture(),
     // Toggle the timeline. Which face (strip or sheet) is decided by ui/timeline-view.ts.
     timeline: () => toggleTimeline(),
     // Navigate to patch notes. Same tab — board is flushed on pagehide/visibilitychange

@@ -4,7 +4,7 @@
 // On the web this is crash recovery and the durable artefact is an exported
 // .mbrd. In the apps the board's own file is the save, and the store keeps no copy.
 
-import { heldHashes, itemHashes, isRecord } from '../util.ts';
+import { heldHashes, itemHashes, isRecord, wallpaperHash } from '../util.ts';
 // Timeline references, read from the stored document like everything else.
 import { timelineHashes } from '../timeline.ts';
 import { toast, busy } from '../notify.ts';
@@ -75,7 +75,7 @@ export function initSession(deps: SessionDeps) {
 /** Loose board shape for referencedHashes() — asked of both serializeBoard()
  *  output and raw IndexedDB data (`unknown` until inspected). */
 type BoardLike = {
-  items?: unknown, trash?: unknown, settings?: unknown, timeline?: unknown, boards?: unknown,
+  items?: unknown, trash?: unknown, settings?: unknown, timeline?: unknown, boards?: unknown, wallpaper?: unknown,
 };
 
 /** The list at a key, or none. What `data.items || []` said before it had a type. */
@@ -264,6 +264,9 @@ function referencedHashes(data: BoardLike) {
       const hash = isRecord(f) ? str(f.hash) : undefined;
       if (hash) out.add(hash);
     }
+    // The wallpaper picture, on no item either (ui/wallpaper.ts).
+    const wall = wallpaperHash(doc.wallpaper);
+    if (wall) out.add(wall);
   };
   level(data);
   // Every board inside this one. Their pictures share the one store, and a
