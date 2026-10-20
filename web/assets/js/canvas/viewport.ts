@@ -176,8 +176,18 @@ const VIEW_SETTLE_MS = 140;
  * when it re-pinned on every swing. A zoom-out that has kept going for
  * PIN_OUT_RUN_MS is a pinch out, and gets one at every PIN_OUT; a swing that
  * turns back sooner gets one only past PIN_OUT_DEEP of the gesture's peak.
+ *
+ * Each of those rasters is a screen of cards drawn afresh at the phone's
+ * density, and the view stands still until it lands: 50-150ms on a Nothing
+ * Phone (4a), worst where the most cards are in view, so a pinch out from 100%
+ * hitched at 41% and 33%. PIN_OUT was 1.25. At 1.5, measured there at Balanced
+ * on a page reloaded before every pinch (a warm page reuses the tiles a
+ * previous zoom left, and hides the cost): frames over 50ms, 100% to 30%, 11-18
+ * to 6-10, the worst 110-130ms to 75-80; and fewer rasters is less tile churn,
+ * so a pinch from 50% to 20% drew tiles missing 33-39 times to 1-5. At 1.8 each
+ * raster is a bigger one (worst 160ms), and the missing tiles came back (19-23).
  */
-const PIN_OUT = 1.25;
+const PIN_OUT = 1.5;
 const PIN_OUT_RUN_MS = 600;
 const PIN_OUT_DEEP = 1.8;
 const PIN_IN = 4;
