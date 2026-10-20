@@ -390,8 +390,11 @@ export function normalizeWallpaper(raw: unknown): Wallpaper {
 }
 
 /** Whether a wallpaper record says anything a file has to carry. */
-const wallpaperSaysSomething = (w: Wallpaper) =>
-  (Object.keys(DEFAULT_WALLPAPER) as (keyof Wallpaper)[]).some(k => w[k] !== DEFAULT_WALLPAPER[k]);
+const wallpaperSaysSomething = (w: Wallpaper) => !sameWallpaper(w, DEFAULT_WALLPAPER);
+
+/** The two records agree on every value. */
+export const sameWallpaper = (a: Wallpaper, b: Wallpaper) =>
+  a.show === b.show && a.middle === b.middle && a.harsh === b.harsh && a.asset === b.asset && a.tone === b.tone;
 
 export function normalizeMobileHeader(raw: unknown): MobileHeader {
   const header: Record<string, unknown> = isRecord(raw) ? raw : {};

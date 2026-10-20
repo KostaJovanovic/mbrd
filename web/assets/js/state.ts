@@ -9,7 +9,7 @@ import { cue } from './cuelume/engine.ts';
 import { latticeBox, itemBounds } from './geometry.ts';
 import { splitAppearance, mergeAppearance } from './layout-settings.ts';
 import {
-  normalizeBoard, normalizeFonts, normalizeMediaFit, normalizeMobileHeader, normalizeWallpaper,
+  normalizeBoard, normalizeFonts, normalizeMediaFit, normalizeMobileHeader, normalizeWallpaper, sameWallpaper,
   normalizePaletteSources, serializeBoard, serializeLevel,
 } from './board-schema.ts';
 
@@ -1724,13 +1724,13 @@ export function setSetting(key: string, value: unknown) {
     // switches, the picture and its tone are one record (ui/wallpaper.ts).
     const next = normalizeWallpaper(value);
     const was = board.wallpaper;
-    const keys = Object.keys(next) as (keyof typeof next)[];
-    if (keys.every(k => was[k] === next[k])) return;
+    if (sameWallpaper(was, next)) return;
     board.wallpaper = next;
     markDirty();
     bus.emit('settings', key);
-    const flipped = (['show', 'middle', 'harsh'] as const).find(k => was[k] !== next[k]);
-    if (flipped) cue(next[flipped] ? 'on' : 'off');
+    // A switch turned, whichever tier's: the others stay as they were.
+    const on = was.show !== next.show ? next.show : was.middle !== next.middle ? next.middle : was.harsh !== next.harsh ? next.harsh : null;
+    if (on !== null) cue(on ? 'on' : 'off');
     return;
   }
   if (key === 'fonts') {
