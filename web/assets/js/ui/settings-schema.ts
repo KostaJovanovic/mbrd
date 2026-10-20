@@ -1364,7 +1364,7 @@ export const SECTIONS: Section[] = [
       { id: 'sound-hint', type: 'hint', when: () => soundLevel() > 0, advanced: true,
         text: () => 'Experimental feature. Might suck.' },
       // Any Softish wallpaper piece by hand, over the palette's pick, to look at
-      // each one on a real board. Per device, in prefs: ui/wallpaper.ts.
+      // each one on a real board. The board's, in its wallpaper record: ui/wallpaper.ts.
       { id: 'opt-wallpaper-piece', type: 'picker', label: 'Wallpaper', advanced: true, cycle: true,
         options: () => [{ value: '', label: 'From the palette' },
           ...FAMILIES.flatMap(f => Array.from({ length: PIECES[f] }, (_, i) => {

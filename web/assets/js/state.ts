@@ -1721,7 +1721,8 @@ export function setSetting(key: string, value: unknown) {
   }
   if (key === 'wallpaper') {
     // Board-level, like mediaFit, and written whole: the three tiers'
-    // switches, the picture and its tone are one record (ui/wallpaper.ts).
+    // switches, the picture, its tone and a piece picked by hand are one
+    // record (ui/wallpaper.ts).
     const next = normalizeWallpaper(value);
     const was = board.wallpaper;
     if (sameWallpaper(was, next)) return;

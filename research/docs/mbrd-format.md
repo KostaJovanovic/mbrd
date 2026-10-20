@@ -322,17 +322,19 @@ field to `[1, 24]` will read `0` as `1` and take its colours from the newest
 picture alone: a duller palette, not a broken board.
 
 `wallpaper` is the pieces drawn at the window's edges: `{ "show": bool,
-"middle": bool, "harsh": bool, "asset": hash | absent, "tone": bool }`, one
-switch per whimsy tier. **Absent means the default** (shown at Softish, not at
+"middle": bool, "harsh": bool, "asset": hash | absent, "tone": bool, "piece":
+string | absent }`, one switch per whimsy tier. **Absent means the default** (shown at Softish, not at
 Middle or Harsh, the built-in pieces the palette picks), and is written only
-when one of the five differs from it. `show` is Softish's switch and off only
+when one of the six differs from it. `show` is Softish's switch and off only
 for a literal `false`; `middle` and `harsh` (added later, so a file without
 them reads as off) are on only for a literal `true`. `asset` is the board's own picture, already cut to its
 subject, in `assets/` like any other; it stands in for the built-in pieces
 whatever the palette. A missing asset is not an error: the built-in pieces show
 instead, as a missing face falls back to the stack. `tone` (default `false`)
 draws that picture in the palette's tones rather than its own colours.
-Board-level, one value for both layouts. It names a hash on no item, so a
+`piece` (added later; absent is the palette's pick) names one built-in piece
+chosen by hand, as `"pink-1"`: a family and a number. A name the reader has no
+piece for reads as absent, and is kept on save. Board-level, one value for both layouts. It names a hash on no item, so a
 reader that walks only items for the assets to keep will drop the picture on
 save; this one keeps it beside the faces.
 

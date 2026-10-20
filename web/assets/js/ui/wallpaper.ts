@@ -15,7 +15,6 @@ import { cutout, matteAvailable } from '../canvas/matte.ts';
 import { ask } from './dialog.ts';
 import { edgeShare, familyOf, pieceByName, tierSwitch, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
 import type { Wallpaper } from '../board-model.ts';
-import { readPref, writePref } from '../prefs.ts';
 import { BASE_ZOOM, type Viewport } from '../canvas/viewport.ts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -44,18 +43,18 @@ let trial: { url: string, tone: boolean } | null = null;
 const markup = new Map<string, Promise<SVGSVGElement | null>>();
 
 /** One piece chosen by hand over the palette's pick, as `pink-1`, or '' for
- *  the palette's: a development aid under Settings → Debug, per device and
- *  never in a .mbrd. The tones stay the palette's either way. */
-const CHOICE_PREF = 'mbrd.wallpaperPiece';
-
+ *  the palette's: under Settings → Debug, and the board's, in its wallpaper
+ *  record, so a new board starts from the palette's pick. It was per device,
+ *  and every board opened after a choice wore it. A name this version has no
+ *  piece for reads as the palette's. The tones stay the palette's either way. */
 export function chosenWallpaper(): string {
-  const name = readPref(CHOICE_PREF, '') ?? '';
+  const name = board.wallpaper.piece ?? '';
   return pieceByName(name) ? name : '';
 }
 
+/** The 'settings' event this sends is what repaints. */
 export function setChosenWallpaper(name: string) {
-  writePref(CHOICE_PREF, pieceByName(name) ? name : '');
-  schedule();
+  setSetting('wallpaper', { ...board.wallpaper, piece: pieceByName(name) ? name : null });
 }
 
 export function initWallpaper(viewport: Viewport) {

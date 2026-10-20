@@ -376,7 +376,9 @@ export function normalizePaletteSources(value: unknown) {
  * the default - on at Softish, off at Middle and Harsh, the built-in pieces -
  * and so is anything that is not a record. `show` is off only for a literal
  * false, `middle` and `harsh` on only for a literal true; the picture only for
- * a hash.
+ * a hash. The piece only for something shaped like a piece's name: whether it
+ * names one this version has is ui/wallpaper.ts's to ask, below this layer, and
+ * a name from a newer version is kept rather than dropped on the next save.
  */
 export function normalizeWallpaper(raw: unknown): Wallpaper {
   const w: Record<string, unknown> = isRecord(raw) ? raw : {};
@@ -386,6 +388,7 @@ export function normalizeWallpaper(raw: unknown): Wallpaper {
     harsh: w.harsh === true,
     asset: isHash(w.asset) ? w.asset : null,
     tone: w.tone === true,
+    piece: typeof w.piece === 'string' && /^[a-z]{1,24}-\d{1,3}$/.test(w.piece) ? w.piece : null,
   };
 }
 
@@ -394,7 +397,8 @@ const wallpaperSaysSomething = (w: Wallpaper) => !sameWallpaper(w, DEFAULT_WALLP
 
 /** The two records agree on every value. */
 export const sameWallpaper = (a: Wallpaper, b: Wallpaper) =>
-  a.show === b.show && a.middle === b.middle && a.harsh === b.harsh && a.asset === b.asset && a.tone === b.tone;
+  a.show === b.show && a.middle === b.middle && a.harsh === b.harsh && a.asset === b.asset && a.tone === b.tone
+  && a.piece === b.piece;
 
 export function normalizeMobileHeader(raw: unknown): MobileHeader {
   const header: Record<string, unknown> = isRecord(raw) ? raw : {};

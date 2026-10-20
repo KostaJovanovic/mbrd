@@ -65,12 +65,25 @@ test('the zoom decides how much of the window each side takes', () => {
 });
 
 test('the wallpaper record keeps only what it may', () => {
-  const plain = { show: true, middle: false, harsh: false, asset: null, tone: false };
+  const plain = { show: true, middle: false, harsh: false, asset: null, tone: false, piece: null };
   assert.deepEqual(normalizeWallpaper(undefined), plain);
-  assert.deepEqual(normalizeWallpaper({ show: 0, middle: 1, harsh: 'yes', asset: 'nope', tone: 'yes' }), plain);
+  assert.deepEqual(normalizeWallpaper({ show: 0, middle: 1, harsh: 'yes', asset: 'nope', tone: 'yes', piece: 7 }), plain);
   const hash = 'a'.repeat(64);
-  assert.deepEqual(normalizeWallpaper({ show: false, middle: true, harsh: true, asset: hash, tone: true }),
-    { show: false, middle: true, harsh: true, asset: hash, tone: true });
+  assert.deepEqual(normalizeWallpaper({ show: false, middle: true, harsh: true, asset: hash, tone: true, piece: 'pink-1' }),
+    { show: false, middle: true, harsh: true, asset: hash, tone: true, piece: 'pink-1' });
+});
+
+test('a piece picked by hand is the board\'s, and a new board has none', () => {
+  // It was a per-device pref, and every board opened after a choice wore it.
+  // A record without the key - every board before it, and a new one - is the
+  // palette's pick.
+  assert.equal(normalizeWallpaper({ show: true }).piece, null);
+  // Shaped like a name or dropped; whether this version has the piece is
+  // ui/wallpaper.ts's question, so a newer version's name survives a save.
+  assert.equal(normalizeWallpaper({ piece: 'teal-40' }).piece, 'teal-40');
+  for (const bad of ['', 'pink', 'Pink-1', 'pink-1; x', '../pink-1', 'p'.repeat(40) + '-1']) {
+    assert.equal(normalizeWallpaper({ piece: bad }).piece, null, bad);
+  }
 });
 
 test('each whimsy tier reads its own wallpaper switch', () => {
