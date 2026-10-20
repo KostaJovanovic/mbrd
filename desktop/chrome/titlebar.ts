@@ -4,7 +4,7 @@
 // of FileAnalyser's chrome/titlebar.js, without its back and forward arrows.
 
 import type { ChromeBridge, MenuModel, Subject, UpdateOffer, UpdateState, WinState } from './bridge.ts';
-import { applyLook } from './look.ts';
+import { followLook } from './look.ts';
 
 declare global {
   interface Window {
@@ -273,9 +273,6 @@ function build(api: ChromeBridge): void {
   api.ready();
 }
 
-// One origin with the board, so a look change there raises a storage event here.
-addEventListener('storage', e => {
-  if (!e.key || /^mbrd\.(appearance|appearance\.dark|quality)$/.test(e.key)) applyLook();
-});
+followLook();
 
 if (bridge) build(bridge);

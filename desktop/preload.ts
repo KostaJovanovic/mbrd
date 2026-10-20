@@ -68,9 +68,10 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
   updates: {
     check: () => invoke('updates:check'),
     // The title bar's Update button offers the desktop's updates (updates.ts),
-    // so the page is never told of one and never installs one.
+    // so the page is never told of one. Install checks, downloads and restarts
+    // into one at once, with every answer on the button (updates.updateNow()).
     onOffer: () => {},
-    install: () => Promise.resolve(),
+    install: () => invoke('updates:install'),
     // The panel's "Check for updates automatically"; Help's check runs either way.
     auto: (on: boolean) => invoke('updates:auto', on),
   },

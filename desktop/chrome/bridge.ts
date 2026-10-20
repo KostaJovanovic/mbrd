@@ -80,7 +80,7 @@ export interface ChromeBridge {
   ready(): void;
 }
 
-/** A menu to draw. `opening`: the panel was hidden, so it drops in. */
+/** A menu to draw. `opening`: the panel was hidden, so it fades in once shown. */
 export interface MenuOpen {
   menu: MenuModel;
   at: Point;
@@ -90,6 +90,11 @@ export interface MenuOpen {
 export interface PanelBridge {
   platform: string;
   onMenu(fn: (open: MenuOpen) => void): void;
+  /** The window is on screen: the fade can start. */
+  onShown(fn: () => void): void;
+  /** The window is about to hide: draw nothing, then say so with blanked(). */
+  onBlank(fn: () => void): void;
+  blanked(): void;
   size(w: number, h: number, at: Point): void;
   run(id: string): void;
   close(): void;

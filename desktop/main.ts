@@ -777,10 +777,23 @@ let panelMenuId = '';
    of the menu that just closed is dropped for a moment. */
 let panelClosedId = '';
 let panelClosedAt = 0;
+/* A menu dropped fresh fades in once its window is on screen (panel.ts). */
+let panelFade = false;
+/* Closing: the panel draws a clear frame, then hides, so the frame a later show
+   starts from is not the last menu. Set while that frame is being drawn. */
+let panelHiding: NodeJS.Timeout | null = null;
 
 const fromPanel = (event: Sender) =>
   !!panelWin && !panelWin.isDestroyed() && event.sender === panelWin.webContents;
 const panelFocused = () => !!panelWin && !panelWin.isDestroyed() && panelWin.isFocused();
+
+/** Hide the panel now, unless a menu was opened again while it went clear. */
+function hidePanel(): void {
+  if (panelHiding) clearTimeout(panelHiding);
+  panelHiding = null;
+  if (panelMenuId || !panelWin || panelWin.isDestroyed()) return;
+  if (panelWin.isVisible()) panelWin.hide();
+}
 
 function closePanel(): void {
   if (panelMenuId) {
@@ -788,7 +801,11 @@ function closePanel(): void {
     panelClosedAt = Date.now();
   }
   panelMenuId = '';
-  if (panelWin && !panelWin.isDestroyed() && panelWin.isVisible()) panelWin.hide();
+  if (panelWin && !panelWin.isDestroyed() && panelWin.isVisible() && !panelHiding) {
+    panelWin.webContents.send('panel:blank');
+    // Hidden anyway if the clear frame never says so.
+    panelHiding = setTimeout(hidePanel, 120);
+  }
   current()?.webContents.send('chrome:menu-closed');
 }
 
@@ -873,8 +890,12 @@ function wireChrome(): void {
     if (!panel) return;
     panelMenuId = id;
     const at: Point = { x: Math.round(Number(req?.x) || 0), y: Math.round(Number(req?.y) || 0) };
-    // A menu dropped fresh animates in; one slid to from the next title does not.
-    const opening = !panel.isVisible();
+    // A menu dropped fresh fades in; one slid to from the next title does not.
+    // A panel going clear to hide counts as hidden: it is clear already.
+    const opening = !panel.isVisible() || !!panelHiding;
+    if (panelHiding) clearTimeout(panelHiding);
+    panelHiding = null;
+    panelFade = opening;
     const send = () => {
       if (!panel.isDestroyed()) panel.webContents.send('panel:menu', { menu, at, opening });
     };
@@ -933,7 +954,15 @@ function wireChrome(): void {
     const y = Math.min(Math.max(area.y, content.y + at.y * zoomFactor), area.y + area.height - h);
     panel.setBounds({ x: Math.round(x), y: Math.round(y), width: w, height: h });
     if (!panel.isVisible()) panel.show();
+    if (panelFade) {
+      panelFade = false;
+      panel.webContents.send('panel:shown');
+    }
     chromeHooks?.pushState();
+  });
+
+  ipcMain.on('panel:blanked', event => {
+    if (fromPanel(event) && panelHiding) hidePanel();
   });
 
   ipcMain.on('panel:run', (event, id: unknown) => {
@@ -1041,6 +1070,11 @@ function wireApp(): void {
 
   // The answer goes to the title bar's Update button, so the page gets nothing back.
   ipcMain.handle('updates:check', () => { void updates.checkForUpdates(); });
+  // Check, download and restart into the update, for a board a newer mbrd
+  // saved. The board's page only: an update restarts the app.
+  ipcMain.handle('updates:install', event => {
+    if (event.sender === appContents()) void updates.updateNow();
+  });
   // The panel's switch for the daily check. Only a boolean is heard, so a
   // malformed call changes nothing.
   ipcMain.handle('updates:auto', (_event, on: unknown) => {

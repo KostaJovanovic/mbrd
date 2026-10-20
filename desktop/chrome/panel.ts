@@ -1,10 +1,12 @@
 // One open menu, drawn in a window of its own. It has to be a window: the board
 // is a child view composited above the bar's page, so a panel drawn there would
 // sit under the board and never show. Main sends the menu as plain data, then
-// sizes, places and shows this window from the size it reports back.
+// sizes, places and shows this window from the size it reports back. The
+// window lives all session, so it follows a look change as the bar does.
 
 import type { MenuModel, PanelBridge, Point } from './bridge.ts';
 import { accelLabel } from './accel.ts';
+import { followLook } from './look.ts';
 
 declare global {
   interface Window {
@@ -52,20 +54,34 @@ function report(bridge: PanelBridge, list: HTMLElement, at: Point): void {
   bridge.size(Math.ceil(box.width + 2 * side), Math.ceil(box.height + foot), { x: at.x - side, y: at.y });
 }
 
+/** After the next frame is painted. */
+const afterPaint = (fn: () => void) => requestAnimationFrame(() => requestAnimationFrame(fn));
+
+followLook();
+
 if (api && root) {
   api.onMenu(({ menu, at, opening }) => {
     draw(root, menu, id => api.run(id));
-    // Restarted while the window is still hidden, so its first frame on screen
-    // is the animation's first.
-    root.classList.remove('is-opening');
-    if (opening) {
-      void root.offsetWidth;
-      root.classList.add('is-opening');
-    }
+    // A menu dropped fresh waits, drawn but clear, for the window to be on
+    // screen: a hidden window paints no frames, so a fade started now would be
+    // spent by the time anybody saw it. One slid to from the next title shows at once.
+    root.classList.remove('is-blank');
+    root.classList.toggle('is-waiting', opening);
     report(api, root, at);
     // Again once the fonts are in. A hidden window paints no frames, so this
     // cannot wait on requestAnimationFrame.
     document.fonts.ready.then(() => report(api, root, at)).catch(() => {});
+  });
+
+  // On screen, with a clear frame painted first, so the fade starts from nothing.
+  api.onShown(() => afterPaint(() => root.classList.remove('is-waiting')));
+
+  // A window hidden keeps its last frame and shows it again on the next show,
+  // where the next menu has not drawn yet: that frame, the last menu at full
+  // strength, was the flash before every drop. So the last frame is a clear one.
+  api.onBlank(() => {
+    root.classList.add('is-blank');
+    afterPaint(() => api.blanked());
   });
 
   // The shadow's margin is still this window, so a press there would land

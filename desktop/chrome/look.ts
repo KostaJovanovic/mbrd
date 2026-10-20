@@ -65,4 +65,12 @@ export function applyLook(): void {
   }
 }
 
+/** Follow the board's look from here on: one origin with the board, so a look
+ *  change there raises a storage event here. For a page that lives on. */
+export function followLook(): void {
+  addEventListener('storage', e => {
+    if (!e.key || /^mbrd\.(appearance|appearance\.dark|quality)$/.test(e.key)) applyLook();
+  });
+}
+
 applyLook();

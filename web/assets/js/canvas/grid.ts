@@ -235,11 +235,14 @@ export function paintGrid(vp: Viewport) {
 //
 // So for the length of a gesture they are taken off the page, and a plain
 // <div> in the same place carries the grid: the two lattices as SVG tiles made
-// once, at the step and zoom the gesture started from, and the axes as two bars.
-// Each frame writes only the tiles' size and offset and the bars' positions -
-// an image-pattern repaint of one screen, in the page's own layer, under the
-// board. The marks move and scale with the cards, so a pinch visibly grows or
-// shrinks them until the fingers lift and the real lattice is painted again.
+// once, and the axes as two bars. Each frame writes only the tiles' size and
+// offset and the bars' positions - an image-pattern repaint of one screen, in
+// the page's own layer, under the board. The step is chosen again every frame,
+// as paintGrid() chooses it, and a tile has no viewBox, so a bigger tile is a
+// wider spacing and never a bigger mark: the lattice looks as the real one
+// does at every zoom, and the frame the fingers lift changes nothing. Stretched
+// tiles, which this was until v0.743, grew the dots through a pinch and then
+// snapped them back with the spacing a tier away.
 //
 // Screen-sized and not board-sized on purpose. A copy inside #world was tried
 // first: free to move, but it filled every tile of the pinned layer with marks,
@@ -249,13 +252,10 @@ export function paintGrid(vp: Viewport) {
 // Only below Full quality. Full keeps the real grid painting every frame, at
 // the cost of the layer split above - the maintainer's call, 2026-09-23.
 
-/** The stand-in while a gesture is on, with what it was made for; null when none is up. */
+/** The stand-in while a gesture is on; null when none is up. */
 let held: {
   node: HTMLElement;
   bars: HTMLElement[];
-  /** Zoom and board step the tiles were drawn for. */
-  zoom: number;
-  step: number;
 } | null = null;
 
 function holdGrid(vp: Viewport) {
@@ -264,17 +264,12 @@ function holdGrid(vp: Viewport) {
   const node = document.createElement('div');
   node.id = 'grid-hold';
   node.setAttribute('aria-hidden', 'true');
-  const z = vp.zoom;
-  const s = board.settings;
-  const step = boardGridStep(s.gridStep, vp);
-  if (s.grid && z > 0) {
-    // Majors first, so they paint on top - as paintGrid() lists them. Drawn in
-    // CSS pixels at this zoom; background-size stretches them from here.
+  if (board.settings.grid) {
+    // Majors first, so they paint on top - as paintGrid() lists them.
     const ink = gridInk();
-    const minor = step * z, major = minor * MAJOR;
     node.style.backgroundImage = harshGrid()
-      ? `${crossTile(major, ink.major, ink.dot, 1.5)}, ${crossTile(minor, ink.minor, ink.dot, 1)}`
-      : `${dotTile(major, ink.major, ink.dot, 1.5)}, ${dotTile(minor, ink.minor, ink.dot, 1)}`;
+      ? `${crossTile(ink.major, ink.dot, 1.5)}, ${crossTile(ink.minor, ink.dot, 1)}`
+      : `${dotTile(ink.major, ink.dot, 1.5)}, ${dotTile(ink.minor, ink.dot, 1)}`;
   }
   const bars: HTMLElement[] = [];
   if (axesVisible()) {
@@ -289,7 +284,7 @@ function holdGrid(vp: Viewport) {
   }
   grid.after(node);
   grid.style.display = axis.style.display = 'none';
-  held = { node, bars, zoom: z, step };
+  held = { node, bars };
 }
 
 /** Lay the stand-in on this frame's view: its box, its tiles' size and offset, the two bars. */
@@ -304,7 +299,7 @@ function paintHeld(vp: Viewport) {
   const o = vp.toScreen(0, 0);
   const ox = o.x - box.x, oy = o.y - box.y;
   if (node.style.backgroundImage) {
-    const minor = held.step * vp.zoom, major = minor * MAJOR;
+    const minor = boardGridStep(board.settings.gridStep, vp) * vp.zoom, major = minor * MAJOR;
     const at = (size: number) => `${wrap(ox - size / 2, size).toFixed(1)}px ${wrap(oy - size / 2, size).toFixed(1)}px`;
     node.style.backgroundSize = `${major}px ${major}px, ${minor}px ${minor}px`;
     node.style.backgroundPosition = `${at(major)}, ${at(minor)}`;
@@ -323,23 +318,26 @@ function releaseGrid(vp: Viewport) {
   lastView = null;
 }
 
-/** An SVG tile as a CSS image. */
-const svgTile = (tile: number, body: string) =>
+/**
+ * A mark centred in a tile, as a CSS image. No viewBox and no size, so the
+ * image is as large as background-size makes it and its marks are not
+ * scaled: the body is drawn about 0,0 in CSS pixels, moved to the middle.
+ */
+const svgTile = (body: string) =>
   `url("data:image/svg+xml,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${tile}" height="${tile}" viewBox="0 0 ${tile} ${tile}">${body}</svg>`)}")`;
+    `<svg xmlns="http://www.w3.org/2000/svg"><svg x="50%" y="50%" overflow="visible">${body}</svg></svg>`)}")`;
 
-/** One dot centred in a tile, `tile` CSS px across - dot(), as an image, with the colour resolved. */
-const dotTile = (tile: number, color: string, dotPx: number, scale: number) =>
-  svgTile(tile, `<circle cx="${tile / 2}" cy="${tile / 2}" r="${dotPx * scale}" fill="${color}"/>`);
+/** One dot - lattice()'s, radius and all, with the colour resolved. */
+const dotTile = (color: string, dotPx: number, scale: number) =>
+  svgTile(`<circle r="${dotPx * scale + 0.35}" fill="${color}"/>`);
 
-/** One cross centred in a tile, `tile` CSS px across - the Harsh mark, as an image. */
-function crossTile(tile: number, color: string, dotPx: number, scale: number): string {
+/** One cross - the Harsh mark. */
+function crossTile(color: string, dotPx: number, scale: number): string {
   const arm = Math.min(dotPx * ARM_LONG * scale, ARM_LONG_MAX * scale);
   const thick = dotPx * ARM_THICK * 2 * scale;
-  const c = tile / 2;
   // One path, both bars wound the same way, so the crossing is filled once.
-  return svgTile(tile, `<path fill="${color}" d="M${c - arm} ${c - thick / 2}h${arm * 2}v${thick}h${-arm * 2}z` +
-    `M${c - thick / 2} ${c - arm}h${thick}v${arm * 2}h${-thick}z"/>`);
+  return svgTile(`<path fill="${color}" d="M${-arm} ${-thick / 2}h${arm * 2}v${thick}h${-arm * 2}z` +
+    `M${-thick / 2} ${-arm}h${thick}v${arm * 2}h${-thick}z"/>`);
 }
 
 // ---------------------------------------------------------------------------

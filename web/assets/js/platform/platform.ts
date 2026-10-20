@@ -187,6 +187,20 @@ export function setUpdateOffer(offer: UpdateOffer | null): void {
     : null;
 }
 
+/** Install the next update the phone's shell offers, with no press: armed by
+ *  the newer-board question's Check for updates. */
+let installNext = false;
+export function installNextOffer(): void { installNext = true; }
+
+/** Whether this offer is the one to install now. main.ts asks of each offer;
+ *  a download already running keeps it armed, any other answer disarms it. */
+export function takeOfferInstall(offer: UpdateOffer | null): boolean {
+  if (!installNext) return false;
+  if (offer?.state === 'downloading') return false;
+  installNext = false;
+  return offer?.state === 'available' || offer?.state === 'ready';
+}
+
 /** Sign-in port: Google Drive's, where the page cannot open a popup of its
  *  own. The desktop denies the popup and serves app://, which Google does not
  *  know, and Android serves https://app. */

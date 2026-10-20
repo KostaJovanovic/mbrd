@@ -15,6 +15,8 @@ let onState: ((state: WinState) => void) | null = null;
 let onSubject: ((subject: Subject) => void) | null = null;
 let onMenuClosed: (() => void) | null = null;
 let onMenu: ((open: MenuOpen) => void) | null = null;
+let onShown: (() => void) | null = null;
+let onBlank: (() => void) | null = null;
 let offer: UpdateOffer | null = null;
 let onUpdate: ((offer: UpdateOffer | null) => void) | null = null;
 
@@ -32,6 +34,8 @@ ipcRenderer.on('chrome:update', (_event, next: UpdateOffer | null) => {
 });
 ipcRenderer.on('chrome:menu-closed', () => onMenuClosed?.());
 ipcRenderer.on('panel:menu', (_event, open: MenuOpen) => onMenu?.(open));
+ipcRenderer.on('panel:shown', () => onShown?.());
+ipcRenderer.on('panel:blank', () => onBlank?.());
 
 const chrome: ChromeBridge = {
   platform: process.platform,
@@ -62,6 +66,9 @@ const chrome: ChromeBridge = {
 const panel: PanelBridge = {
   platform: process.platform,
   onMenu: fn => { onMenu = fn; },
+  onShown: fn => { onShown = fn; },
+  onBlank: fn => { onBlank = fn; },
+  blanked: () => ipcRenderer.send('panel:blanked'),
   size: (w, h, at) => ipcRenderer.send('panel:size', { w, h, at }),
   run: id => ipcRenderer.send('panel:run', id),
   close: () => ipcRenderer.send('panel:close'),

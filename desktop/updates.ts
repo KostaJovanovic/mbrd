@@ -5,7 +5,8 @@
 // installs. No electron-updater, no latest.yml. A dev copy never checks.
 // Every answer goes to the title bar's Update button, never a native dialog. A
 // check finds a new version, and a press on Update downloads it, then installs
-// it (research/old/done-2026-09-15.md, R3). The daily check is the page's
+// it (research/old/done-2026-09-15.md, R3), or updateNow() does all three at
+// once, for a board a newer mbrd saved. The daily check is the page's
 // switch to turn off (setAutoCheck); Help > Check for updates always runs.
 
 import { app, net, shell } from 'electron';
@@ -237,6 +238,21 @@ export function clickUpdate(): void {
 /** Help > Check for updates, and the panel row. Unlike the automatic check, it always answers. */
 export function checkForUpdates(): Promise<void> {
   return check(true);
+}
+
+/**
+ * Check, and when there is a release this copy can install, download it and
+ * restart into it, with no press on Update in between: the page asked for this
+ * on behalf of a board a newer mbrd saved, which it reopens after the restart.
+ * Every answer is said on the button as a check's is, so a copy that cannot
+ * replace itself (portable, macOS) still points at the release page.
+ */
+export async function updateNow(): Promise<void> {
+  if (ready) { install(); return; }
+  await check(true);
+  // A download already running installs when it is done.
+  if (busy || !pending || (kind !== 'installer' && kind !== 'appimage')) return;
+  await downloadAndInstall(pending);
 }
 
 /** '0.302.0' -> '0.302', the label the app shows. */

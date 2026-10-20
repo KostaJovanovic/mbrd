@@ -87,14 +87,17 @@ body {
 .tb-btn:active { background: var(--paper-3); color: var(--accent-deep); }
 .tb-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: -3px; }
 
-.tb-menubar { flex: none; display: flex; align-items: stretch; }
+/* On the board's name's baseline, which is the bar's (.tb-subject). Full
+   height still, so a lit title fills the bar. */
+.tb-menubar { flex: none; display: flex; align-items: stretch; align-self: baseline; height: 100%; }
 .tb-menu { display: flex; align-items: stretch; }
 .tb-menu.is-open .tb-menu-title { background: var(--paper-3); color: var(--accent-deep); }
 
-/* The board's name: a label, not a heading, so --ink-3 and --t-tiny. */
+/* The board's name: a label, not a heading, so --ink-3 and --t-tiny. On the
+   menu titles' baseline: centred, a smaller size sits on a line of its own. */
 .tb-subject {
   flex: 0 1 auto;
-  align-self: center;
+  align-self: baseline;
   min-width: 0;
   padding: 0 12px;
   overflow: hidden;
@@ -205,31 +208,29 @@ body {
 /* Its natural size, always, never stretched to the window: main sizes the
    window from this box, so a box sized from the window would report the window
    back. */
+/* The board's own menu (#ctx-menu in menu.css): its corner, padding, rows and
+   ink, so a title-bar menu is one of the app's menus in every look. Its shadow
+   is the one exception: --shadow-2 reaches past the margin the window has. */
 #panel {
   position: absolute;
   top: 0;
   left: var(--panel-side);
   box-sizing: border-box;
   width: max-content;
-  min-width: 200px;
-  padding: 4px 0;
+  min-width: 208px;
+  padding: 5px;
   background: var(--paper-card);
   border: var(--hairline) solid var(--rule-2);
-  box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--ink) 30%, transparent);
+  border-radius: var(--leaf);
+  box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--shade) 30%, transparent);
+  /* A fade and nothing else: the list keeps the size and place it reported. */
+  transition: opacity 0.2s ease-out;
 }
-/* It drops out from under the bar, eased a few pixels into place, so it reads
-   as coming from its title: the window's top edge cuts off what is still above
-   it. Never a scale - the list must keep the size it reported. */
-#panel.is-opening { animation: panel-drop var(--dur-fast) var(--ease); }
-@keyframes panel-drop {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  #panel.is-opening { animation-name: panel-fade; }
-  @keyframes panel-fade { from { opacity: 0; } }
+/* Drawn but clear: waiting for the window to be on screen, or about to hide. */
+#panel.is-waiting,
+#panel.is-blank {
+  opacity: 0;
+  transition: none;
 }
 .panel-item {
   appearance: none;
@@ -238,18 +239,22 @@ body {
   justify-content: space-between;
   gap: 24px;
   width: 100%;
-  padding: 6px 14px;
+  padding: 7px 10px;
   border: 0;
-  border-radius: 0;
+  /* Concentric with the panel's corner, as .ctx-item is. */
+  border-radius: max(0px, calc(var(--leaf) - 5px));
   background: none;
-  color: inherit;
+  color: var(--ink);
   font: inherit;
+  font-size: var(--t-small);
   text-align: left;
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .panel-item:hover,
 .panel-item:focus-visible { background: var(--paper-2); color: var(--accent-deep); outline: 0; }
-.panel-key { font-size: var(--t-tiny); color: var(--ink-3); }
+/* The size .ctx-item's kbd is. */
+.panel-key { font-size: 10px; color: var(--ink-3); }
 .panel-item:hover .panel-key,
 .panel-item:focus-visible .panel-key { color: inherit; }
-.panel-sep { height: var(--hairline); margin: 4px 0; background: var(--rule); }
+.panel-sep { height: 1px; margin: 5px 8px; background: var(--rule); }

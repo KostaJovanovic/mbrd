@@ -1,6 +1,7 @@
 // The desktop's updates answer on the title bar's Update button, never in a
-// native dialog, and download only when that button is pressed
-// (research/old/done-2026-09-15.md, R3). Read as text: the updater runs in
+// native dialog, and download only when somebody asks: that button, or Check
+// for updates on a board a newer mbrd saved (updateNow()), never the daily
+// check (research/old/done-2026-09-15.md, R3). Read as text: the updater runs in
 // Electron's main process, which no test here can start.
 
 import { test } from 'node:test';
@@ -26,11 +27,12 @@ test('the updater opens no native dialog', () => {
   assert.doesNotMatch(updates, /showMessageBox|\bdialog\.\w+\(/);
 });
 
-test('only a press on Update downloads', () => {
-  // The download starts in one place, and that place is reached from the press.
+test('only a press downloads', () => {
+  // The download starts in one place, and that place is reached from the two presses.
   const starts = [...updates.matchAll(/\bdownloadAndInstall\(/g)].length;
-  assert.equal(starts, 2, 'downloadAndInstall is defined once and called once');
+  assert.equal(starts, 3, 'downloadAndInstall is defined once and called from the two presses');
   assert.match(body('clickUpdate'), /downloadAndInstall\(/);
+  assert.match(body('updateNow'), /downloadAndInstall\(/);
   const fetches = [...updates.matchAll(/\bfetchUpdate\(/g)].length;
   assert.equal(fetches, 2, 'fetchUpdate is defined once and called once');
   assert.match(body('downloadAndInstall'), /fetchUpdate\(/);

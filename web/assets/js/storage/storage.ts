@@ -9,7 +9,7 @@ import { toast, busy } from '../notify.ts';
 // Platform abstraction — browser vs desktop file handling.
 import { platform, isDesktop, fileNameOf } from '../platform/platform.ts';
 import type { BoardVersion, DocumentRef, PickSpec } from '../platform/platform.ts';
-import { idbGet, idbSet, idbKeys, idbGetMany } from './idb.ts';
+import { idbGet, idbSet, idbDel, idbKeys, idbGetMany } from './idb.ts';
 import type { StoreName } from './idb.ts';
 import {
   libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard, hasLibraryBoard,
@@ -56,11 +56,47 @@ export function setPrompt(fn: Prompt | null | undefined) {
   prompt = typeof fn === 'function' ? fn : async () => 'cancel';
 }
 
-/** Check for updates, for the newer-board question. Injected (commands sit
- *  above storage). Unwired, the answer does nothing but leave the board unopened. */
-let checkUpdates: () => void = () => {};
-export function setUpdateCheck(fn: (() => void) | null | undefined) {
-  checkUpdates = typeof fn === 'function' ? fn : () => {};
+/** Update now - check, download, install, restart - for the newer-board
+ *  question. Injected (commands sit above storage). Unwired, the answer does
+ *  nothing but leave the board unopened. */
+let updateNow: () => void = () => {};
+export function setUpdateNow(fn: (() => void) | null | undefined) {
+  updateNow = typeof fn === 'function' ? fn : () => {};
+}
+
+/** The board the newer-board question was asked about, kept across the update's restart. */
+const REOPEN_KEY = 'reopen-after-update';
+
+/** Kept by its path where it has one, so a file on disk is read fresh after
+ *  the restart; by its bytes otherwise (a drop, a picked file on the web). */
+async function keepForReopen(file: Blob, name: string, ref: DocumentRef | null) {
+  const where = ref?.path ? { path: ref.path } : { blob: file };
+  await idbSet('kv', REOPEN_KEY, { name, from: VERSION, ...where })
+    .catch(err => console.warn('[mbrd] could not keep the board to reopen after the update:', err));
+}
+
+/**
+ * Boot: open the board an update was asked for, once the update has happened.
+ * Through openFile(), so it is asked about again if this version is still
+ * older than the board. A start on the version that asked is no update - it
+ * failed, or was declined - and the board is let go rather than asked again.
+ */
+export async function reopenAfterUpdate(): Promise<boolean> {
+  const kept = await idbGet('kv', REOPEN_KEY).catch(() => null);
+  if (!isRecord(kept)) return false;
+  await idbDel('kv', REOPEN_KEY).catch(() => {});
+  if (kept.from === VERSION) return false;
+  const name = typeof kept.name === 'string' && kept.name ? kept.name : fileNameFor('board');
+  if (typeof kept.path === 'string' && kept.path) {
+    const ref: DocumentRef = { name: fileNameOf(kept.path), path: kept.path };
+    if (!(await platform.files.exists(ref).catch(() => false))) {
+      toast(`${name} has moved or been deleted, so it could not be reopened`, 'error');
+      return false;
+    }
+    return openFile(await platform.files.read(ref), ref);
+  }
+  if (kept.blob instanceof Blob) return openFile(new File([kept.blob], name, { type: MIME }));
+  return false;
 }
 
 /**
@@ -69,8 +105,9 @@ export function setUpdateCheck(fn: (() => void) | null | undefined) {
  * file and the newer one stays as it was, or 'stop' to open nothing. Asked
  * before the board on screen is filed, from the manifest alone. Opening it
  * over its own file would write back only what this build understands.
+ * Check for updates keeps the board, and the update reopens it.
  */
-async function askIfNewer(file: Blob, name: string): Promise<'open' | 'copy' | 'stop'> {
+async function askIfNewer(file: Blob, name: string, ref: DocumentRef | null): Promise<'open' | 'copy' | 'stop'> {
   const theirs = await newerWriterOf(file);
   if (!theirs) return 'open';
   const answer = await prompt({
@@ -84,7 +121,10 @@ async function askIfNewer(file: Blob, name: string): Promise<'open' | 'copy' | '
     danger: false,
   });
   if (answer === 'keep') return 'copy';
-  if (answer === 'go') checkUpdates();
+  if (answer === 'go') {
+    await keepForReopen(file, name, ref);
+    updateNow();
+  }
   return 'stop';
 }
 
@@ -478,7 +518,7 @@ export async function openBoard() {
  *  mints a fresh one so the new board doesn't overwrite the outgoing row. */
 export async function openFile(file: File, ref: DocumentRef | null = null) {
   try {
-    const fate = await askIfNewer(file, file.name);
+    const fate = await askIfNewer(file, file.name, ref);
     if (fate === 'stop') return false;
     let copy = fate === 'copy';
     // If the outgoing board couldn't be shelved, refuse — opening would destroy it.
@@ -1301,7 +1341,7 @@ export async function switchBoard(id: string) {
       file = new File([blob], 'board.mbrd', { type: MIME });
     }
     const name = row?.title || ref?.name || 'This board';
-    const fate = await askIfNewer(file, name);
+    const fate = await askIfNewer(file, name, ref);
     if (fate === 'stop') return false;
     let copy = fate === 'copy';
     shelving = true;
@@ -1883,7 +1923,7 @@ async function reopenFile(path: string): Promise<boolean> {
     // Another copy of mbrd, newer, may have saved it since this one last ran.
     // Either way off the row: what is opened as a copy is a board of its own,
     // and what is not opened must not leave the row for the next board to take.
-    const fate = await askIfNewer(file, ref.name);
+    const fate = await askIfNewer(file, ref.name, ref);
     if (fate !== 'open') await setCurrentBoardId(uid('brd'));
     if (fate === 'stop') return false;
     let copy = fate === 'copy';

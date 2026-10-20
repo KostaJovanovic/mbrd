@@ -12,8 +12,8 @@ import {
   setBoardMode as selectBoardMode,
 } from '../state.ts';
 import { DEFAULT_SCALE } from '../measure.ts';
-import { platform, isDesktop } from '../platform/platform.ts';
-import { checkWebUpdate } from '../ui/web-update.ts';
+import { platform, isDesktop, installNextOffer } from '../platform/platform.ts';
+import { checkWebUpdate, updateWebNow } from '../ui/web-update.ts';
 import { clearQualityOverrides } from '../quality.ts';
 import { drawingEnabled, setDrawingEnabled } from '../canvas/pen.ts';
 import { BASE_ZOOM, onNarrowScreen, travelMs } from '../canvas/viewport.ts';
@@ -64,6 +64,23 @@ function toCanvas() {
  */
 export function canvasOnly(message: string) {
   toast(message, '', { label: 'Switch to canvas', run: toCanvas });
+}
+
+/**
+ * Check for updates. The desktop answers on its title bar. The phone answers
+ * on the page, a moment later, so the press itself is said at once there, and
+ * a check that fails is said too. On the web the service worker is asked.
+ */
+async function checkUpdates() {
+  if (!isDesktop()) return checkWebUpdate();
+  const updates = platform.updates;
+  if (!updates.answersOnPage) return updates.check();
+  toast('Checking for a newer version of mbrd.');
+  try {
+    await updates.check();
+  } catch (err) {
+    toast(`mbrd could not check for updates: ${err instanceof Error ? err.message : String(err)}`, 'error');
+  }
 }
 
 export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps) {
@@ -240,19 +257,16 @@ export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps)
     // The latest release on GitHub, in a new tab, so the board stays open. No
     // leaving question (ui/leaving.ts): this button says where it goes.
     getApp: () => { window.open(RELEASES, '_blank', 'noopener,noreferrer'); },
-    // The desktop answers on its title bar. The phone answers on the page, a
-    // moment later, so the press itself is said at once there, and a check
-    // that fails is said too. On the web the service worker is asked.
-    checkUpdates: async () => {
-      if (!isDesktop()) return checkWebUpdate();
-      const updates = platform.updates;
-      if (!updates.answersOnPage) return updates.check();
-      toast('Checking for a newer version of mbrd.');
-      try {
-        await updates.check();
-      } catch (err) {
-        toast(`mbrd could not check for updates: ${err instanceof Error ? err.message : String(err)}`, 'error');
-      }
+    checkUpdates,
+    // Check, and take what is found with no press between: download, install,
+    // restart. For a board a newer mbrd saved, which reopens after the restart
+    // (reopenAfterUpdate() in storage.ts). The desktop does all of it itself;
+    // the phone installs the offer its check brings (takeOfferInstall()).
+    updateNow: async () => {
+      if (!isDesktop()) return updateWebNow();
+      if (!platform.updates.answersOnPage) return platform.updates.install();
+      installNextOffer();
+      return checkUpdates();
     },
   };
 }

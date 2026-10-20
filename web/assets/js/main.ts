@@ -8,7 +8,7 @@ import { toast } from './notify.ts';
 import { initErrors, setBoardProbe, reportCaught } from './errors.ts';
 import { setRiskPrompt } from './consent.ts';
 // The Electron adapter — window.mbrdDesktop is read only in this file.
-import { platform, isDesktop, refForHandle, setPlatform, setUpdateOffer, autoUpdatesOn } from './platform/platform.ts';
+import { platform, isDesktop, refForHandle, setPlatform, setUpdateOffer, takeOfferInstall, autoUpdatesOn } from './platform/platform.ts';
 import { electronPlatform, electronStore } from './platform/electron.ts';
 import type { Bridge } from './platform/electron.ts';
 import type { ShareProvider } from './storage/cloud/provider.ts';
@@ -52,7 +52,7 @@ import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
   suspendCache, resetSessionLatches, failHandover, boardSafety, openSharedBoard,
   boardSyncState, pushBoardToCloud, adoptFolder, saveDocument, compactDocument,
-  refreshBoardThumb, boardFolder, setShowItems, setUpdateCheck,
+  refreshBoardThumb, boardFolder, setShowItems, setUpdateNow, reopenAfterUpdate,
 } from './storage/storage.ts';
 import { looksLikeMbrd } from './storage/mbrd.ts';
 import { boardThumb } from './ui/snapshot.ts';
@@ -322,12 +322,15 @@ initSidebar(cmds, vp);
 // - and must be said again, or the press looks like it did nothing.
 let saidOffer = '';
 platform.updates.onOffer(offer => {
+  // Asked for by a board from a newer mbrd: installed now, rather than offered.
+  const installNow = takeOfferInstall(offer);
   if (offer?.state === 'said') {
     if (offer.note) toast(offer.note);
     return;
   }
   setUpdateOffer(offer);
   paintPanel();
+  if (installNow) { void cmds.installUpdate(); return; }
   const news = offer ? `${offer.state} ${offer.version}` : '';
   if (offer?.state === 'downloading' && news === saidOffer) return;
   saidOffer = news;
@@ -439,8 +442,9 @@ setShowItems(ids => {
   const items = board.items.filter(i => ids.includes(i.id));
   if (items.length) vp.fit(items, 120, travelMs());
 });
-// A board from a newer mbrd offers Check for updates.
-setUpdateCheck(() => { void cmds.checkUpdates(); });
+// A board from a newer mbrd offers Check for updates, which updates at once
+// and reopens the board after the restart (reopenAfterUpdate() at start).
+setUpdateNow(() => { void cmds.updateNow(); });
 // Size ceiling prompt (consent.ts). Three answers: yes / yes-to-all / no.
 // Unwired default is allow (deliberate — see consent.ts).
 setRiskPrompt(async opts => {
@@ -716,6 +720,9 @@ const started = (async function start() {
   // Open a ?s= share link. Not awaited — the fetch is a network hop and must
   // not block first paint. A failed fetch leaves the local board intact.
   if (!notTheirs) openIncomingShare();
+  // The board from a newer mbrd that an update was asked for, now this is the
+  // update. Not awaited, as the share link is not: it reads a file and shelves.
+  if (!notTheirs) void reopenAfterUpdate().catch(e => reportCaught(e, 'reopening the board after the update'));
   // After session — needs a real board. Writer is suspended on not-found/patch/bench.
   if (!notTheirs) initCloudSync();
   if (restored) toast('Restored your last board');
