@@ -2,9 +2,10 @@
 // worker the moment it holds the whole shell; this reloads the page at the
 // first moment nobody is in the middle of anything - nothing open, typed into
 // or playing, and the board left alone a while, or the tab put away - storing
-// the board first, as Restart does. A board that cannot be stored is never
-// reloaded under: the toast's Reload button is the way then. An open tab also
-// asks for a new version every quarter hour, and on coming back into view,
+// the board first, as Restart does. It says nothing unless asked: a version
+// found by itself just loads. A board that cannot be stored is never reloaded
+// under: then a toast says so, and its Reload button is the way. An open tab
+// also asks for a new version every quarter hour, and on coming back into view,
 // rather than only when it loads. checkWebUpdate() asks at once, and
 // updateWebNow() reloads into what it finds at once, for a board a newer mbrd
 // saved. The desktop and phone apps update otherwise.
@@ -29,6 +30,8 @@ let deps: WebUpdateDeps | null = null;
 let lastUse = 0;
 let waiting = 0;
 let going = false;
+/** Check for updates was pressed, so the version it finds is announced. */
+let asked = false;
 
 export function initWebUpdate(d: WebUpdateDeps) {
   if (!('serviceWorker' in navigator)) return;
@@ -57,7 +60,7 @@ function register() {
   }).catch(err => console.warn('[mbrd] sw:', err));
 }
 
-const sayReady = () => toast('New version ready. It loads when you pause', '',
+const sayReady = (text = 'New version ready. It loads when you pause') => toast(text, '',
   { label: 'Reload now', run: () => { void deps!.restart({ quiet: false }); } });
 
 /**
@@ -73,6 +76,7 @@ export async function checkWebUpdate(): Promise<void> {
     return;
   }
   toast('Checking for a newer version of mbrd.');
+  asked = true;
   try {
     await reg.update();
   } catch (err) {
@@ -98,7 +102,7 @@ export async function updateWebNow(): Promise<void> {
   await checkWebUpdate();
 }
 
-/** A worker that may become a new version. Silent on the first install, which replaces nothing. */
+/** A worker that may become a new version. Silent unless asked for, and always on the first install, which replaces nothing. */
 function watch(fresh: ServiceWorker | null) {
   if (!fresh) return;
   const ready = () => {
@@ -106,7 +110,7 @@ function watch(fresh: ServiceWorker | null) {
     if (fresh.state !== 'installed' && fresh.state !== 'activated') return;
     waiting = setInterval(() => { void apply(); }, POLL_MS);
     if (reloadWhenReady) { void deps!.restart({ quiet: false }); return; }
-    sayReady();
+    if (asked) sayReady();
   };
   // Both: a worker already past `installing` fires no more statechanges.
   ready();
@@ -120,8 +124,10 @@ async function apply() {
   going = true;
   if (await deps.restart({ quiet: true })) return;
   // Not stored, so not reloaded - and not tried again every five seconds.
+  // The one time a version found by itself is said: it is not coming on its own.
   clearInterval(waiting);
   going = false;
+  sayReady('New version ready. It waits for this board to be stored');
 }
 
 /** Nothing open, typed into, playing or running that a reload would take away. */
