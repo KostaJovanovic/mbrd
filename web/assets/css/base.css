@@ -107,9 +107,10 @@ body {
 }
 
 /* Paper grain. Multiply because soft-light collapses at 98% lightness.
-   Real element because grain.ts places it: the tile and its phase when the
-   view settles, and a transform while the board moves, on #grain (which it
-   also sets past the window's edges, so the transform has room). */
+   Real element because grain.ts places it. #grain is a canvas it draws this
+   tile into, past the window's edges so a transform has room while the board
+   moves; the background here is what shows until the tile decodes, and where
+   grain.ts reads the tile's address. */
 #grain,
 #mobile-board-frame::after,
 .feed-sheet::before {

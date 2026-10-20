@@ -268,8 +268,8 @@
 <div id="wallpaper" aria-hidden="true"></div>
 
 <!-- Paper grain texture. Outside #viewport (paint containment would break the
-     blend). canvas/grain.js moves it with the board. -->
-<div id="grain" aria-hidden="true"></div>
+     blend). A canvas canvas/grain.ts draws the tile into and moves with the board. -->
+<canvas id="grain" aria-hidden="true"></canvas>
 
 <!-- The canvas. #viewport is fixed to the window and paints the grid; #world is
      the single transformed layer every item lives in (see canvas/viewport.js). -->

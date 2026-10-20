@@ -21,6 +21,7 @@ import type { RouteOpts } from '../web-route.ts';
 // restated below - a mismatched major-mark cadence would be two different grids.
 import { boardGridStep, MAJOR, MAJOR_WEIGHT, harshGrid } from '../canvas/grid.ts';
 import { cutout } from '../canvas/matte.ts';
+import { grainUrl } from '../canvas/grain.ts';
 import { surface } from '../canvas/surface.ts';
 import { fitMode } from '../canvas/renderers.ts';
 import { bareHost } from '../canvas/links.ts';
@@ -1630,9 +1631,11 @@ function arrowHead(
  * the layer sits - on the ground, under the lattice and every card, since
  * #grain comes before #viewport in index.html and neither has a z-index.
  *
- * The image's address is read off the live layer's computed style, so the
- * stylesheet stays the one place it is written and the bundle's location
- * never enters into it.
+ * The image's address is the one canvas/grain.ts read off the live layer's
+ * computed style, so the stylesheet stays the one place it is written and the
+ * bundle's location never enters into it. Asked of grain.ts rather than read
+ * here again, because once its canvas draws the tile the layer's own
+ * background is off.
  */
 const GRAIN_TILE = 512;   // world units - canvas/grain.ts's TILE, base.css's 512px
 const GRAIN_ALPHA = 0.8;  // base.css: opacity calc(0.8 * var(--grain) ...)
@@ -1642,9 +1645,7 @@ async function paintGrain(
 ) {
   const strength = look.grain * GRAIN_ALPHA;
   if (!(strength > 0.002)) return;
-  const layer = document.getElementById('grain');
-  const url = layer ? getComputedStyle(layer).backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1] : null;
-  const img = await loadImage(url ?? null);
+  const img = await loadImage(grainUrl());
   if (!img || !img.naturalWidth) return;
   const pattern = ctx.createPattern(img, 'repeat');
   if (!pattern) return;
