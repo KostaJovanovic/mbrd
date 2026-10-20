@@ -2,7 +2,7 @@
 // in timeline/, and content-addressed assets/, notes/, waveforms/, and its
 // picture for a list of boards. One self-contained file. Items reference bytes as `asset: { hash, embedded: true }`.
 
-import { appendZip, layoutFromTail, readZip, readZipBlob, writeZip, writeZipLayout } from './zip.ts';
+import { appendZip, layoutFromTail, readZip, readZipBlob, readZipEntry, writeZip, writeZipLayout } from './zip.ts';
 import type { ZipEntry, ZipLayout } from './zip.ts';
 import { getAsset, putAsset } from './assets.ts';
 import type { Asset } from './assets.ts';
@@ -748,6 +748,47 @@ function readNotes(board: FileBoard, files: Map<string, Uint8Array>, prefix: str
     if (isRecord(rich) && flattenNoteRich(rich) !== text) {
       meta.rich = { ...rich, blocks: parseNoteText(text) };
     }
+  }
+}
+
+/**
+ * A version as two numbers, from a label ("0.740", "1.5") or a manifest's
+ * `app` ("mbrd 0.740", "mbrd v0.21" from before v0.51). Null for anything
+ * else. Two numbers because versionLabel() pads the second only before the
+ * first crown: 0.09 is commit 9, and 1.10 comes after 1.9.
+ */
+export function versionParts(label: unknown): [number, number] | null {
+  const m = typeof label === 'string' ? /^(?:mbrd\s+)?v?(\d{1,6})\.(\d{1,9})$/.exec(label.trim()) : null;
+  return m ? [Number(m[1]), Number(m[2])] : null;
+}
+
+/** The version a manifest's `app` names, when it is newer than this build's
+ *  `ours`; null for the same, older, or unreadable. */
+export function newerWriter(app: unknown, ours: string = VERSION): string | null {
+  const them = versionParts(app);
+  const us = versionParts(ours);
+  if (!them || !us) return null;
+  const newer = them[0] !== us[0] ? them[0] > us[0] : them[1] > us[1];
+  return newer ? String(app).trim().replace(/^mbrd\s+v?/, '') : null;
+}
+
+/** A manifest is a few hundred bytes. Past this one is not, and is not peeked at. */
+const MANIFEST_PEEK = 64 * 1024;
+
+/**
+ * The version that saved this .mbrd, when it is newer than this build, read
+ * from its manifest alone, before anything is opened or filed. Null for a
+ * board this build's age or older, and for a file the peek cannot read, which
+ * unpackBoard() then judges whole.
+ */
+export async function newerWriterOf(blob: Blob): Promise<string | null> {
+  try {
+    const bytes = await readZipEntry(blob, 'manifest.json', MANIFEST_PEEK);
+    if (!bytes) return null;
+    const parsed: unknown = JSON.parse(dec.decode(bytes));
+    return isRecord(parsed) ? newerWriter(parsed.app) : null;
+  } catch {
+    return null;
   }
 }
 

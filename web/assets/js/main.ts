@@ -52,7 +52,7 @@ import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
   suspendCache, resetSessionLatches, failHandover, boardSafety, openSharedBoard,
   boardSyncState, pushBoardToCloud, adoptFolder, saveDocument, compactDocument,
-  refreshBoardThumb, boardFolder, setShowItems,
+  refreshBoardThumb, boardFolder, setShowItems, setUpdateCheck,
 } from './storage/storage.ts';
 import { looksLikeMbrd } from './storage/mbrd.ts';
 import { boardThumb } from './ui/snapshot.ts';
@@ -439,6 +439,8 @@ setShowItems(ids => {
   const items = board.items.filter(i => ids.includes(i.id));
   if (items.length) vp.fit(items, 120, travelMs());
 });
+// A board from a newer mbrd offers Check for updates.
+setUpdateCheck(() => { void cmds.checkUpdates(); });
 // Size ceiling prompt (consent.ts). Three answers: yes / yes-to-all / no.
 // Unwired default is allow (deliberate — see consent.ts).
 setRiskPrompt(async opts => {

@@ -120,8 +120,10 @@ async function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | 
   setMarked(go, o.go);
   setMarked(cancel, o.cancel);
   setMarked(keep, o.keep);
-  // Keep button hidden when unused.
+  // Keep button hidden when unused, and Cancel when a question passes '' for
+  // it: Escape and the backdrop still answer 'cancel'.
   keep.hidden = !o.keep;
+  cancel.hidden = !o.cancel;
 
   field.hidden = !o.field;
   // Set type before value — a colour input sanitises '' to #000000 otherwise.
@@ -158,7 +160,8 @@ async function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | 
     el.tabIndex = -1;
     el.focus();
   } else {
-    cancel.focus();
+    // With no Cancel, the answer that is not `go`: the safer of the two.
+    (cancel.hidden ? (keep.hidden ? go : keep) : cancel).focus();
   }
   await closed;
   // Field question → typed string or null; button question → Answer.

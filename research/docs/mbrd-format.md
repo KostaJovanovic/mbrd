@@ -159,7 +159,7 @@ of what a `.mbrd` is.
 | `format`   | Always `"mbrd"`. A file whose manifest says otherwise is refused. |
 | `version`  | Format version, currently `1`. A **higher** number loads anyway with a console warning: a board from a newer mbrd is more likely to be readable than not, and refusing it outright would lose work that a slightly lossy open would have kept. |
 | `requires` | Features a reader **must** understand to open this file at all. `["boards"]` on a file with a board inside it, empty on every other, and see below. |
-| `app`      | Which build wrote it, as `mbrd <version>`. Mostly informational; the one thing that reads it back is the title repair below, which needs to know whether the writer predates v0.51. |
+| `app`      | Which build wrote it, as `mbrd <version>`, rewritten by every save, an appended one included. Two things read it back: the title repair below, which needs to know whether the writer predates v0.51, and the open, which reads this field alone before anything is filed and asks about a board a newer build saved. Opened anyway, such a board has no file behind it, so the next save makes a new one and the newer file is never written by an older build. Versions compare as two numbers (`0.10` after `0.09`, `1.10` after `1.9`, `1.0` after `0.999`). |
 | `created`  | Preserved across re-saves, so a board keeps its birthday. |
 | `modified` | Set on every pack. |
 | `title`    | The board's name. Also the filename it was exported under, in practice. |

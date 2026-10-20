@@ -24,7 +24,8 @@ import {
 } from '../state.ts';
 import { normalizeBoard } from '../board-schema.ts';
 import { planMerge } from '../merge.ts';
-import { packBoard, packBoardFile, unpackBoard, thumbnailFromTail, MIME } from './mbrd.ts';
+import { packBoard, packBoardFile, unpackBoard, thumbnailFromTail, newerWriter, newerWriterOf, MIME } from './mbrd.ts';
+import { VERSION } from '../version.js';
 import type { PackedBoard } from './mbrd.ts';
 import { layoutFromTail, deadBytes } from './zip.ts';
 import type { ZipLayout } from './zip.ts';
@@ -54,6 +55,43 @@ let prompt: Prompt = async () => 'cancel';
 export function setPrompt(fn: Prompt | null | undefined) {
   prompt = typeof fn === 'function' ? fn : async () => 'cancel';
 }
+
+/** Check for updates, for the newer-board question. Injected (commands sit
+ *  above storage). Unwired, the answer does nothing but leave the board unopened. */
+let checkUpdates: () => void = () => {};
+export function setUpdateCheck(fn: (() => void) | null | undefined) {
+  checkUpdates = typeof fn === 'function' ? fn : () => {};
+}
+
+/**
+ * A board a newer mbrd saved, about to open: 'open' when it is not one,
+ * 'copy' to open it with no file behind it, so that the next save makes a new
+ * file and the newer one stays as it was, or 'stop' to open nothing. Asked
+ * before the board on screen is filed, from the manifest alone. Opening it
+ * over its own file would write back only what this build understands.
+ */
+async function askIfNewer(file: Blob, name: string): Promise<'open' | 'copy' | 'stop'> {
+  const theirs = await newerWriterOf(file);
+  if (!theirs) return 'open';
+  const answer = await prompt({
+    title: 'Made in a newer mbrd',
+    body: `${name} was saved by mbrd ${theirs}, and this is mbrd ${VERSION}. It may hold things `
+      + 'this version cannot show. Opened anyway, the file is left as it is and your changes are '
+      + 'saved to a new one.',
+    go: 'Check for updates',
+    keep: 'Open anyway',
+    cancel: '',
+    danger: false,
+  });
+  if (answer === 'keep') return 'copy';
+  if (answer === 'go') checkUpdates();
+  return 'stop';
+}
+
+/** Said when a newer board opened as a copy without the question, because the
+ *  manifest could only be read whole: the same outcome, said instead of asked. */
+const copyNote = (name: string, app: unknown) =>
+  `${name} was saved by mbrd ${newerWriter(app)}, so it is left as it is and your changes go to a new file`;
 
 /** Board thumbnail for the shelf. Injected (ui/ sits above storage).
  *  Unwired → null, which is a shelf row without a picture. */
@@ -440,6 +478,9 @@ export async function openBoard() {
  *  mints a fresh one so the new board doesn't overwrite the outgoing row. */
 export async function openFile(file: File, ref: DocumentRef | null = null) {
   try {
+    const fate = await askIfNewer(file, file.name);
+    if (fate === 'stop') return false;
+    let copy = fate === 'copy';
     // If the outgoing board couldn't be shelved, refuse — opening would destroy it.
     if (!(await shelveCurrent())) return false;
     // Unpack and load inside the same transaction — committing assets before
@@ -457,14 +498,17 @@ export async function openFile(file: File, ref: DocumentRef | null = null) {
         // informational; this is the one thing that reads it.
         loadBoard({ ...data, title: titleForOpenedBoard(data.title, file.name, manifest.app) });
         carryShot(thumb);
-        doc = ref;
+        const unasked = !copy && !!newerWriter(manifest.app);
+        if (unasked) copy = true;
+        // A copy has no file, so the next save makes one rather than writing this.
+        doc = copy ? null : ref;
         reportDocument();
         // The manifest is a file's, so its stamp is only a stamp if it is text.
         // Anything else starts the board's created date afresh at the next save,
         // which is what an absent one has always done.
         created = (typeof manifest.created === 'string' && manifest.created) || null;
         opened = true;
-        toast('Opened ' + file.name);
+        toast(unasked ? copyNote(file.name, manifest.app) : 'Opened ' + file.name);
         return true;
       });
     } finally {
@@ -472,7 +516,8 @@ export async function openFile(file: File, ref: DocumentRef | null = null) {
       // Only a successfully opened board gets an id — a failed open keeps the
       // old board's shelf row. A file already on the shelf is that row's
       // board, so opening it twice lists it once.
-      if (opened) await setCurrentBoardId(await rowForFile(ref) ?? uid('brd'));
+      // A copy is a board of its own, or its row would point at the newer file.
+      if (opened) await setCurrentBoardId((copy ? undefined : await rowForFile(ref)) ?? uid('brd'));
       // Latches belong to the outgoing board (same as switchBoard/New).
       resetSessionLatches();
       // The board and its row, now, on a desktop with a boards folder: the row
@@ -1225,12 +1270,14 @@ export async function switchBoard(id: string) {
   // gives it its row.
   if (id.startsWith(FILE_ID)) return openBoardFile(id.slice(FILE_ID.length));
   const job = busy('Switching boards');
+  // Whether shelving began: the writer comes down there, and back up in finally.
+  let shelving = false;
   try {
-    if (!(await shelveCurrent(id))) return false;
     // Which kind of row this is decides where the bytes come from, and it is the
     // only place in this function that the desktop differs. A path row has no
     // blob on the shelf by construction - see stashCurrent() - so the file *is*
-    // the board, and it is read now rather than unpacked from a copy.
+    // the board, and it is read now rather than unpacked from a copy. Read
+    // before the board on screen is filed, so a question about it comes first.
     const row = (await libraryIndex()).find(e => e.id === id);
     const ref: DocumentRef | null =
       row?.path ? { name: fileNameOf(row.path), path: row.path } : null;
@@ -1253,9 +1300,16 @@ export async function switchBoard(id: string) {
       if (!blob) { toast('That board is not on the shelf any more', 'error'); return false; }
       file = new File([blob], 'board.mbrd', { type: MIME });
     }
+    const name = row?.title || ref?.name || 'This board';
+    const fate = await askIfNewer(file, name);
+    if (fate === 'stop') return false;
+    let copy = fate === 'copy';
+    shelving = true;
+    if (!(await shelveCurrent(id))) return false;
     await withFreshAssets(async () => {
       const { manifest, board: data, thumb } = await unpackBoard(file, { owned: isDesktop() });
       loadBoard(data);
+      if (!copy && newerWriter(manifest.app)) { copy = true; toast(copyNote(name, manifest.app)); }
       // A board filed before boards carried their picture has it on its row,
       // and its file is given it at the next write.
       carryShot(thumb ?? row?.thumb ?? null);
@@ -1264,16 +1318,20 @@ export async function switchBoard(id: string) {
       // this manifest came out of a packed blob rather than out of this run.
       created = (typeof manifest.created === 'string' && manifest.created) || null;
     });
-    doc = ref;
+    // A copy is a board of its own: no file, so the next save makes one, and
+    // its own row, so the row it came from keeps pointing at the newer board.
+    doc = copy ? null : ref;
     reportDocument();
-    await setCurrentBoardId(id);
+    await setCurrentBoardId(copy ? uid('brd') : id);
+    // Its new file at once, as openFile() gives a board that came with none.
+    if (copy && folder) await saveDocument();
     return true;
   } catch (err) {
     console.error(err);
     toast('Could not open that board: ' + detailOf(err), 'error');
     return false;
   } finally {
-    resetSessionLatches();
+    if (shelving) resetSessionLatches();
     job.end();
   }
 }
@@ -1822,13 +1880,26 @@ async function reopenFile(path: string): Promise<boolean> {
       return false;
     }
     const file = await platform.files.read(ref);
+    // Another copy of mbrd, newer, may have saved it since this one last ran.
+    // Either way off the row: what is opened as a copy is a board of its own,
+    // and what is not opened must not leave the row for the next board to take.
+    const fate = await askIfNewer(file, ref.name);
+    if (fate !== 'open') await setCurrentBoardId(uid('brd'));
+    if (fate === 'stop') return false;
+    let copy = fate === 'copy';
     await withFreshAssets(async () => {
       const { manifest, board: data, thumb } = await unpackBoard(file, { owned: true });
       loadBoard(data);
+      if (!copy && newerWriter(manifest.app)) {
+        copy = true;
+        await setCurrentBoardId(uid('brd'));
+        toast(copyNote(ref.name, manifest.app));
+      }
       carryShot(thumb);
       created = (typeof manifest.created === 'string' && manifest.created) || null;
     });
-    doc = ref;
+    // No file: adoptFolder() makes the copy its new one at its first write.
+    doc = copy ? null : ref;
     reportDocument();
     return true;
   } catch (err) {

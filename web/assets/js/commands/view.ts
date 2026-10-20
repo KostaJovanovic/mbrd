@@ -12,7 +12,8 @@ import {
   setBoardMode as selectBoardMode,
 } from '../state.ts';
 import { DEFAULT_SCALE } from '../measure.ts';
-import { platform } from '../platform/platform.ts';
+import { platform, isDesktop } from '../platform/platform.ts';
+import { checkWebUpdate } from '../ui/web-update.ts';
 import { clearQualityOverrides } from '../quality.ts';
 import { drawingEnabled, setDrawingEnabled } from '../canvas/pen.ts';
 import { BASE_ZOOM, onNarrowScreen, travelMs } from '../canvas/viewport.ts';
@@ -241,8 +242,9 @@ export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps)
     getApp: () => { window.open(RELEASES, '_blank', 'noopener,noreferrer'); },
     // The desktop answers on its title bar. The phone answers on the page, a
     // moment later, so the press itself is said at once there, and a check
-    // that fails is said too. On the web this does nothing.
+    // that fails is said too. On the web the service worker is asked.
     checkUpdates: async () => {
+      if (!isDesktop()) return checkWebUpdate();
       const updates = platform.updates;
       if (!updates.answersOnPage) return updates.check();
       toast('Checking for a newer version of mbrd.');

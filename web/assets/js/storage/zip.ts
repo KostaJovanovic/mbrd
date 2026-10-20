@@ -784,6 +784,58 @@ export async function readZipBlob(
   return { files, blobs };
 }
 
+/** The most directory readZipEntry() reads: the entry ceiling at a generous 800 bytes a record. */
+const ENTRY_CD_MAX = LIMITS.entries * 800;
+
+/**
+ * One small entry out of a ZIP Blob, reading only its end, its directory and
+ * that entry, for a question that must be answered before the whole archive is
+ * opened. Null when the entry is absent or past `cap` bytes either way, or when
+ * the end record is past a comment's reach (readZipBlob()'s one blind spot).
+ * Throws a plain Error for anything malformed, with the checks the readers make.
+ */
+export async function readZipEntry(blob: Blob, name: string, cap: number): Promise<Bytes | null> {
+  const size = blob.size;
+  if (size < 22) throw new Error('Not a ZIP archive (too short to hold a directory)');
+  const read = async (from: number, to: number): Promise<Bytes> =>
+    new Uint8Array(await blob.slice(from, to).arrayBuffer());
+
+  const tailFrom = Math.max(0, size - 0xffff - 22);
+  const tail = await read(tailFrom, size);
+  const tv = new DataView(tail.buffer);
+  const eocd = lastEOCD(tv, tail.length - 22, 0);
+  if (eocd < 0) return null;
+  const count = tv.getUint16(eocd + 10, true);
+  const cdSize = tv.getUint32(eocd + 12, true);
+  const cdStart = tv.getUint32(eocd + 16, true);
+  within(cdStart + cdSize, size, 'the central directory');
+  if (cdStart + cdSize > tailFrom + eocd) throw new Error('Corrupt archive: the central directory overruns its own record');
+  if (count > LIMITS.entries || cdSize > ENTRY_CD_MAX) return null;
+
+  const cd = await read(cdStart, cdStart + cdSize);
+  const view = new DataView(cd.buffer);
+  let found: ReturnType<typeof cdRecord> | null = null;
+  let p = 0;
+  for (let n = 0; n < count; n++) {
+    const rec = cdRecord(view, cd, p, cd.length);
+    p = rec.next;
+    if (rec.name !== name) continue;
+    if (found) throw new Error(`Corrupt archive: "${name}" appears twice`);
+    found = rec;
+  }
+  if (!found) return null;
+  const { method, crc, csize, usize, localOff } = found;
+  if (csize > cap || usize > cap) return null;
+  within(localOff + 30, size, `the header for "${name}"`);
+  const local = await read(localOff, localOff + 30);
+  const lv = new DataView(local.buffer);
+  if (lv.getUint32(0, true) !== LOCAL_SIG) throw new Error(`Corrupt entry "${name}"`);
+  const start = localOff + 30 + lv.getUint16(26, true) + lv.getUint16(28, true);
+  within(start + csize, size, `the data for "${name}"`);
+  admit(name, method, csize, usize, 0, { lift: false, entryCap: cap, totalCap: cap });
+  return entryBytes(await read(start, start + csize), method, usize, crc, name);
+}
+
 /**
  * Scan backwards for the EOCD signature (the record can carry a trailing
  * comment). The first match from the end wins, and the caller then validates

@@ -5,7 +5,8 @@
 // the board first, as Restart does. A board that cannot be stored is never
 // reloaded under: the toast's Reload button is the way then. An open tab also
 // asks for a new version every quarter hour, and on coming back into view,
-// rather than only when it loads. The desktop and phone apps update otherwise.
+// rather than only when it loads. checkWebUpdate() asks at once, for a board a
+// newer mbrd saved. The desktop and phone apps update otherwise.
 
 import { toast } from '../notify.ts';
 
@@ -55,13 +56,40 @@ function register() {
   }).catch(err => console.warn('[mbrd] sw:', err));
 }
 
+const sayReady = () => toast('New version ready. It loads when you pause', '',
+  { label: 'Reload now', run: () => { void deps!.restart({ quiet: false }); } });
+
+/**
+ * Check for updates, asked for. Every answer is said: a new version found
+ * says so when it is ready, as one found by itself does, and none found says
+ * that, since a check that answers nothing looks like a button that does nothing.
+ */
+export async function checkWebUpdate(): Promise<void> {
+  if (waiting) { sayReady(); return; }
+  const reg = await navigator.serviceWorker?.getRegistration?.().catch(() => undefined);
+  if (!reg) {
+    toast('This page cannot update itself. Reload it for the newest mbrd.');
+    return;
+  }
+  toast('Checking for a newer version of mbrd.');
+  try {
+    await reg.update();
+  } catch (err) {
+    toast(`mbrd could not check for updates: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    return;
+  }
+  // Found: watch() says when it holds the whole shell.
+  if (reg.installing || reg.waiting || waiting) return;
+  toast('mbrd is up to date');
+}
+
 /** A worker that may become a new version. Silent on the first install, which replaces nothing. */
 function watch(fresh: ServiceWorker | null) {
   if (!fresh) return;
   const ready = () => {
     if (waiting || !navigator.serviceWorker.controller) return;
     if (fresh.state !== 'installed' && fresh.state !== 'activated') return;
-    toast('New version ready. It loads when you pause', '', { label: 'Reload now', run: () => { void deps!.restart({ quiet: false }); } });
+    sayReady();
     waiting = setInterval(() => { void apply(); }, POLL_MS);
   };
   // Both: a worker already past `installing` fires no more statechanges.
