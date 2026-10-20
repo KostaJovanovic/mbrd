@@ -76,12 +76,7 @@ npm run dev         # esbuild watch → web/assets/app.js; edit, then refresh
 npm run build       # minified bundle + the three lab bundles; this is what ships
 npm run lint        # oxlint, correctness only; adding a formatter is a regression
 npm run typecheck   # tsc -p tsconfig.json (noEmit set there), strict, every .ts under web/assets/js
-npm run dev:lab     # watch build for web/lab.html, the pigment lab
-npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
-npm run dev:grime   # watch build for web/lab-grime.html, the grime bench
 save.bat            # version stamps → build → commit → optionally push
-save.bat quick-commit "message"  # the same, commit only, no menu and no prompts
-save.bat quick "message"         # the same, commit and push, no menu and no prompts
 save.bat crown "message"         # quick-commit, and this commit becomes the next X.0
 save.bat release    # the same, pushed, then GitHub builds Windows + Android and publishes
 save.bat release all # the same, with macOS and Linux too: four systems, ten times the minutes
@@ -95,41 +90,11 @@ seconds and can download Electron, and the folder is gitignored, so nothing
 built there is committed, pushed or deployed. A failed build leaves the old copy
 in place. It needs `desktop/node_modules`.
 
-**A release is `save.bat release` (option 3 in its menu), and nothing else.**
-After the push it runs `gh workflow run release.yml`, and
-`.github/workflows/release.yml` builds and publishes into this repository's own
-releases, which `Get the app` and the updaters read, so **this repository has
-to be public**, or GitHub answers its releases with a 404 to anybody signed out.
-Copies installed before the move read `KostaJovanovic/mbrd-release`, which the
-workflow mirrors each release to while the `RELEASES_TOKEN` secret is set. A
-plain push starts nothing. There is no update file in a release: the apps
-read GitHub's API and find their file by the part of its name before the version
-(`desktop/updates.ts`, `MbrdUpdate.java`), so **a release file's name is a
-contract**, which `tests/desktop-package.test.js` holds. The secrets the workflow
-reads are the maintainer's.
-
-**Which systems that builds is the whole cost of a release.** Option 3 and
-`save.bat release` build **Windows and Android**; option 7 and `save.bat
-release all` add macOS and Linux. A macOS minute bills at ten times a Linux
-one, so the two absent systems cost more than the two present. The short run
-starts no macOS or Linux runner at all (the `systems` input shortens the
-matrix rather than skipping jobs), and its release carries two files and says
-so in its notes. A macOS or Linux copy then sees a version it cannot download
-until the next full release, which updates it straight there; nothing is
-stranded, because the updaters store a check time and never a version
-(`desktop/updates.ts`). The workflow's own default is `all`, disagreeing with
-`save.bat`'s on purpose: it is reached only by a hand-started run from the
-Actions tab, where an incomplete release costs more than minutes.
-
-**Nothing in a release goes through Actions artifact storage.** Each build job
-uploads its file straight into a **draft** release that the version job opened,
-and publish flips the draft visible once every expected name is in it. The
-draft is what keeps the all-at-once rule: GitHub's latest-release endpoint,
-which every updater reads, excludes drafts. Storage is 0.5 GB on this account
-and one release set is about 1.3 GB, so the old collect-then-publish shape
-could never fit: it filled, every upload was refused, and the cleanup step sat
-in the job that a failed upload skips. **Do not reintroduce
-`actions/upload-artifact` for the apps.**
+**A release is `save.bat release` (option 3 in its menu), and nothing else**,
+and it is the maintainer's to run (see Committing). **This repository has to be
+public**, and **a release file's name is a contract** the updaters find their
+file by, which `tests/desktop-package.test.js` holds. The workflow's mechanics
+are in `.claude/rules/release.md`.
 
 The desktop shell is a **second package** under `desktop/` with its own
 `node_modules`, and needs its own `npm install` before any of this:
@@ -159,24 +124,8 @@ Under `desktop.bat` the watch has made that build a moment after the save.
 Started any other way (`npm run desktop`), nothing watches: run `npm run build`
 or `npm run dev` first. The Reload row is in the View menu. Nothing watches
 `desktop/` itself, so a change to the shell (main, the menu, the title bar)
-needs the window closed and `desktop.bat` run again.
-
-**The title bar is a page of its own, and the package must carry it.**
-`desktop/chrome/` holds the bar and its menus. `desktop/scripts/build.mjs`
-builds them into `desktop/dist/chrome/`, and `desktop/protocol.ts` serves only
-the names in `CHROME_FILES`, under `/__chrome/`. A package missing them opens
-with no title bar, so `files:` in `desktop/electron-builder.yml` ships `dist/**`,
-`tests/desktop-package.test.js` holds that and every name in `CHROME_FILES`
-against a source the build turns into it, and the release job looks inside each
-packed `app.asar` for `dist/chrome/titlebar.html`. A new chrome file is an entry
-in `CHROME_FILES` and a source `build.mjs` builds or copies.
-
-`desktop/portable/` is the unpacked app plus the `portable` marker
-`installer.nsh`'s Portable branch writes. There is no portable *target*, only
-that page inside the one Setup.exe. `main.ts` reads the marker before `ready` and
-puts `userData` in `portable/data`, which is why **`portable/data/` survives a
-rebuild and everything else in there does not**. Not `desktop/dist/`, which is
-the two esbuild bundles. See `desktop/scripts/portable.mjs`.
+needs the window closed and `desktop.bat` run again. The shell's own traps (the
+title bar page, `portable/data/`) are in `desktop/CLAUDE.md`.
 
 **Every desktop board is a file.** `desktop/boards.ts` keeps the boards folder:
 `Documents/mbrd`, or `boards/` in the data folder of a portable copy or of a
@@ -187,35 +136,14 @@ that is and where the view was, never a copy of the board.
 Android keeps the same folder through `MbrdBoards.java`: `MbrdRoot`'s, which
 is `Documents/mbrd` with the storage grant, and its bin is `.trash/` inside it.
 
-The root package declares four devDependencies and no runtime dependency, and
-`npm test` installs nothing; that is what the two-package layout is for.
-
 The lint is oxlint plus one vendored plugin, `tools/oxlint/anti-slop`, which is
 why `@oxlint/plugins` is a dependency. Its rules are the single departure from
 correctness-only and a narrow one: each fires on a way of writing TypeScript
 that hides a mistake, never on layout. The argument is in `.oxlintrc.json`'s
 header.
 
-Generators, run when their source changes:
-`node tools/gen-formats.mjs` (→ `import/formats.ts`), `tools/gen-stickers.mjs`
-(→ `stickers.svg`), `node tools/gen-wallpaper.mjs [name...]` (→ the Softish
-wallpaper pieces in `web/assets/img/wallpaper/`, all but green-1, -4 and -5,
-which are drawn by hand), `node tools/gen-patch-page.mjs` (→ `web/patch.html`),
-`node tools/gen-desktop-icons.mjs` (`icon.svg` → `desktop/icons/`, the `.ico`,
-`.icns` and PNG the three installers want), `node tools/gen-og.mjs`
-(`tools/og.html` → `web/assets/img/og.png`, the link-preview card), `node
-tools/gen-screenshots.mjs` (a demo board it packs itself → the two
-`screenshot-*.png` that `manifest.json` and the JSON-LD name). Those last three
-are the only generators that need an install, and it is `desktop/`'s: they go
-through the sharp the shell already depends on, and the last two also need a
-local Edge or Chrome. The screenshots are of the real app, so they need the dev
-server up and a fresh `npm run build`. Their output is committed so nobody else
-runs them.
-
-The other `.mjs` under `tools/` are not build steps. `preset-oklch.mjs` and
-`gen-tier-palettes.mjs` print numbers that were pasted into `tokens.css` by
-hand; nothing regenerates from them and nothing should. `bench-compare.mjs`
-and `grime-shots.mjs` are benches; each file's header says how to run it.
+Generators, what each writes and which need an install, are in
+`.claude/rules/generators.md`.
 
 **A refresh alone is not enough.** The app is TypeScript, the browser gets one
 esbuild bundle, and `index.html` loads `assets/app.js`, so an edit needs
@@ -474,42 +402,22 @@ Two traps in that list, both found the hard way:
 
 ## `/patch`: a document wearing the app's cascade
 
-`web/patch.html` is **index.html's `<head>`** (the fonts, the whole cascade in
-order, and the pre-paint look script) and then the changelog. Nothing else: no
-sidebar, no board furniture, no bundle. Generated by `node
-tools/gen-patch-page.mjs` from `patch-notes.md`; `save.bat` re-runs it on every
-save, so what is committed follows the prose.
-
-Do not put index.html's body back on it: that boots half a megabyte of script
-under a board nobody can see, and pins `#grain` (the app's fixed, full-window
-paper texture) still behind a page whose own texture scrolls.
-
-What matters when touching it:
+`web/patch.html` is generated from `patch-notes.md`; the rest of what matters
+when touching it is in `.claude/rules/patch-page.md`. Two rules hold everywhere:
 
 - **`patch-notes.md` is the only place the page's prose is written, and it is
-  the author's to write.** Nothing checks it and nothing generates it. Do not
-  add releases, fill a version gap, or edit the prose.
-- **It carries only what a reader would notice.** Features, repairs somebody
-  could have hit, speed-ups somebody could have felt. The full record, internal
-  work included, is archived in `research/patch-notes-full.md`, which nothing
-  reads and nothing generates from.
+  the author's to write.** Do not add releases, fill a version gap, or edit the
+  prose.
 - `main.ts`'s `isPatch` branch stays and is **not dead**: `sw.js` precaches
   `patch.html`, so a returning visitor can be handed a cached copy from back
   when the page did boot the app. That branch reads no session and freezes the
   preference store, which is what keeps such a copy harmless.
-- The page follows the whimsy dial by design: the pre-paint script alone puts
-  the reader's look on it, with no script of its own.
-- No `<base>` tag, unlike `index.html`: a base makes every fragment resolve
-  against it and load a board.
 
-## `web/lab.html`, `web/lab-sound.html` and `web/lab-grime.html` are benches, not pages of the site
+## The lab pages are benches, not pages of the site
 
-Each has its own bundle (`npm run dev:lab`, `npm run dev:sound`,
-`npm run dev:grime`), its own
-colours, none of `tokens.css`, because a bench rendering at the current whimsy tier
-makes a wrong colour and a warmly displayed one look identical. `noindex` rather
-than a `robots.txt` Disallow (a Disallow stops the fetch, which stops the
-directive being read), absent from `sitemap.xml` and from `SHELL`.
+`web/lab.html`, `web/lab-sound.html` and `web/lab-grime.html` each build with
+`npm run dev:lab`, `dev:sound` and `dev:grime`. What sets them apart is in
+`.claude/rules/labs.md`.
 
 ## Reporting work
 

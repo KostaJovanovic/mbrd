@@ -111,6 +111,14 @@
   box-shadow: inset 0 0 0 var(--board-hairline) var(--item-border);
 }
 
+/* The title card's outline, faint: the full-ink edge every other card wears
+   here would box the board's name in. Its own declaration and not canvas.css's,
+   whose list ends in --item-shadow, which is `none` here and voids the whole
+   box-shadow, outline included. */
+:root[data-whimsy="2"] .title-card {
+  box-shadow: inset 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 16%, transparent);
+}
+
 /* Lozenges become squares. */
 :root[data-whimsy="2"] .grip,
 :root[data-whimsy="2"] :is(.field, .np-volume, .ctx-range, .dk-dial, .xo-dial) input[type="range"]::-webkit-slider-thumb { transform: none; }

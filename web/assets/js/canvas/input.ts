@@ -2101,6 +2101,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // Shrink first and grow second, so that on the extreme shape where both
         // limits bind at once it is the floor that survives: a box too large is
         // a nuisance, a box too small cannot be grabbed to undo it.
+        // Where the hand is, before any limit: the stickiness below measures from
+        // here. Measured from the clamped box, a hand past the floor never got
+        // clearly nearer the smaller cells, and a 2:3 photo held at 3x5 could not
+        // go back to the 3x4 it was placed at.
+        const hand = { w, h };
         let k = Math.min(1, MAX_SIZE / Math.max(w, h));
         k = Math.max(k, MIN_SIZE / Math.min(w, h));
         // A picture's card floor too, for the same reason: the floor further
@@ -2132,7 +2137,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
           // the line between two sizes does not flick the card between them.
           const held = grip.cells;
           if (held && (held.w !== lattice.w || held.h !== lattice.h)
-            && Math.hypot(w - lattice.w, h - lattice.h) + 0.3 * step > Math.hypot(w - held.w, h - held.h)) {
+            && Math.hypot(hand.w - lattice.w, hand.h - lattice.h) + 0.3 * step
+              > Math.hypot(hand.w - held.w, hand.h - held.h)) {
             lattice = held;
           }
           grip.cells = { w: lattice.w, h: lattice.h };
