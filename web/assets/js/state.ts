@@ -1720,15 +1720,17 @@ export function setSetting(key: string, value: unknown) {
     return;
   }
   if (key === 'wallpaper') {
-    // Board-level, like mediaFit, and written whole: the switch, the picture
-    // and its tone are one record (ui/wallpaper.ts).
+    // Board-level, like mediaFit, and written whole: the three tiers'
+    // switches, the picture and its tone are one record (ui/wallpaper.ts).
     const next = normalizeWallpaper(value);
     const was = board.wallpaper;
-    if (was.show === next.show && was.asset === next.asset && was.tone === next.tone) return;
+    const keys = Object.keys(next) as (keyof typeof next)[];
+    if (keys.every(k => was[k] === next[k])) return;
     board.wallpaper = next;
     markDirty();
     bus.emit('settings', key);
-    if (was.show !== next.show) cue(next.show ? 'on' : 'off');
+    const flipped = (['show', 'middle', 'harsh'] as const).find(k => was[k] !== next[k]);
+    if (flipped) cue(next[flipped] ? 'on' : 'off');
     return;
   }
   if (key === 'fonts') {

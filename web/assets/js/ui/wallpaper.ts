@@ -1,6 +1,7 @@
-// The wallpaper at Softish (research/wallpaper-graphics-2026-10-20.md): pieces
-// that come in from the window's left and right edges, chosen and toned by the
-// board's palette, fixed to the window under the paper grain. The arithmetic is
+// The wallpaper (research/wallpaper-graphics-2026-10-20.md): pieces that come
+// in from the window's left and right edges, chosen and toned by the board's
+// palette, fixed to the window under the paper grain. On at Softish unless
+// turned off, off at Middle and Harsh unless turned on. The arithmetic is
 // wallpaper-pieces.ts; this reads the page, owns #wallpaper, and takes a board's
 // own picture in. initWallpaper() wires it; nothing touches document at import.
 
@@ -12,7 +13,7 @@ import { currentBoardId } from '../storage/storage.ts';
 import { surface, surfaceToPicture, type Surface } from '../canvas/surface.ts';
 import { cutout, matteAvailable } from '../canvas/matte.ts';
 import { ask } from './dialog.ts';
-import { edgeShare, familyOf, pieceByName, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
+import { edgeShare, familyOf, pieceByName, tierSwitch, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
 import type { Wallpaper } from '../board-model.ts';
 import { readPref, writePref } from '../prefs.ts';
 import { BASE_ZOOM, type Viewport } from '../canvas/viewport.ts';
@@ -80,10 +81,11 @@ function schedule() {
   queued = requestAnimationFrame(() => { queued = 0; refresh().catch(() => {}); });
 }
 
-/** Whether the pieces belong on screen at all. */
+/** Whether the pieces belong on screen at all: the current tier's switch is on. */
 function wanted(w: Wallpaper) {
   const root = document.documentElement;
-  return w.show && root.dataset.whimsy === '0' && root.dataset.boardMode !== 'mobile';
+  const key = tierSwitch(root.dataset.whimsy);
+  return !!key && w[key] && root.dataset.boardMode !== 'mobile';
 }
 
 async function refresh() {

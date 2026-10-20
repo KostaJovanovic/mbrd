@@ -43,6 +43,13 @@ export function pieceByName(name: string): { family: Family, n: number } | null 
   return n >= 1 && n <= PIECES[m[1]] ? { family: m[1], n } : null;
 }
 
+/** The switch in the wallpaper record a whimsy tier reads, or null off the dial's three stops. */
+export function tierSwitch(whimsy: unknown): 'show' | 'middle' | 'harsh' | null {
+  // Number('') and Number(null) are 0, which would read as Softish.
+  const n = typeof whimsy === 'number' || (typeof whimsy === 'string' && whimsy.trim()) ? Number(whimsy) : NaN;
+  return n === 0 ? 'show' : n === 1 ? 'middle' : n === 2 ? 'harsh' : null;
+}
+
 /**
  * How much of the window's width each side may take at a board zoom (1 is
  * 100%): the two together take 120% less the zoom, so none from 120% up, a

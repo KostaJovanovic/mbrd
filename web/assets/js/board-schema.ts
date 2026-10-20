@@ -372,14 +372,18 @@ export function normalizePaletteSources(value: unknown) {
 }
 
 /**
- * The wallpaper record, held to the three values ui/wallpaper.ts reads. Absent
- * is the default - on, the built-in pieces - and so is anything that is not a
- * record. `show` is off only for a literal false; the picture only for a hash.
+ * The wallpaper record, held to the values ui/wallpaper.ts reads. Absent is
+ * the default - on at Softish, off at Middle and Harsh, the built-in pieces -
+ * and so is anything that is not a record. `show` is off only for a literal
+ * false, `middle` and `harsh` on only for a literal true; the picture only for
+ * a hash.
  */
 export function normalizeWallpaper(raw: unknown): Wallpaper {
   const w: Record<string, unknown> = isRecord(raw) ? raw : {};
   return {
     show: w.show !== false,
+    middle: w.middle === true,
+    harsh: w.harsh === true,
     asset: isHash(w.asset) ? w.asset : null,
     tone: w.tone === true,
   };
@@ -387,7 +391,7 @@ export function normalizeWallpaper(raw: unknown): Wallpaper {
 
 /** Whether a wallpaper record says anything a file has to carry. */
 const wallpaperSaysSomething = (w: Wallpaper) =>
-  w.show !== DEFAULT_WALLPAPER.show || w.asset !== DEFAULT_WALLPAPER.asset || w.tone !== DEFAULT_WALLPAPER.tone;
+  (Object.keys(DEFAULT_WALLPAPER) as (keyof Wallpaper)[]).some(k => w[k] !== DEFAULT_WALLPAPER[k]);
 
 export function normalizeMobileHeader(raw: unknown): MobileHeader {
   const header: Record<string, unknown> = isRecord(raw) ? raw : {};

@@ -24,7 +24,8 @@ import {
 import { SOUND_STOPS, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
 import { drawingEnabled } from '../canvas/pen.ts';
 import { chosenWallpaper, setChosenWallpaper } from './wallpaper.ts';
-import { FAMILIES, PIECES, PIECE_NAMES } from './wallpaper-pieces.ts';
+import { FAMILIES, PIECES, PIECE_NAMES, tierSwitch } from './wallpaper-pieces.ts';
+import { DEFAULT_WHIMSY } from './look.ts';
 import {
   wheelMode, setWheelMode, zoomReversed, setZoomReversed,
 } from '../controls.ts';
@@ -339,8 +340,8 @@ const KEYS: readonly KeyRow[] = [
 ];
 
 const desktop = (ctx: Ctx) => !ctx.mobile;
-/** The whimsy dial at its scrapbook end, the only one that draws the wallpaper. */
-const softish = () => Number(board.settings.appearance.whimsy) === 0;
+/** The wallpaper switch the whimsy dial's current tier reads (ui/wallpaper-pieces.ts). */
+const wallpaperKey = () => tierSwitch(board.settings.appearance.whimsy ?? DEFAULT_WHIMSY);
 
 /** The long side of the box round every item - the board's own extent. */
 function spread() {
@@ -898,22 +899,23 @@ export const SECTIONS: Section[] = [
       // color-mix(), which the dark palette is built on (ui/scheme.ts).
       { id: 'opt-dark', type: 'check', label: 'Dark theme', idle: () => !canDark(),
         get: () => board.settings.appearance.dark === true, set: v => setDark(v) },
-      // The pieces at the window's edges (ui/wallpaper.ts), which only Softish
-      // draws, so the rows are there only at Softish. Board-level and saved in
-      // the .mbrd, like the palette they are chosen by. A board's own picture
-      // stands in for the built-in pieces whatever the palette.
-      { id: 'opt-wallpaper', type: 'check', label: 'Wallpaper graphics', reveal: true, when: softish,
-        get: () => board.wallpaper.show,
-        set: v => setSetting('wallpaper', { ...board.wallpaper, show: v }) },
-      { type: 'buttons', reveal: true, when: softish, buttons: [
+      // The pieces at the window's edges (ui/wallpaper.ts), a switch for each
+      // whimsy tier: on at Softish, off at Middle and Harsh until turned on, and
+      // this row is the current tier's. Board-level and saved in the .mbrd,
+      // like the palette they are chosen by. A board's own picture stands in
+      // for the built-in pieces whatever the palette.
+      { id: 'opt-wallpaper', type: 'check', label: 'Wallpaper graphics',
+        get: () => { const key = wallpaperKey(); return !!key && board.wallpaper[key]; },
+        set: v => { const key = wallpaperKey(); if (key) setSetting('wallpaper', { ...board.wallpaper, [key]: v }); } },
+      { type: 'buttons', buttons: [
         { cmd: 'wallpaper-add', label: 'Add your own…',
           title: () => 'A picture of your own on the edges, its subject cut out of the background' },
         { cmd: 'wallpaper-remove', label: 'Remove my picture', when: () => !!board.wallpaper.asset,
           title: () => 'Back to the pieces the palette picks' },
       ] },
-      // Outside the run above: it comes and goes with the picture as well as the tier.
+      // There only while the board has a picture of its own.
       { id: 'opt-wallpaper-tone', type: 'check', label: 'Tone my picture to the palette',
-        when: () => softish() && !!board.wallpaper.asset,
+        when: () => !!board.wallpaper.asset,
         get: () => board.wallpaper.tone,
         set: v => setSetting('wallpaper', { ...board.wallpaper, tone: v }) },
       // The two face menus, in the fold with everything else that sets one

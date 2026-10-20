@@ -137,15 +137,17 @@ export type Board = {
 export type TrashEntry = { item: Item; at: number };
 
 /**
- * The wallpaper pieces at Softish. `show` is the switch, on unless somebody
- * turned it off. `asset` is the board's own picture, already cut out, which
- * stands in for the built-in pieces whatever the palette; `tone` draws it in
+ * The wallpaper pieces at the window's edges, one switch per whimsy tier:
+ * `show` is Softish's, on unless somebody turned it off, and `middle` and
+ * `harsh` are the other two's, off unless somebody turned them on. `asset` is
+ * the board's own picture, already cut out, which stands in for the built-in
+ * pieces whatever the palette; `tone` draws it in
  * the palette's tones rather than its own colours. Board-level, like mediaFit:
  * one answer for both layouts.
  */
-export type Wallpaper = { show: boolean, asset: string | null, tone: boolean };
+export type Wallpaper = { show: boolean, middle: boolean, harsh: boolean, asset: string | null, tone: boolean };
 
-export const DEFAULT_WALLPAPER: Readonly<Wallpaper> = Object.freeze({ show: true, asset: null, tone: false });
+export const DEFAULT_WALLPAPER: Readonly<Wallpaper> = Object.freeze({ show: true, middle: false, harsh: false, asset: null, tone: false });
 
 import { uid, isHash, isRecord, baseName, META_HASH_KEYS } from './util.ts';
 import { MIN_SIZE, MAX_SIZE } from './geometry.ts';

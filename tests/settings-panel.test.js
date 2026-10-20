@@ -361,9 +361,10 @@ test('the four demoted controls are below a fold, not gone', () => {
   assert.equal(host.advanced, true);
 });
 
-test('the Look tab opens on two dials and the theme, and the faces are one fold in', () => {
+test('the Look tab opens on two dials, the theme and the wallpaper, and the faces are one fold in', () => {
   // The two that move every token at once stand alone with light-or-dark,
-  // the one other colour question anybody comes here to ask; the type menus,
+  // the one other colour question anybody comes here to ask, and the
+  // wallpaper's switch, which every tier has (ui/wallpaper.ts); the type menus,
   // the faces added to the board and the tip that says how to add one
   // are together one fold down. The three must not come apart: the tip
   // is the only place the drop is named, and the list of added faces is
@@ -371,7 +372,7 @@ test('the Look tab opens on two dials and the theme, and the faces are one fold 
   const look = SECTIONS.find(s => s.id === 'appearance');
   for (const ctx of [DESKTOP, MOBILE]) {
     const above = look.controls.filter(c => !c.advanced && controlVisible(c, ctx));
-    assert.deepEqual(above.map(c => c.id ?? c.type), ['opt-whimsy', 'opt-palette', 'opt-dark']);
+    assert.deepEqual(above.map(c => c.id ?? c.type), ['opt-whimsy', 'opt-palette', 'opt-dark', 'opt-wallpaper', 'buttons']);
     const folded = look.controls.filter(c => c.advanced && controlVisible(c, ctx));
     assert.deepEqual(folded.slice(0, 3).map(c => c.id),
       ['appearance-type', 'type-hint', 'appearance-fonts']);

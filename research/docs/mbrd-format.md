@@ -321,11 +321,13 @@ that ceiling instead of naming a bigger number. An older reader that clamps this
 field to `[1, 24]` will read `0` as `1` and take its colours from the newest
 picture alone: a duller palette, not a broken board.
 
-`wallpaper` is the pieces drawn at the window's edges at the Softish end of the
-whimsy dial: `{ "show": bool, "asset": hash | absent, "tone": bool }`.
-**Absent means the default** (shown, the built-in pieces the palette picks),
-and is written only when one of the three differs from it. `show` is off only
-for a literal `false`. `asset` is the board's own picture, already cut to its
+`wallpaper` is the pieces drawn at the window's edges: `{ "show": bool,
+"middle": bool, "harsh": bool, "asset": hash | absent, "tone": bool }`, one
+switch per whimsy tier. **Absent means the default** (shown at Softish, not at
+Middle or Harsh, the built-in pieces the palette picks), and is written only
+when one of the five differs from it. `show` is Softish's switch and off only
+for a literal `false`; `middle` and `harsh` (added later, so a file without
+them reads as off) are on only for a literal `true`. `asset` is the board's own picture, already cut to its
 subject, in `assets/` like any other; it stands in for the built-in pieces
 whatever the palette. A missing asset is not an error: the built-in pieces show
 instead, as a missing face falls back to the stack. `tone` (default `false`)

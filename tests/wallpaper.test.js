@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { FAMILIES, PIECES, PIECE_NAMES, edgeShare, familyOf, wallpaperTones, pieceByName, pieceFor, pieceURL, TONES } from '../web/assets/js/ui/wallpaper-pieces.ts';
+import { FAMILIES, PIECES, PIECE_NAMES, edgeShare, familyOf, wallpaperTones, pieceByName, pieceFor, pieceURL, tierSwitch, TONES } from '../web/assets/js/ui/wallpaper-pieces.ts';
 import { normalizeWallpaper } from '../web/assets/js/board-schema.ts';
 import { oklch, parseHex } from '../web/assets/js/color.ts';
 
@@ -65,10 +65,19 @@ test('the zoom decides how much of the window each side takes', () => {
 });
 
 test('the wallpaper record keeps only what it may', () => {
-  assert.deepEqual(normalizeWallpaper(undefined), { show: true, asset: null, tone: false });
-  assert.deepEqual(normalizeWallpaper({ show: 0, asset: 'nope', tone: 'yes' }), { show: true, asset: null, tone: false });
+  const plain = { show: true, middle: false, harsh: false, asset: null, tone: false };
+  assert.deepEqual(normalizeWallpaper(undefined), plain);
+  assert.deepEqual(normalizeWallpaper({ show: 0, middle: 1, harsh: 'yes', asset: 'nope', tone: 'yes' }), plain);
   const hash = 'a'.repeat(64);
-  assert.deepEqual(normalizeWallpaper({ show: false, asset: hash, tone: true }), { show: false, asset: hash, tone: true });
+  assert.deepEqual(normalizeWallpaper({ show: false, middle: true, harsh: true, asset: hash, tone: true }),
+    { show: false, middle: true, harsh: true, asset: hash, tone: true });
+});
+
+test('each whimsy tier reads its own wallpaper switch', () => {
+  assert.equal(tierSwitch('0'), 'show');
+  assert.equal(tierSwitch(1), 'middle');
+  assert.equal(tierSwitch('2'), 'harsh');
+  for (const off of [undefined, '', 'x', 0.5, 3]) assert.equal(tierSwitch(off), null, String(off));
 });
 
 // The art. Read as text: the app parses it with DOMParser, which node has not.
