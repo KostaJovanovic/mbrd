@@ -14,6 +14,7 @@ import { cutout, matteAvailable } from '../canvas/matte.ts';
 import { ask } from './dialog.ts';
 import { familyOf, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
 import type { Wallpaper } from '../board-model.ts';
+import { readPref, writePref } from '../prefs.ts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 /** How long a side takes to leave; matches .wp-side.is-leaving in wallpaper.css. */
@@ -40,9 +41,31 @@ let gen = 0;
 let trial: { url: string, tone: boolean } | null = null;
 const markup = new Map<string, Promise<SVGSVGElement | null>>();
 
+/** How far the pieces are held back, in percent: a development aid under
+ *  Settings → Debug, per device and never in a .mbrd. */
+const OPACITY_PREF = 'mbrd.wallpaperOpacity';
+const DEFAULT_OPACITY = 60;
+
+export function wallpaperOpacity(): number {
+  const raw = readPref(OPACITY_PREF);
+  const n = raw === null ? NaN : Number(raw);
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : DEFAULT_OPACITY;
+}
+
+export function setWallpaperOpacity(percent: number) {
+  writePref(OPACITY_PREF, Math.min(100, Math.max(0, Math.round(percent))));
+  applyOpacity();
+}
+
+/** wallpaper.css reads it on .wp-side, so the entrance keeps its own 0 to 1. */
+function applyOpacity() {
+  host?.style.setProperty('--wp-opacity', String(wallpaperOpacity() / 100));
+}
+
 export function initWallpaper() {
   host = document.getElementById('wallpaper');
   if (!host) return;
+  applyOpacity();
   host.append(toneFilter());
   const root = document.documentElement;
   new MutationObserver(schedule).observe(root, {

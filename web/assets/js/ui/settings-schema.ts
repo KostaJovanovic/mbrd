@@ -23,6 +23,7 @@ import {
 } from '../quality.ts';
 import { SOUND_STOPS, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
 import { drawingEnabled } from '../canvas/pen.ts';
+import { wallpaperOpacity, setWallpaperOpacity } from './wallpaper.ts';
 import {
   wheelMode, setWheelMode, zoomReversed, setZoomReversed,
 } from '../controls.ts';
@@ -1357,6 +1358,12 @@ export const SECTIONS: Section[] = [
         set: v => setSoundLevel(v) },
       { id: 'sound-hint', type: 'hint', when: () => soundLevel() > 0, advanced: true,
         text: () => 'Experimental feature. Might suck.' },
+      // How strongly the Softish wallpaper shows, while its strength is being
+      // settled by eye. Per device, in prefs: ui/wallpaper.ts.
+      { id: 'opt-wallpaper-opacity', type: 'range', label: 'Wallpaper opacity', advanced: true,
+        min: 0, max: 100, step: 5, unit: '%',
+        get: () => wallpaperOpacity(),
+        set: v => setWallpaperOpacity(v) },
       // Four readouts. Buttons rather than live rows, and that is forced rather
       // than chosen: paintPanel() repaints on `board`, `settings`, `layout` and
       // `lens`, and on none of the events these four would have to follow - not

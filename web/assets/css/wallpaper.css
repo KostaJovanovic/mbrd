@@ -26,8 +26,9 @@
   bottom: 0;
   width: clamp(56px, 24vw, 560px);
   /* Held back from the board: the pieces are a backdrop, not furniture. On the
-     side, not the piece, so the entrance still runs its own opacity 0 to 1. */
-  opacity: 0.6;
+     side, not the piece, so the entrance still runs its own opacity 0 to 1.
+     ui/wallpaper.ts sets the variable from Settings → Debug; 0.6 by default. */
+  opacity: var(--wp-opacity, 0.6);
 }
 .wp-left { left: 0; }
 /* The right side is the left one turned over, so its x=0 lies on the window's
