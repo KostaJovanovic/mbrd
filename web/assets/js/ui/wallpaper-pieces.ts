@@ -20,6 +20,29 @@ export const PIECES: Readonly<Record<Family, number>> = Object.freeze({
   pink: 2, brown: 2, white: 2, grey: 2, black: 2,
 });
 
+/** What each arrangement shows, for choosing one by hand (Settings → Debug). */
+export const PIECE_NAMES: Readonly<Record<string, string>> = Object.freeze({
+  'red-1': 'Anthurium', 'red-2': 'Garnets',
+  'orange-1': 'Pincushion protea', 'orange-2': 'Pheasant feathers',
+  'yellow-1': 'Mimosa', 'yellow-2': 'Citrine',
+  'green-1': 'Monstera', 'green-2': 'Majesty palm', 'green-3': 'Zebra haworthia', 'green-4': 'Fritillaria', 'green-5': 'Malachite and jade',
+  'blue-1': 'Sea holly', 'blue-2': 'Lapis and sea glass',
+  'purple-1': 'Lavender', 'purple-2': 'Amethyst geode',
+  'pink-1': 'Peony', 'pink-2': 'Rose quartz',
+  'brown-1': 'Fern', 'brown-2': 'Owl feather and oak',
+  'white-1': 'Magnolia', 'white-2': 'Clear quartz',
+  'grey-1': 'Eucalyptus', 'grey-2': 'River stones',
+  'black-1': 'Hellebores', 'black-2': 'Obsidian and tourmaline',
+});
+
+/** `pink-1` as its family and number, or null for a name no file answers to. */
+export function pieceByName(name: string): { family: Family, n: number } | null {
+  const m = /^([a-z]+)-(\d+)$/.exec(name);
+  if (!m || !isFamily(m[1])) return null;
+  const n = Number(m[2]);
+  return n >= 1 && n <= PIECES[m[1]] ? { family: m[1], n } : null;
+}
+
 /** Where an arrangement is, document-relative like every asset path. */
 export const pieceURL = (family: Family, n: number) => `./assets/img/wallpaper/${family}-${n}.svg`;
 

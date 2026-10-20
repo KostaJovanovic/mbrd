@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { FAMILIES, PIECES, familyOf, wallpaperTones, pieceFor, pieceURL, TONES } from '../web/assets/js/ui/wallpaper-pieces.ts';
+import { FAMILIES, PIECES, PIECE_NAMES, familyOf, wallpaperTones, pieceByName, pieceFor, pieceURL, TONES } from '../web/assets/js/ui/wallpaper-pieces.ts';
 import { normalizeWallpaper } from '../web/assets/js/board-schema.ts';
 import { oklch, parseHex } from '../web/assets/js/color.ts';
 
@@ -45,6 +45,13 @@ test('a board lands on the same arrangement every time, inside its family', () =
     assert.equal(pieceFor('brd-abc', family), n);
     assert.ok(n >= 1 && n <= PIECES[family], `${family}: ${n}`);
   }
+});
+
+test('every piece has a name to be chosen by, and only real pieces can be chosen', () => {
+  const all = FAMILIES.flatMap(f => Array.from({ length: PIECES[f] }, (_, i) => `${f}-${i + 1}`));
+  assert.deepEqual(Object.keys(PIECE_NAMES).sort(), [...all].sort());
+  for (const name of all) assert.ok(pieceByName(name), name);
+  for (const bad of ['', 'pink', 'pink-0', 'pink-3', 'teal-1', 'pink-1x', '../pink-1']) assert.equal(pieceByName(bad), null, bad);
 });
 
 test('the wallpaper record keeps only what it may', () => {

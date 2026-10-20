@@ -12,7 +12,7 @@ import { currentBoardId } from '../storage/storage.ts';
 import { surface, surfaceToPicture, type Surface } from '../canvas/surface.ts';
 import { cutout, matteAvailable } from '../canvas/matte.ts';
 import { ask } from './dialog.ts';
-import { familyOf, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
+import { familyOf, pieceByName, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
 import type { Wallpaper } from '../board-model.ts';
 import { readPref, writePref } from '../prefs.ts';
 
@@ -41,31 +41,24 @@ let gen = 0;
 let trial: { url: string, tone: boolean } | null = null;
 const markup = new Map<string, Promise<SVGSVGElement | null>>();
 
-/** How far the pieces are held back, in percent: a development aid under
- *  Settings → Debug, per device and never in a .mbrd. */
-const OPACITY_PREF = 'mbrd.wallpaperOpacity';
-const DEFAULT_OPACITY = 60;
+/** One piece chosen by hand over the palette's pick, as `pink-1`, or '' for
+ *  the palette's: a development aid under Settings → Debug, per device and
+ *  never in a .mbrd. The tones stay the palette's either way. */
+const CHOICE_PREF = 'mbrd.wallpaperPiece';
 
-export function wallpaperOpacity(): number {
-  const raw = readPref(OPACITY_PREF);
-  const n = raw === null ? NaN : Number(raw);
-  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : DEFAULT_OPACITY;
+export function chosenWallpaper(): string {
+  const name = readPref(CHOICE_PREF, '') ?? '';
+  return pieceByName(name) ? name : '';
 }
 
-export function setWallpaperOpacity(percent: number) {
-  writePref(OPACITY_PREF, Math.min(100, Math.max(0, Math.round(percent))));
-  applyOpacity();
-}
-
-/** wallpaper.css reads it on .wp-side, so the entrance keeps its own 0 to 1. */
-function applyOpacity() {
-  host?.style.setProperty('--wp-opacity', String(wallpaperOpacity() / 100));
+export function setChosenWallpaper(name: string) {
+  writePref(CHOICE_PREF, pieceByName(name) ? name : '');
+  schedule();
 }
 
 export function initWallpaper() {
   host = document.getElementById('wallpaper');
   if (!host) return;
-  applyOpacity();
   host.append(toneFilter());
   const root = document.documentElement;
   new MutationObserver(schedule).observe(root, {
@@ -117,7 +110,8 @@ async function refresh() {
   }
   if (!seed) seed = await currentBoardId().catch(() => 'board');
   if (mine !== gen) return;
-  const piece = await firstPiece(tones.family, pieceFor(seed, tones.family));
+  const chosen = pieceByName(chosenWallpaper());
+  const piece = chosen ? await firstPiece(chosen.family, chosen.n) : await firstPiece(tones.family, pieceFor(seed, tones.family));
   if (mine !== gen) return;
   if (!piece) { swap('', null); return; }
   if (piece.key !== shown) swap(piece.key, partsOf(piece.svg));
