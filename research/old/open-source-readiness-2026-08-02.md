@@ -429,7 +429,7 @@ next person who asks, so put Part 1's numbers in it.
 
 A newcomer's first impression is `ls`. Currently that includes `readme_old.md`,
 `PATCH-NOTES.txt`, `PLAN.md` (which opens `Greenfield project in
-C:\Users\kosta\Projekti\mbrd (currently empty)`), and `icon-mockups/` — 35
+J:\Projekti\mbrd (currently empty)`), and `icon-mockups/` — 35
 tracked files of design scratch.
 
 - `readme_old.md` — delete; it is in the history.

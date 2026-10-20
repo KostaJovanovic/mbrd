@@ -1,7 +1,7 @@
 # Moodboard app ("mbrd") — implementation plan
 
 ## Context
-Greenfield project in `C:\Users\kosta\Projekti\mbrd` (currently empty). Goal: a
+Greenfield project in `J:\Projekti\mbrd` (currently empty). Goal: a
 **moodboarding** app with a seemingly infinite, freeform grid — origin `(0,0)` in
 the center, extending both axes. The user drops in files of any type (image,
 audio, video, text, anything); each gets **world coordinates** and can be placed
@@ -16,7 +16,7 @@ Persistence uses a custom **`.mbrd`** file: a renamed ZIP holding a manifest,
 the board data, and the embedded asset bytes (same idea as `.3mf`). A self-hosted
 sync option is planned but deliberately deferred.
 
-Conventions mirror the sibling project `C:\Users\kosta\Projekti\file-analyser`:
+Conventions mirror the sibling project `J:\Projekti\FileAnalyser`:
 vanilla JS + ES modules, **no bundler**, a Python `serve.py` launched by
 `server.bat`, and a git/versioning helper `save.bat`.
 

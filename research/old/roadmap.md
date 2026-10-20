@@ -281,7 +281,7 @@ rather than inherited.
 
 ### 20. Konami code → 90s skin *(was C4)*
 Konami sequence swaps the whole interface for one built from
-`C:\Users\kosta\Projekti\sajt90`. Large in volume, but with no unknowns — the
+`J:\Projekti\sajt90`. Large in volume, but with no unknowns — the
 source is hand-written static HTML with one 4618-line stylesheet, and it is a
 good fit because it is already CSS-variable driven, so the two projects share
 an architecture and it can plug into the whimsy cascade rather than living
