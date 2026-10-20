@@ -162,8 +162,114 @@ back to the board.
 
 ## Releases
 
+## Greenhouse
+version: 0.741 - 0.768
+date: 20 October 2026
+
+- **Softish gets a wallpaper, and a board from a newer mbrd asks before it
+  opens.**
+
+### Wallpaper graphics
+- [new] **Softish has wallpaper graphics:** plants, stones, crystals and
+  feathers that come in from both edges of the window, picked by the palette's
+  colour and painted in the tones of its paper, darker in dark mode. They sit
+  along the top and the bottom and leave the middle, where the board is, mostly
+  clear. A board shows the same pieces every time it opens, and they never go
+  into an export.
+- [new] **`Add your own...`** cuts the subject out of a picture and puts it on
+  the edges, in its own colours or toned to the palette, kept in the board.
+- [new] **Middle and Harsh can wear one too.** Each tier has its own
+  `Wallpaper graphics` switch in Look: on by default at Softish, off at the
+  other two.
+- [new] **The wallpaper follows the zoom.** Zoom in and the pieces slide out
+  past the edges; zoom out and they come further in, no further than where they
+  were drawn to sit. At Full they glide there rather than jump.
+- [new] **The wallpaper moves with the rest of the look.** A palette change
+  swaps it as the colours begin to fade, and its left side fades out as the
+  sidebar opens over it. On a phone, where the sidebar covers the screen, the
+  new pieces wait for it to slide away so they can be seen coming in.
+- **The board file gains an optional wallpaper record,** written only when a
+  board's wallpaper differs from the default.
+
+### Opening and updating
+- [new] **A board saved by a newer mbrd asks before it opens:** `Made in a
+  newer mbrd`, with `Check for updates` and `Open anyway`. `Open anyway` opens
+  it as well as this version can, and the next save makes a new file, so the
+  newer one is never written over by an older mbrd.
+- [new] **`Check for updates` on such a board updates at once** and opens the
+  board again afterwards: the desktop app downloads, installs and restarts, the
+  phone installs what it finds, and the web reloads into the new version.
+- [fix] **`Check for updates` on the web checks.** It did nothing there.
+- [new] **On the web a new version loads at the next quiet moment** without a
+  message first. A board that cannot be stored still says the new version is
+  waiting, with `Reload now`.
+
+### The desktop app
+- [fix] **The title-bar menus are the app's own menu in every look,** follow a
+  change of look while the app runs, fade in rather than drop, and no longer
+  flash the last menu opened before the new one draws. The board's name sits on
+  the same line as File, Edit, View and Help.
+
+### On a phone
+- [new] **A pinch on the controls over the board zooms the board,** not the
+  whole app: the zoom pill, the menu button, the drawer and undo row, the
+  toolbar. One finger on a control is a tap as before, and the sidebar, the
+  panels and the menus still zoom the page, for anyone enlarging their text.
+- [faster] **Panning at 100% and flinging run smoother.** On a Nothing Phone
+  (4a), missed frames on a pan at 100% fall from 29% to 18% and on a fling from
+  9% to 6%, and the paper texture takes about 5 MB rather than 22.
+- [faster] **A pinch out no longer hitches near 41% and 33%.**
+
+### On the board
+- [fix] **Below Full, a pinch or zoom no longer stretches the grid's dots** and
+  then snaps them back when the fingers lift.
+- [fix] **A picture resized past its smallest size can go back to the one it
+  was placed at.** A 2:3 photo held at 3x5 could not return to 3x4.
+- **At Harsh the title card's outline is faint,** so the board's name is not
+  boxed in.
+
+## High Refresh
+version: 0.732 - 0.740
+date: 17 October 2026
+
+- **Zooming on a phone stops losing pieces of the screen, and the Android app
+  runs at 120 Hz.**
+- [faster] **The Android app asks for the screen's top refresh rate,** 120 Hz on
+  a 120 Hz phone, rather than the 60 Hz Android gives it when no finger is down.
+- [fix] **The interface stops vanishing on a zoom through 20-45%.** The menu,
+  the zoom pill and the bottom bar blinked out a frame at a time.
+- [fix] **The board stops blanking in strips on a zoom below 30%,** the
+  interface with it.
+- [fix] **Cards stop blinking out on a pinch back out again.**
+- [faster] **Panning a board with fences on a phone runs at full speed.** A
+  fence's dashed edge was slow to draw; on a Nothing Phone (4a) a pan with two
+  fences on screen missed 20-28% of frames, and now misses 2%.
+- [faster] **Photos sharpen to their originals once the board stops** rather
+  than while it moves, as the thumbnails already did, which takes the stutter
+  out of a long zoom.
+- [fix] **The paper texture travels with the board again while it moves,** at
+  every quality. Below Full it had stood still mid-gesture, which read as flecks
+  on the glass.
+- [new] **`Open benchmark board` in Settings > Debug** puts the benchmark's
+  board of about 120 cards on screen with nothing run, to try a gesture on by
+  hand. `Back to your board` returns.
+
+## Canvas First
+version: 0.728 - 0.731
+date: 16 October 2026
+
+- **Phones open on the canvas, and the Android app's first screen looks like
+  the app.**
+- [new] **Phones open on the canvas** rather than the Feed, and the Feed's sheet
+  keeps its rounded corners on a phone.
+- [faster] **Balanced runs smoother on a phone.** A gesture no longer ends
+  halfway on one long frame.
+- [new] **The Android storage screen wears the app's palette,** light and dark,
+  with the folder shown as a path on a card, one `Allow` button and a quiet `Not
+  now`. A `(?)` beside the path says what each does.
+
 ## Caught Up
-version: 0.726
+version: 0.726 - 0.727
 date: 15 October 2026
 
 - **Nothing in the app changed.** These notes were brought up to date.

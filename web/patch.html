@@ -199,21 +199,112 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>56 releases</span>
-      <span>767 commits</span>
+      <span>59 releases</span>
+      <span>768 commits</span>
       <span>since 24 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
-<li class="pn-rel" id="r-caught-up">
+<li class="pn-rel" id="r-greenhouse">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>
-    <span class="pn-count">1</span>
+    <span class="pn-count">28</span>
   </div>
   <article class="pn-plate">
     <header class="pn-plate-head">
-      <p class="pn-ver">0.726</p>
+      <p class="pn-ver">0.741 - 0.768</p>
+      <h2 class="pn-name">Greenhouse</h2>
+      <p class="pn-date">20 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Softish gets a wallpaper, and a board from a newer <span class="wm">mbrd</span> asks before it opens.</strong></li>
+    </ul>
+    <h3 class="pn-part">Wallpaper graphics</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Softish has wallpaper graphics:</strong> plants, stones, crystals and feathers that come in from both edges of the window, picked by the palette's colour and painted in the tones of its paper, darker in dark mode. They sit along the top and the bottom and leave the middle, where the board is, mostly clear. A board shows the same pieces every time it opens, and they never go into an export.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Add your own...</code></strong> cuts the subject out of a picture and puts it on the edges, in its own colours or toned to the palette, kept in the board.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Middle and Harsh can wear one too.</strong> Each tier has its own <code>Wallpaper graphics</code> switch in Look: on by default at Softish, off at the other two.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The wallpaper follows the zoom.</strong> Zoom in and the pieces slide out past the edges; zoom out and they come further in, no further than where they were drawn to sit. At Full they glide there rather than jump.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The wallpaper moves with the rest of the look.</strong> A palette change swaps it as the colours begin to fade, and its left side fades out as the sidebar opens over it. On a phone, where the sidebar covers the screen, the new pieces wait for it to slide away so they can be seen coming in.</li>
+      <li class="is-plain"><strong>The board file gains an optional wallpaper record,</strong> written only when a board's wallpaper differs from the default.</li>
+    </ul>
+    <h3 class="pn-part">Opening and updating</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>A board saved by a newer <span class="wm">mbrd</span> asks before it opens:</strong> <code>Made in a newer mbrd</code>, with <code>Check for updates</code> and <code>Open anyway</code>. <code>Open anyway</code> opens it as well as this version can, and the next save makes a new file, so the newer one is never written over by an older <span class="wm">mbrd.</span></li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Check for updates</code> on such a board updates at once</strong> and opens the board again afterwards: the desktop app downloads, installs and restarts, the phone installs what it finds, and the web reloads into the new version.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Check for updates</code> on the web checks.</strong> It did nothing there.</li>
+      <li><span class="pn-tag is-new">New</span><strong>On the web a new version loads at the next quiet moment</strong> without a message first. A board that cannot be stored still says the new version is waiting, with <code>Reload now</code>.</li>
+    </ul>
+    <h3 class="pn-part">The desktop app</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-fix">Fix</span><strong>The title-bar menus are the app's own menu in every look,</strong> follow a change of look while the app runs, fade in rather than drop, and no longer flash the last menu opened before the new one draws. The board's name sits on the same line as File, Edit, View and Help.</li>
+    </ul>
+    <h3 class="pn-part">On a phone</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>A pinch on the controls over the board zooms the board,</strong> not the whole app: the zoom pill, the menu button, the drawer and undo row, the toolbar. One finger on a control is a tap as before, and the sidebar, the panels and the menus still zoom the page, for anyone enlarging their text.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Panning at 100% and flinging run smoother.</strong> On a Nothing Phone (4a), missed frames on a pan at 100% fall from 29% to 18% and on a fling from 9% to 6%, and the paper texture takes about 5 MB rather than 22.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>A pinch out no longer hitches near 41% and 33%.</strong></li>
+    </ul>
+    <h3 class="pn-part">On the board</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-fix">Fix</span><strong>Below Full, a pinch or zoom no longer stretches the grid's dots</strong> and then snaps them back when the fingers lift.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A picture resized past its smallest size can go back to the one it was placed at.</strong> A 2:3 photo held at 3x5 could not return to 3x4.</li>
+      <li class="is-plain"><strong>At Harsh the title card's outline is faint,</strong> so the board's name is not boxed in.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-high-refresh">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">9</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.732 - 0.740</p>
+      <h2 class="pn-name">High Refresh</h2>
+      <p class="pn-date">17 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Zooming on a phone stops losing pieces of the screen, and the Android app runs at 120 Hz.</strong></li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>The Android app asks for the screen's top refresh rate,</strong> 120 Hz on a 120 Hz phone, rather than the 60 Hz Android gives it when no finger is down.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The interface stops vanishing on a zoom through 20-45%.</strong> The menu, the zoom pill and the bottom bar blinked out a frame at a time.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The board stops blanking in strips on a zoom below 30%,</strong> the interface with it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Cards stop blinking out on a pinch back out again.</strong></li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Panning a board with fences on a phone runs at full speed.</strong> A fence's dashed edge was slow to draw; on a Nothing Phone (4a) a pan with two fences on screen missed 20-28% of frames, and now misses 2%.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Photos sharpen to their originals once the board stops</strong> rather than while it moves, as the thumbnails already did, which takes the stutter out of a long zoom.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The paper texture travels with the board again while it moves,</strong> at every quality. Below Full it had stood still mid-gesture, which read as flecks on the glass.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Open benchmark board</code> in Settings &gt; Debug</strong> puts the benchmark's board of about 120 cards on screen with nothing run, to try a gesture on by hand. <code>Back to your board</code> returns.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-canvas-first">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">4</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.728 - 0.731</p>
+      <h2 class="pn-name">Canvas First</h2>
+      <p class="pn-date">16 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Phones open on the canvas, and the Android app's first screen looks like the app.</strong></li>
+      <li><span class="pn-tag is-new">New</span><strong>Phones open on the canvas</strong> rather than the Feed, and the Feed's sheet keeps its rounded corners on a phone.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Balanced runs smoother on a phone.</strong> A gesture no longer ends halfway on one long frame.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The Android storage screen wears the app's palette,</strong> light and dark, with the folder shown as a path on a card, one <code>Allow</code> button and a quiet <code>Not now</code>. A <code>(?)</code> beside the path says what each does.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-caught-up">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">2</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.726 - 0.727</p>
       <h2 class="pn-name">Caught Up</h2>
       <p class="pn-date">15 October 2026</p>
     </header>
