@@ -46,6 +46,7 @@ import { initGhosts } from './canvas/ghosts.ts';
 import { initStills } from './canvas/stills.ts';
 import { initHires } from './canvas/hires.ts';
 import { initInput } from './canvas/input.ts';
+import { initChromePinch } from './canvas/chrome-pinch.ts';
 import { initPictureShapes } from './canvas/picture-shape.ts';
 import { initDrop, importFiles, setImportPrompt, setImportRevealer, noteToFile, retryPicture } from './import/drop.ts';
 import { unpackItem } from './import/unpack.ts';
@@ -382,6 +383,8 @@ initTourEdit();
 // The pen's live layer, before the pipeline that draws into it.
 initPen(vp);
 initInput(vp, cmds);
+// A pinch begun on the controls over the board, handed to the pipeline above.
+initChromePinch(vp.el);
 initMenu(vp, cmds);
 // Fence prompt after rubber-band selection.
 initFencePrompt(vp);
