@@ -61,7 +61,7 @@ export function initWallpaper(viewport: Viewport) {
   host = document.getElementById('wallpaper');
   if (!host) return;
   view = viewport;
-  view.onChange(placeSides);
+  view.onChange(() => placeSides());
   host.append(toneFilter());
   const root = document.documentElement;
   new MutationObserver(schedule).observe(root, {
@@ -70,7 +70,7 @@ export function initWallpaper(viewport: Viewport) {
   });
   bus.on('settings', (key: unknown) => { if (key === 'wallpaper' || key === 'appearance') schedule(); });
   bus.on('board:load', () => { seed = ''; schedule(); });
-  addEventListener('resize', () => { placePivots(); placeSides(); }, { passive: true });
+  addEventListener('resize', () => { placePivots(); placeSides(true); }, { passive: true });
   schedule();
 }
 
@@ -301,7 +301,7 @@ function swap(key: string, parts: Part[] | null) {
   }
   placePivots();
   measure(sides[0]);
-  placeSides();
+  placeSides(true);
   // Two frames: the first lays the pieces out where they start, the second lets
   // them go, so the transition has a from to run from.
   const enter = sides;
@@ -367,13 +367,57 @@ function measure(side: HTMLElement | undefined) {
  * gives it (edgeShare()): out past the edge as the board is zoomed in, back
  * in as it is zoomed out, but never further in than where the piece is drawn
  * to sit, so zoomed out each piece reaches as far as its own drawing does.
+ * At Full the sides glide there; `snap` (new pieces, a resize) and every
+ * other tier put them there at once.
  */
-function placeSides() {
+function placeSides(snap = false) {
   if (!view || !sides.length) return;
   const room = edgeShare(view.zoom / BASE_ZOOM) * innerWidth;
   const far = extent ? extent.far * fit.scale : fit.w;
-  const shift = `${Math.min(room - far, 0).toFixed(1)}px`;
-  for (const side of sides) side.style.setProperty('--wp-shift', shift);
+  shiftTo = Math.min(room - far, 0);
+  if (snap || !glides()) {
+    cancelAnimationFrame(gliding);
+    gliding = 0;
+    shiftNow = shiftTo;
+    paintShift();
+    return;
+  }
+  if (!gliding) { lastFrame = performance.now(); gliding = requestAnimationFrame(glide); }
+}
+
+/** The shift on screen and the one the zoom asks for, in px; apart only during a glide. */
+let shiftNow = 0, shiftTo = 0;
+let gliding = 0;
+let lastFrame = 0;
+/**
+ * The glide's time constant, in seconds. Each frame closes the same share of
+ * what is left, so one wheel step eases out as the pieces' entrance does,
+ * settling in about the same 1.2s, and a pinch or a trackpad, which move the
+ * target every frame, are followed smoothly with no restart on each one.
+ */
+const GLIDE_TAU = 0.25;
+let stillMotion: MediaQueryList | null = null;
+
+function glides() {
+  stillMotion ??= matchMedia('(prefers-reduced-motion: reduce)');
+  return document.documentElement.dataset.quality === 'full' && !stillMotion.matches;
+}
+
+function glide(now: number) {
+  // A frame's stamp can come before the performance.now() that started the glide.
+  const dt = Math.min(0.064, Math.max(0, now - lastFrame) / 1000);
+  lastFrame = now;
+  shiftNow += (shiftTo - shiftNow) * (1 - Math.exp(-dt / GLIDE_TAU));
+  // The last pixel lands at once: an exponential's tail creeps on for seconds unseen.
+  if (Math.abs(shiftTo - shiftNow) < 0.75) shiftNow = shiftTo;
+  paintShift();
+  gliding = shiftNow === shiftTo ? 0 : requestAnimationFrame(glide);
+}
+
+/** Written as each side's own transform, not a variable, so a frame restyles two boxes and not the art inside them. */
+function paintShift() {
+  const x = `translateX(${shiftNow.toFixed(1)}px)`;
+  for (const side of sides) side.style.transform = side.classList.contains('wp-right') ? `scaleX(-1) ${x}` : x;
 }
 
 // ---------------------------------------------------------------------------
