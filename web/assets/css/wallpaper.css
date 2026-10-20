@@ -29,8 +29,12 @@
      side, not the piece, so the entrance still runs its own opacity 0 to 1.
      0.7 was settled on by eye. */
   opacity: 0.7;
+  transition: opacity var(--dur-base) var(--ease);
 }
 .wp-left { left: 0; }
+/* The left side gives way to the sidebar that opens over it, over the same
+   --dur-base the sheet slides in on (sidebar.css), and comes back as it shuts. */
+:root:has(#sidebar.is-open) .wp-left { opacity: 0; }
 /* The right side is the left one turned over, so its x=0 lies on the window's
    right edge and every piece below moves and turns as its twin does, mirrored. */
 .wp-right { right: 0; transform: scaleX(-1); }
