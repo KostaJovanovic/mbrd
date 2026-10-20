@@ -55,16 +55,24 @@ body.is-patch::before {
 
 /* --- The column — prose with a commit-count margin --- */
 
-/* Back link — sticky, opaque, z-index 3 (above .pn-mark at 2) */
-.pn-back {
+/* Back link and Check for updates — sticky, z-index 3 (above .pn-mark at 2).
+   The bar lets clicks through between the two, so it hides nothing it rides over. */
+.pn-bar {
   position: sticky;
   top: 14px;
   z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 clamp(26px, 4vw, 40px);
+  pointer-events: none;
+}
+.pn-back,
+.pn-update {
+  pointer-events: auto;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  width: fit-content;
-  margin: 0 0 clamp(26px, 4vw, 40px);
   padding: 9px 16px 9px 12px;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--radius-pill);
@@ -80,15 +88,18 @@ body.is-patch::before {
               border-color var(--dur-fast) var(--ease),
               transform var(--dur-fast) var(--ease);
 }
-.pn-back:hover {
+.pn-back:hover,
+.pn-update:hover {
   color: var(--accent-deep);
   border-color: var(--accent-text);
 }
-/* The nudge only where hover is real - a tap would leave it stuck. */
+/* The nudge only where hover is real - a tap would leave it stuck. Back only:
+   it points the way the link goes, and the check goes nowhere. */
 @media (hover: hover) {
   .pn-back:hover { transform: translateX(-2px); }
 }
-.pn-back .ico { width: 14px; height: 14px; }
+.pn-back .ico,
+.pn-update .ico { width: 14px; height: 14px; }
 
 .pn-head {
   margin-bottom: clamp(38px, 7vw, 70px);

@@ -336,11 +336,22 @@ ${loads}
        it could have been.
 
        href="/" and not "patch/..", matching the footer: this page carries no
-       <base>, and the root is the root. -->
-  <a class="pn-back" href="/">
-    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-chevron-left"/></svg>
-    Back to the board
-  </a>
+       <base>, and the root is the root.
+
+       Check for updates is a link too, to the app at #update, which runs the
+       app's own check once the board is up (openingUpdateCheck() in page.ts):
+       the check needs the service worker or the shell's updater, and neither
+       is on this page. -->
+  <nav class="pn-bar">
+    <a class="pn-back" href="/">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-chevron-left"/></svg>
+      Back to the board
+    </a>
+    <a class="pn-update" href="/#update">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-reload"/></svg>
+      Check for updates
+    </a>
+  </nav>
   <header class="pn-head">
     <h1 class="pn-title">Patch notes</h1>
     <p class="pn-lede">What has changed in mbrd, newest first. The things

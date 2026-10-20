@@ -28,7 +28,7 @@ import {
   goTo, timelineSteps, timelineStale, lastCommand, timelinePlaying, levelSwap,
 } from './state.ts';
 import { freezePrefs } from './prefs.ts';
-import { homePath, isPatchPage, isNotFoundPage, isBenchPage, openingFace, openingShare } from './page.ts';
+import { homePath, isPatchPage, isNotFoundPage, isBenchPage, openingFace, openingShare, openingUpdateCheck } from './page.ts';
 import { Viewport, travelMs } from './canvas/viewport.ts';
 import { setMissingCheck } from './canvas/item-dom.ts';
 import { paintGrid, paintGridOnView } from './canvas/grid.ts';
@@ -888,6 +888,14 @@ started.then(dismissSplash, dismissSplash);
 // The #bench boot builds its board and runs, once the page is up and the
 // splash is on its way out - the splash's own fade must not be in a scenario.
 if (benchPage) void started.then(() => benchView.boot());
+// The patch page's Check for updates, once the board is up. The fragment goes
+// first, so a reload, or the web update's own reload, does not check again.
+if (openingUpdateCheck()) {
+  void started.then(() => {
+    history.replaceState(null, '', homePath() + location.search);
+    return cmds.checkUpdates();
+  }).catch(e => reportCaught(e, 'checking for updates'));
+}
 
 // PWA file handler (manifest.json file_handlers). Waits for start() so the
 // session restore finishes before the file open — without that the two race.

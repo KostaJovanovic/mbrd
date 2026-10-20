@@ -57,6 +57,12 @@ export function openingFace(): BoardFace | null {
   return hash === 'feed' || hash === 'playlist' ? hash : null;
 }
 
+/** Whether the address asks for Check for updates (#update): the patch page's
+ * link, which is a link because nothing runs on that page. Home page only. */
+export function openingUpdateCheck(): boolean {
+  return !isPatchPage() && !isNotFoundPage() && location.hash === '#update';
+}
+
 /** The query parameter for shared boards (?s=...). Query not fragment — chat
  * clients and mailers strip fragments more aggressively. Both the link builder
  * and the boot reader must agree on this name. */
