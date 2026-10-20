@@ -205,8 +205,13 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
   });
   bus.on('settings', key => {
     if (key === 'mobileHeader') paint();
-    // Default font follows --font-display, which whimsy may replace.
+    // Default font follows --font-display, which whimsy may replace. Only when
+    // that can have moved: reading it back after a dark or palette flip costs a
+    // whole-page style recalculation and finds the same face.
     else if (key === 'appearance' && !header().font) {
+      const face = faceKey();
+      if (face === builtFor) return;
+      builtFor = face;
       buildAxisControls();
       paint();
     }
@@ -629,6 +634,15 @@ function paintFind() {
   if (!findBtn) return;
   findBtn.hidden = board.layoutMode !== 'mobile';
 }
+
+/** The look's say in the display face: the tier and any font token it overrides. */
+function faceKey() {
+  const { whimsy, vars } = board.settings.appearance;
+  const fonts = Object.entries(vars ?? {}).filter(([name]) => name.includes('font'));
+  return JSON.stringify([whimsy, fonts]);
+}
+/** faceKey() when the axis controls were last built for a look change. */
+let builtFor = '';
 
 /** Current display face stack. Guarded for tests without a document. */
 function displayStack() {

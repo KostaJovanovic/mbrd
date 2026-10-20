@@ -152,6 +152,7 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
   // undo or a Timeline trip back past a look change lands on. The exception is
   // the fallback itself, while it is on screen and not yet written to the board.
   const syncFromBoard = (load = false) => {
+    if (recording) return;
     const look = board.settings.appearance;
     const fallback = !hasLook(look) && (load || fromPrefs);
     const next = fallback ? readStored() : cloneLook(look);
@@ -186,7 +187,31 @@ function setDark(on: boolean) {
   apply(current);
   persist();
   syncControls();
-  commitAppearance(cloneLook(current), from);
+  record(cloneLook(current), from);
+}
+
+/** Set while record() runs. See there. */
+let recording = false;
+
+/**
+ * One Timeline step for a look already on screen. commit() rewinds to `from`
+ * for its snapshot and then redoes, and each half emits 'board', which
+ * syncFromBoard() would paint: the page went back to the old look and forward
+ * again inside one press. Each of those is a full style recalculation of the
+ * page, about a tenth of a second apiece on a big board in Chromium, so a dark
+ * flip cost three. The page already shows where the step ends, so it is left
+ * alone while the board's record is written.
+ */
+function record(next: Look, from: Look, label?: string, moves?: SnapMove[]) {
+  recording = true;
+  try {
+    commitAppearance(next, from, label, moves);
+  } finally {
+    recording = false;
+  }
+  // A step that did not land (commit() puts the board back while the Timeline
+  // plays) leaves the board on `from`, and the page follows it there.
+  if (!sameLook(board.settings.appearance, current)) bus.emit('board');
 }
 
 /** The look before the whimsy slider in hand moved, or null between drags. */
@@ -236,7 +261,7 @@ function settleWhimsy() {
   whimsyMoves = [];
   // Back where it started: any sweeps made on the way have undone each other.
   if (sameLook(from, current)) return;
-  commitAppearance(cloneLook(current), from, 'Whimsy', moves);
+  record(cloneLook(current), from, 'Whimsy', moves);
 }
 
 // Re-derive the sheet at the new whimsy level (paper varies by tier).
@@ -494,6 +519,12 @@ function apply(look: Look) {
   // A new tier eases the corners into place. Not before one is written: the
   // first look arrives on a page nobody has seen change.
   if (root.dataset.whimsy !== undefined && root.dataset.whimsy !== tier) reshapeCorners();
+  // Before the writes, and after the corners' measure: .is-fading on :root
+  // restyles the whole page, as the writes below do, and paintThemeColour()
+  // reads a token back. Put on after them, it cost a second full
+  // recalculation in the next reader (a quarter of a dark flip in Chromium),
+  // and the first ran with every element's own transition live.
+  followFade();
   // Always written — level 0 has its own rules; absent would fall back to 1.
   root.dataset.whimsy = tier;
   if (look.palette) root.dataset.palette = look.palette;
@@ -514,7 +545,6 @@ function apply(look: Look) {
   markDisplayFace();
   // Polyfill colour mixes for WebKit < 16.2.
   legacyBlends(root);
-  followFade();
   // The embed watermark's viewBox is measured from the display face in JS, so a
   // pure CSS var change does not refit it - the mark would keep the old face's
   // box and mis-fill. Cheap: a no-op unless a player card is mounted.
