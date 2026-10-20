@@ -15,7 +15,7 @@ import { cutout, matteAvailable } from '../canvas/matte.ts';
 import { ask } from './dialog.ts';
 import { edgeShare, familyOf, pieceByName, tierSwitch, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
 import type { Wallpaper } from '../board-model.ts';
-import { BASE_ZOOM, type Viewport } from '../canvas/viewport.ts';
+import { BASE_ZOOM, onSmallScreen, type Viewport } from '../canvas/viewport.ts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 /** How long a side takes to leave; matches .wp-side.is-leaving in wallpaper.css. */
@@ -70,6 +70,14 @@ export function initWallpaper(viewport: Viewport) {
   });
   bus.on('settings', (key: unknown) => { if (key === 'wallpaper' || key === 'appearance') schedule(); });
   bus.on('board:load', () => { seed = ''; schedule(); });
+  // A swap held while the sidebar covered the screen (swap()) runs once it has
+  // slid away, so the pieces come in where they can be seen.
+  const panel = document.getElementById('sidebar');
+  if (panel) {
+    new MutationObserver(() => {
+      if (!panel.classList.contains('is-open')) setTimeout(schedule, slideOutMs(panel));
+    }).observe(panel, { attributes: true, attributeFilter: ['class'] });
+  }
   addEventListener('resize', () => { placePivots(); placeSides(true); }, { passive: true });
   schedule();
 }
@@ -251,9 +259,30 @@ function seeded(text: string) {
   };
 }
 
+/**
+ * Whether the sidebar is open over the whole screen, as it is on a phone. A
+ * palette, a switch or a board changed from it would otherwise come in under
+ * it, unseen, and the pieces wait for it to shut instead (initWallpaper()).
+ * Read off the page rather than asked of ui/sidebar.ts, which reaches this
+ * module back through the panel.
+ */
+function underSidebar() {
+  return onSmallScreen() && !!document.getElementById('sidebar')?.classList.contains('is-open');
+}
+
+/** The sidebar's slide out, the first of its transitions (sidebar.css), in ms. */
+function slideOutMs(panel: HTMLElement) {
+  const first = getComputedStyle(panel).transitionDuration.split(',')[0]?.trim() ?? '';
+  const n = parseFloat(first);
+  return Number.isFinite(n) ? (first.endsWith('ms') ? n : n * 1000) : 0;
+}
+
 /** Send what is on the edges out, and bring `parts` in on both. */
 function swap(key: string, parts: Part[] | null) {
   if (!host || key === shown) return;
+  // Held, not dropped: refresh() asks again when the sidebar has shut. A
+  // picture being decided on is not held - it is shown so it can be decided.
+  if (underSidebar() && !trial) return;
   shown = key;
   for (const side of sides) {
     side.classList.add('is-leaving', 'is-out');
