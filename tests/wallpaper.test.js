@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { FAMILIES, PIECES, PIECE_NAMES, familyOf, wallpaperTones, pieceByName, pieceFor, pieceURL, TONES } from '../web/assets/js/ui/wallpaper-pieces.ts';
+import { FAMILIES, PIECES, PIECE_NAMES, edgeShare, familyOf, wallpaperTones, pieceByName, pieceFor, pieceURL, TONES } from '../web/assets/js/ui/wallpaper-pieces.ts';
 import { normalizeWallpaper } from '../web/assets/js/board-schema.ts';
 import { oklch, parseHex } from '../web/assets/js/color.ts';
 
@@ -52,6 +52,16 @@ test('every piece has a name to be chosen by, and only real pieces can be chosen
   assert.deepEqual(Object.keys(PIECE_NAMES).sort(), [...all].sort());
   for (const name of all) assert.ok(pieceByName(name), name);
   for (const bad of ['', 'pink', 'pink-0', 'pink-3', 'teal-1', 'pink-1x', '../pink-1']) assert.equal(pieceByName(bad), null, bad);
+});
+
+test('the zoom decides how much of the window each side takes', () => {
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  assert.ok(near(edgeShare(1), 0.1), 'a tenth each at 100%');
+  assert.ok(near(edgeShare(0.8), 0.2));
+  assert.equal(edgeShare(1.2), 0, 'gone at 120%');
+  assert.equal(edgeShare(3), 0);
+  assert.ok(near(edgeShare(0.6), 0.3));
+  assert.equal(edgeShare(0.1), 0.3, 'never more than 30%');
 });
 
 test('the wallpaper record keeps only what it may', () => {

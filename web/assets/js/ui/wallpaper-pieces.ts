@@ -43,6 +43,15 @@ export function pieceByName(name: string): { family: Family, n: number } | null 
   return n >= 1 && n <= PIECES[m[1]] ? { family: m[1], n } : null;
 }
 
+/**
+ * How much of the window's width each side may take at a board zoom (1 is
+ * 100%): the two together take 120% less the zoom, so none from 120% up, a
+ * tenth each at 100%, and never more than 30% a side.
+ */
+export function edgeShare(zoom: number): number {
+  return Math.min(0.3, Math.max(0, (1.2 - zoom) / 2));
+}
+
 /** Where an arrangement is, document-relative like every asset path. */
 export const pieceURL = (family: Family, n: number) => `./assets/img/wallpaper/${family}-${n}.svg`;
 

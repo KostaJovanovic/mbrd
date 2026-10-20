@@ -12,9 +12,10 @@ import { currentBoardId } from '../storage/storage.ts';
 import { surface, surfaceToPicture, type Surface } from '../canvas/surface.ts';
 import { cutout, matteAvailable } from '../canvas/matte.ts';
 import { ask } from './dialog.ts';
-import { familyOf, pieceByName, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
+import { edgeShare, familyOf, pieceByName, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
 import type { Wallpaper } from '../board-model.ts';
 import { readPref, writePref } from '../prefs.ts';
+import { BASE_ZOOM, type Viewport } from '../canvas/viewport.ts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 /** How long a side takes to leave; matches .wp-side.is-leaving in wallpaper.css. */
@@ -56,9 +57,11 @@ export function setChosenWallpaper(name: string) {
   schedule();
 }
 
-export function initWallpaper() {
+export function initWallpaper(viewport: Viewport) {
   host = document.getElementById('wallpaper');
   if (!host) return;
+  view = viewport;
+  view.onChange(placeSides);
   host.append(toneFilter());
   const root = document.documentElement;
   new MutationObserver(schedule).observe(root, {
@@ -67,7 +70,7 @@ export function initWallpaper() {
   });
   bus.on('settings', (key: unknown) => { if (key === 'wallpaper' || key === 'appearance') schedule(); });
   bus.on('board:load', () => { seed = ''; schedule(); });
-  addEventListener('resize', placePivots, { passive: true });
+  addEventListener('resize', () => { placePivots(); placeSides(); }, { passive: true });
   schedule();
 }
 
@@ -297,6 +300,8 @@ function swap(key: string, parts: Part[] | null) {
     sides.push(side);
   }
   placePivots();
+  measure(sides[0]);
+  placeSides();
   // Two frames: the first lays the pieces out where they start, the second lets
   // them go, so the transition has a from to run from.
   const enter = sides;
@@ -315,6 +320,7 @@ function placePivots() {
   for (const side of sides) {
     const w = side.clientWidth, h = side.clientHeight;
     const scale = Math.max(w / 600, h / 1000);
+    fit = { w, scale };
     const top = (h - 1000 * scale) / 2;
     for (const item of side.querySelectorAll<HTMLElement>('.wp-piece')) {
       const [x, y] = (item.dataset.pivot || '').split(' ').map(Number);
@@ -324,6 +330,53 @@ function placePivots() {
       if (float instanceof HTMLElement) float.style.transformOrigin = origin;
     }
   }
+}
+
+let view: Viewport | null = null;
+/** A side's width and the art's px per file unit, kept by placePivots() so a zoom frame reads no layout. */
+let fit = { w: 0, scale: 1 };
+/** How far the art on the edges reaches at rest, in the file's units, or null for a board's own picture. */
+let extent: { near: number, far: number } | null = null;
+/** Units past the drawn edge, for the shadows and the float, which the box leaves out. */
+const EXTENT_PAD = 12;
+
+/** The art's nearest and farthest x across its pieces, each turned to its rest angle about its pivot. */
+function measure(side: HTMLElement | undefined) {
+  let near = Infinity, far = -Infinity;
+  for (const item of side?.querySelectorAll<HTMLElement>('.wp-piece') ?? []) {
+    const svg = item.querySelector('svg');
+    if (!svg) continue;
+    let box: DOMRect;
+    try { box = svg.getBBox(); } catch { continue; }
+    if (!box.width) continue;
+    // A piece with no pivot turns about '0 70%' (placePivots()).
+    const [px, py] = item.dataset.pivot ? item.dataset.pivot.split(' ').map(Number) : [0, 700];
+    const turn = (parseFloat(item.style.getPropertyValue('--wp-rest')) || 0) * Math.PI / 180;
+    const cos = Math.cos(turn), sin = Math.sin(turn);
+    for (const x of [box.x, box.x + box.width]) {
+      for (const y of [box.y, box.y + box.height]) {
+        const turned = px + (x - px) * cos - (y - py) * sin;
+        near = Math.min(near, turned);
+        far = Math.max(far, turned);
+      }
+    }
+  }
+  extent = Number.isFinite(far) ? { near: near - EXTENT_PAD, far: far + EXTENT_PAD } : null;
+}
+
+/**
+ * Each side slid along so the art takes as much of the window as the zoom
+ * gives it (edgeShare()): out past the edge as the board is zoomed in, further
+ * in as it is zoomed out. Never so far in that the end of the art that crosses
+ * the edge comes off it, so on a wide window the share is a ceiling.
+ */
+function placeSides() {
+  if (!view || !sides.length) return;
+  const room = edgeShare(view.zoom / BASE_ZOOM) * innerWidth;
+  const far = extent ? extent.far * fit.scale : fit.w;
+  const most = extent ? Math.max(0, -extent.near * fit.scale) : 0;
+  const shift = `${Math.min(room - far, most).toFixed(1)}px`;
+  for (const side of sides) side.style.setProperty('--wp-shift', shift);
 }
 
 // ---------------------------------------------------------------------------

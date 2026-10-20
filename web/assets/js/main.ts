@@ -301,7 +301,7 @@ initAppearance({
 });
 initGrain(vp);
 // The pieces at the edges at Softish; follows the look by watching :root.
-initWallpaper();
+initWallpaper(vp);
 // Board-edge warning mark.
 initFarLands(vp);
 initAudio();

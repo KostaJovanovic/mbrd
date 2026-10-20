@@ -15,11 +15,12 @@
 
 .wp-defs { position: absolute; width: 0; height: 0; }
 
-/* A side is as tall as the window and up to about a quarter of it wide, so a
-   piece is generous on a desktop and a sliver on a phone. The art is drawn as
-   the left side, its edge at x=0, and sliced to the box's height (xMinYMid
-   slice), so what a narrow box loses is the far side of the piece rather than
-   its size. */
+/* A side is as tall as the window and up to about a quarter of it wide, which
+   sets the art's size: it is drawn as the left side, its edge at x=0, and
+   sliced to the box's height (xMinYMid slice). How much of the window it takes
+   is the board zoom's, as --wp-shift, set by ui/wallpaper.ts each view frame:
+   the side slides out past the edge as the board is zoomed in and further in
+   as it is zoomed out, the art keeping its size. */
 .wp-side {
   position: absolute;
   top: 0;
@@ -30,14 +31,16 @@
      0.7 was settled on by eye. */
   opacity: 0.7;
   transition: opacity var(--dur-base) var(--ease);
+  will-change: transform;
 }
-.wp-left { left: 0; }
+.wp-left { left: 0; transform: translateX(var(--wp-shift, 0px)); }
 /* The left side gives way to the sidebar that opens over it, over the same
    --dur-base the sheet slides in on (sidebar.css), and comes back as it shuts. */
 :root:has(#sidebar.is-open) .wp-left { opacity: 0; }
 /* The right side is the left one turned over, so its x=0 lies on the window's
-   right edge and every piece below moves and turns as its twin does, mirrored. */
-.wp-right { right: 0; transform: scaleX(-1); }
+   right edge and every piece below moves and turns as its twin does, mirrored,
+   the shift included. */
+.wp-right { right: 0; transform: scaleX(-1) translateX(var(--wp-shift, 0px)); }
 
 /* Each piece is a layer of its own (ui/wallpaper.ts gives each its own copy of
    the file). They all start together from past the edge, each from its own
