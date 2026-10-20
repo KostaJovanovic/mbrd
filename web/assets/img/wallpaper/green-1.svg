@@ -138,7 +138,7 @@ C199 424 200 427 201 430C201 432 201 435 200 437C199 439 196 440 194 440Z"/>
 <linearGradient id="green-1-la-gb" gradientUnits="userSpaceOnUse" x1="-293.1" y1="708.8" x2="372" y2="380"><stop offset="0" class="s-5" stop-opacity="0.4"/><stop offset="0.4" class="s-5" stop-opacity="0"/><stop offset="0.85" class="s-hi" stop-opacity="0"/><stop offset="1" class="s-hi" stop-opacity="0.3"/></linearGradient>
 <radialGradient id="green-1-la-gl" gradientUnits="userSpaceOnUse" cx="-11.7" cy="405.5" r="225"><stop offset="0" class="s-hi" stop-opacity="0.24"/><stop offset="1" class="s-hi" stop-opacity="0"/></radialGradient>
 </defs>
-<g class="wp-item" data-pivot="-440 560">
+<g class="wp-item" data-pivot="-420 1170" transform="translate(20 610)">
 <g filter="url(#green-1-dof)">
 <use href="#green-1-pb" class="f-5" opacity="0.16" transform="translate(-16 20)" filter="url(#green-1-sh)"/>
 <use href="#green-1-pb" class="f-2"/>
@@ -201,7 +201,7 @@ C-79 868-70 869-61 870C-51 871-42 872-33 873C-24 874-14 875-5 877C4 878 13 880 2
 C113 901 122 903 131 906C140 908 154 911 158 912"/>
 </g>
 </g>
-<g class="wp-item" data-pivot="-440 1000">
+<g class="wp-item" data-pivot="-621 162" transform="translate(40 190) rotate(46) translate(-40 -544)">
 <use href="#green-1-pa" class="f-5" opacity="0.16" transform="translate(-16 20)" filter="url(#green-1-sh)"/>
 <use href="#green-1-pa" class="f-3"/>
 <g clip-path="url(#green-1-pa-c)">

@@ -23,7 +23,7 @@ C98 885 97 893 94 900Z"/>
 <clipPath id="green-5-p2-c"><use href="#green-5-p2"/></clipPath>
 <radialGradient id="green-5-p2-g" gradientUnits="userSpaceOnUse" cx="48.2" cy="850.4" r="92.5"><stop offset="0" class="s-1"/><stop offset="0.35" class="s-2"/><stop offset="0.7" class="s-3"/><stop offset="1" class="s-5"/></radialGradient>
 </defs>
-<g class="wp-item" data-pivot="-300 196">
+<g class="wp-item" data-pivot="-300 836" transform="translate(0 640)">
 <use href="#green-5-p1" class="f-5" opacity="0.15" transform="translate(-16 22)" filter="url(#green-5-sh)"/>
 <use href="#green-5-p1" fill="url(#green-5-p1-g)"/>
 <g clip-path="url(#green-5-p1-c)">
@@ -32,7 +32,7 @@ C98 885 97 893 94 900Z"/>
 <ellipse cx="89.2" cy="156" rx="27.3" ry="9.6" class="f-hi" opacity="0.85" filter="url(#green-5-sx)" transform="rotate(-28 89 156)"/>
 </g>
 </g>
-<g class="wp-item" data-pivot="-300 590">
+<g class="wp-item" data-pivot="-240 204" transform="matrix(.8 0 0 .8 0 -268)">
 <use href="#green-5-slab" class="f-5" opacity="0.16" transform="translate(-18 26)" filter="url(#green-5-sh)"/>
 <use href="#green-5-slab" fill="url(#green-5-edge)" transform="translate(9 -7)"/>
 <use href="#green-5-slab" class="f-3"/>
@@ -305,7 +305,7 @@ C29 713 30 711 30 710C31 709 31 707 32 706C33 706 35 705 37 705C38 705 40 704 41
 </g>
 <path fill="none" class="k-hi" stroke-width="1.4" opacity="0.7" d="M12 381C32 384 97 387 135 397C173 408 212 424 239 446C266 469 286 517 295 531"/>
 </g>
-<g class="wp-item" data-pivot="-300 872">
+<g class="wp-item" data-pivot="-125 902" transform="translate(175 30)">
 <use href="#green-5-p2" class="f-5" opacity="0.15" transform="translate(-16 22)" filter="url(#green-5-sh)"/>
 <use href="#green-5-p2" fill="url(#green-5-p2-g)"/>
 <g clip-path="url(#green-5-p2-c)">

@@ -263,8 +263,8 @@ PIECES['green-2'] = () => {
     const rachis = path(ribbon(cv, stem + 0.6, 0.8, 20), tones.stem) + path(open(Array.from({ length: 21 }, (_, i) => cubic(cv, i / 20))), 'k-2', 'fill="none" stroke-width="1.2" opacity=".55"');
     c.item(p0, back.join('') + rachis + front.join(''));
   };
-  frond([-250, 640], [-40, 190], [300, 250], 230, 15, 4.5, { upper: ['f-1', 'f-3'], lower: ['f-3', 'f-4'], stem: 'f-3' });
-  frond([-270, 1120], [-20, 690], [310, 770], 255, 15, 5, { upper: ['f-2', 'f-4'], lower: ['f-3', 'f-5'], stem: 'f-4' });
+  frond([-250, 560], [-40, 110], [300, 170], 230, 15, 4.5, { upper: ['f-1', 'f-3'], lower: ['f-3', 'f-4'], stem: 'f-3' });
+  frond([-270, 1180], [-20, 770], [310, 860], 255, 15, 5, { upper: ['f-2', 'f-4'], lower: ['f-3', 'f-5'], stem: 'f-4' });
   return c.svg('majesty palm, two fronds reaching in past the left edge: a short arching stem, folded strap leaflets on both sides angled forward and drooping');
 };
 
@@ -300,9 +300,9 @@ PIECES['green-3'] = () => {
     }
     return g(at(C, tilt, 1, 0.78), s + `<circle r="${fi(R * 0.07)}" class="f-3"/>`);
   };
-  c.item([-300, 320], rosette([-30, 320], 190, -8));
-  c.item([-300, 790], rosette([-20, 790], 130, 12));
-  c.item([-300, 900], rosette([150, 905], 54, 30), { shadow: 0.18, blur: 5 });
+  c.item([-300, 220], rosette([-30, 220], 190, -8));
+  c.item([-300, 840], rosette([-20, 840], 130, 12));
+  c.item([-300, 950], rosette([150, 945], 54, 30), { shadow: 0.18, blur: 5 });
   return c.svg('zebra haworthia, two rosettes seen from a little above and a pup, stiff keeled leaves banded with white tubercles, cut by the left edge');
 };
 
@@ -351,12 +351,12 @@ PIECES['red-1'] = () => {
     return g(at(p, a), s);
   };
   const stem = (from, ctrl, to, w) => path(ribbon(quad(from, ctrl, to), w, w * 0.7), 'f-4');
-  c.item([-320, 760],
-    stem([-330, 640], [-200, 520], [-86, 472], 5) + leaf([-90, 470], 6, 330)
-    + stem([-320, 760], [-60, 520], [66, 296], 4.5) + spathe([60, 290], -40, 200));
-  c.item([-320, 1100],
-    stem([-330, 1060], [-180, 940], [-84, 902], 5) + leaf([-90, 900], 14, 290)
-    + stem([-320, 1100], [-90, 860], [36, 726], 4.2) + spathe([30, 720], -14, 180));
+  c.item([-320, 600],
+    stem([-330, 480], [-200, 370], [-86, 322], 5) + leaf([-90, 320], -6, 330)
+    + stem([-320, 600], [-60, 380], [66, 196], 4.5) + spathe([60, 190], -40, 200));
+  c.item([-320, 1140],
+    stem([-330, 1100], [-180, 990], [-84, 952], 5) + leaf([-90, 950], 10, 290)
+    + stem([-320, 1140], [-90, 920], [36, 806], 4.2) + spathe([30, 800], -14, 180));
   return c.svg('anthurium, two glossy heart-shaped spathes with their spadix, each before a long heart leaf, on stems from beyond the left edge');
 };
 
@@ -401,9 +401,9 @@ PIECES['red-2'] = () => {
     for (const [x, y, r, a] of gems) s += gem(x, y, r, a);
     return s;
   };
-  c.item([-300, 260], matrix(-90, 270, 175, 140, [[60, 190, 34, 8], [92, 262, 44, -4], [48, 340, 30, 20], [10, 140, 26, 14], [-4, 230, 22, 2], [26, 400, 20, -10]]));
-  c.item([-300, 770], matrix(-70, 770, 135, 110, [[40, 720, 30, 12], [56, 790, 36, -6], [8, 846, 24, 18]]));
-  c.item([-300, 540], gem(150, 535, 27, 16), { shadow: 0.2, blur: 5 });
+  c.item([-300, 190], matrix(-90, 200, 175, 140, [[60, 120, 34, 8], [92, 192, 44, -4], [48, 270, 30, 20], [10, 70, 26, 14], [-4, 160, 22, 2], [26, 330, 20, -10]]));
+  c.item([-300, 850], matrix(-70, 850, 135, 110, [[40, 800, 30, 12], [56, 870, 36, -6], [8, 926, 24, 18]]));
+  c.item([-300, 930], gem(170, 950, 27, 16), { shadow: 0.2, blur: 5 });
   return c.svg('garnets, dodecahedral crystals set in two pieces of dark matrix rock reaching in past the left edge, and one loose');
 };
 
@@ -469,8 +469,8 @@ PIECES['orange-1'] = () => {
     }
     return s + head(to, R, tilt);
   };
-  c.item([-300, 640], plant([-300, 640], [-60, 420], [96, 268], 96, 14, [[0.35, -1, 120], [0.5, 1, 110], [0.64, -1, 100], [0.78, 1, 84]]));
-  c.item([-300, 1120], plant([-300, 1120], [-80, 860], [66, 760], 78, 26, [[0.4, 1, 104], [0.56, -1, 96], [0.72, 1, 80]]));
+  c.item([-300, 520], plant([-300, 520], [-60, 320], [96, 178], 96, 14, [[0.35, -1, 120], [0.5, 1, 110], [0.64, -1, 100], [0.78, 1, 84]]));
+  c.item([-300, 1160], plant([-300, 1160], [-80, 920], [66, 830], 78, 26, [[0.4, 1, 104], [0.56, -1, 96], [0.72, 1, 80]]));
   return c.svg('pincushion protea, two heads of curved styles with knobbed tips on leafy stems from beyond the left edge');
 };
 
@@ -511,9 +511,9 @@ PIECES['orange-2'] = () => {
     s += path(open(rib), 'k-1', 'fill="none" stroke-width="1.8" stroke-linecap="round"');
     return g(at(base, a), s);
   };
-  c.item([-330, 540], feather([-330, 540], -34, 720, 32, 1));
-  c.item([-330, 560], feather([-330, 560], -18, 680, 28, 2), { shadow: 0.14 });
-  c.item([-320, 1010], feather([-320, 1010], -27, 650, 30, 3));
+  c.item([-330, 420], feather([-330, 420], -32, 720, 32, 1));
+  c.item([-330, 440], feather([-330, 440], -15, 680, 28, 2), { shadow: 0.14 });
+  c.item([-320, 1060], feather([-320, 1060], -22, 650, 30, 3));
   return c.svg('pheasant tail feathers, three long barred feathers reaching in past the left edge at different heights');
 };
 
@@ -565,10 +565,10 @@ PIECES['yellow-1'] = () => {
     }
     return back + front + poms;
   };
-  c.item([-300, 470], sprig([-300, 470], [-40, 260], [270, 230],
+  c.item([-300, 400], sprig([-300, 400], [-40, 190], [270, 160],
     [[0.42, -1, 80, 6], [0.5, 1, 70, 5], [0.6, -1, 90, 7], [0.7, 1, 76, 6], [0.8, -1, 70, 5], [0.9, 1, 54, 4], [0.98, -1, 40, 3]],
     [[0.35, 1, 170, 22], [0.5, -1, 150, 30], [0.66, 1, 140, 26]]));
-  c.item([-300, 960], sprig([-300, 960], [-60, 760], [240, 760],
+  c.item([-300, 1030], sprig([-300, 1030], [-60, 830], [240, 830],
     [[0.45, 1, 76, 6], [0.56, -1, 84, 6], [0.68, 1, 70, 5], [0.8, -1, 66, 5], [0.93, 1, 48, 4]],
     [[0.4, -1, 160, 26], [0.56, 1, 150, 24], [0.72, -1, 130, 30]]));
   return c.svg('mimosa, two sprigs of fluffy pom-pom flowers among feathery bipinnate leaves, reaching in past the left edge');
@@ -578,9 +578,9 @@ PIECES['yellow-1'] = () => {
 PIECES['yellow-2'] = () => {
   const c = canvas('yellow-2', 61);
   const point = (p, a, len, wid, tones, streaks) => g(at(p, a), prism(c, len, wid, { tones, streaks, angle: a }));
-  c.item([-300, 260], point([-110, 420], -48, 250, 80, 'deep', 3) + point([-150, 330], -24, 400, 118, 'mid', 6));
+  c.item([-300, 200], point([-110, 330], -48, 250, 80, 'deep', 3) + point([-150, 250], -16, 400, 118, 'mid', 6));
   let cl = '';
-  const base = [-70, 760];
+  const base = [-70, 880];
   for (const [a, len, wid, tones] of [[-62, 150, 46, 'deep'], [-40, 230, 70, 'mid'], [-16, 260, 84, 'mid'], [8, 190, 60, 'light'], [28, 140, 44, 'mid'], [-28, 120, 38, 'light']]) {
     cl += point(add(base, mul(dir(a), 40)), a, len, wid, tones, 3);
   }
@@ -590,8 +590,8 @@ PIECES['yellow-2'] = () => {
     const q = add(base, [c.rr(-90, 70), c.rr(-50, 70)]);
     sp += `<circle cx="${fi(q[0])}" cy="${fi(q[1])}" r="${f1(c.rr(0.8, 2))}" class="${c.rand() < 0.4 ? 'f-hi' : 'f-2'}" opacity="${f1(c.rr(0.4, 0.9))}"/>`;
   }
-  c.item([-300, 760], g(at(base), path(stoneOutline(c, 110, 80, 0.12), '', `fill="${druzy}"`)) + sp + cl);
-  c.item([-300, 560], point([150, 560], -38, 100, 34, 'light', 1), { shadow: 0.2, blur: 5 });
+  c.item([-300, 880], g(at(base), path(stoneOutline(c, 110, 80, 0.12), '', `fill="${druzy}"`)) + sp + cl);
+  c.item([-300, 70], point([110, 80], -38, 100, 34, 'light', 1), { shadow: 0.2, blur: 5 });
   return c.svg('citrine, a large point, a cluster on a druzy base, and one small loose point, cut by the left edge');
 };
 
@@ -631,8 +631,8 @@ PIECES['blue-1'] = () => {
     }
     return s + hs + head(to, Math.atan2(cubicTan(cv, 1)[1], cubicTan(cv, 1)[0]) / D2R + 90, 1.25);
   };
-  c.item([-300, 640], plant([-300, 640], [-80, 400], [150, 250], [[0.55, 60, -150, 1], [0.7, 120, 20, 0.95], [0.4, 20, -210, 0.85]]));
-  c.item([-300, 1100], plant([-300, 1100], [-100, 860], [130, 760], [[0.6, 80, 60, 1], [0.5, 40, -110, 0.9]]));
+  c.item([-300, 560], plant([-300, 560], [-80, 320], [150, 180], [[0.55, 60, -120, 1], [0.7, 120, 10, 0.95], [0.4, 20, -180, 0.85]]));
+  c.item([-300, 1160], plant([-300, 1160], [-100, 920], [130, 830], [[0.6, 80, 60, 1], [0.5, 40, -80, 0.9]]));
   return c.svg('sea holly, two branching stems of cone-shaped heads, each in a ruff of spiny bracts, reaching in past the left edge');
 };
 
@@ -662,7 +662,7 @@ PIECES['blue-2'] = () => {
     s += `<g clip-path="${c.url('lap')}">${veins}<g class="f-1" opacity=".7">${fl}</g></g>`;
     s += `<ellipse cx="70" cy="-60" rx="70" ry="22" transform="rotate(-18 70 -60)" class="f-hi" opacity=".3" filter="${c.soft(8)}"/>`;
     s += path(d, 'k-hi', 'fill="none" stroke-width="1.2" opacity=".22"');
-    c.item([-300, 300], g(at([-20, 300], -10), s));
+    c.item([-300, 210], g(at([-20, 210], -10), s));
   }
   // the frosting: fine noise, kept only where the glass is, as pale grain
   c.def(`<filter id="${c.id('frost')}" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="2.2" numOctaves="2" seed="4"/><feColorMatrix values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.4 -0.55"/><feComposite in2="SourceGraphic" operator="in"/></filter>`);
@@ -674,7 +674,7 @@ PIECES['blue-2'] = () => {
       + path(d, 'k-hi', `fill="none" stroke-width="5" opacity=".5" filter="${c.soft(2.5)}"`)
       + `<ellipse cx="${fi(rx * 0.25)}" cy="${fi(-ry * 0.3)}" rx="${fi(rx * 0.35)}" ry="${fi(ry * 0.18)}" transform="rotate(-12 ${fi(rx * 0.25)} ${fi(-ry * 0.3)})" class="f-hi" opacity=".5" filter="${c.soft(4)}"/>`);
   };
-  c.item([-300, 610], glass([120, 610], 18, 48, 33, '1', '2'), { shadow: 0.12, blur: 6 });
+  c.item([-300, 950], glass([150, 945], 18, 48, 33, '1', '2'), { shadow: 0.12, blur: 6 });
   c.item([-300, 830], glass([30, 830], -12, 64, 42, '2', '3'), { shadow: 0.12, blur: 6 });
   return c.svg('lapis lazuli with sea glass: a polished slab veined with calcite and flecked with pyrite, and two frosted pebbles, cut by the left edge');
 };
@@ -705,8 +705,8 @@ PIECES['purple-1'] = () => {
     });
     return path(stems, 'k-4', 'fill="none" stroke-width="1.7" stroke-linecap="round"') + spikes;
   };
-  c.item([-300, 560], bunch([-300, 560], [-44, -36, -28, -20, -13, -5], [520, 560, 600, 580, 540, 500]));
-  c.item([-300, 1040], bunch([-300, 1040], [-36, -27, -19, -11, -3], [500, 540, 560, 520, 480]));
+  c.item([-300, 470], bunch([-300, 470], [-50, -42, -34, -27, -20, -13], [520, 560, 600, 580, 540, 500]));
+  c.item([-300, 1080], bunch([-300, 1080], [-34, -26, -18, -10, -3], [500, 540, 560, 520, 480]));
   return c.svg('lavender, two loose bunches of stems from beyond the left edge, each ending in a spike of whorled buds');
 };
 
@@ -714,7 +714,7 @@ PIECES['purple-1'] = () => {
 // inward-pointing crystals, and one loose point.
 PIECES['purple-2'] = () => {
   const c = canvas('purple-2', 101);
-  const C = [-80, 380], RX = 260, RY = 210;
+  const C = [-80, 250], RX = 260, RY = 200;
   const ring = (k, wob) => {
     const pts = [];
     for (let i = 0; i < 20; i++) {
@@ -750,8 +750,10 @@ PIECES['purple-2'] = () => {
     }
   }
   s += xs;
-  c.item([-320, 380], g(at(C), s));
-  c.item([-300, 780], g(at([150, 780], -32), prism(c, 120, 40, { tones: 'mid', streaks: 1, angle: -32 })), { shadow: 0.2, blur: 5 });
+  c.item([-320, 250], g(at(C), s));
+  // two loose points below, so the bottom answers the geode at the top
+  c.item([-300, 860], g(at([40, 880], -26), prism(c, 170, 56, { tones: 'mid', streaks: 2, angle: -26 }))
+    + g(at([20, 930], 4), prism(c, 130, 44, { tones: 'deep', streaks: 1, angle: 4 })), { shadow: 0.2, blur: 5 });
   return c.svg('amethyst geode, a broken half cut by the left edge: rind, agate band and a cavity of inward-pointing crystals, and one loose point');
 };
 
@@ -789,16 +791,16 @@ PIECES['pink-1'] = () => {
   }
   const leaf = (p, a, L) => g(at(p, a), [[-28, 0.78], [0, 1], [28, 0.8]].map(([da, k]) => `<use href="#${c.id('lt')}" transform="rotate(${da}) scale(${f1(L * k) / 100})"/>`).join(''));
   const stem = (a, b, ctl, w) => path(ribbon(quad(a, ctl, b), w, w * 0.75), 'f-4');
-  c.item([-300, 620],
-    stem([-300, 620], [70, 300], [-60, 380], 5) + leaf([-60, 420], 14, 150) + leaf([10, 350], -64, 120) + bloom([72, 290], 138, -18));
+  c.item([-300, 520],
+    stem([-300, 520], [70, 200], [-60, 280], 5) + leaf([-60, 320], 14, 150) + leaf([10, 250], -64, 120) + bloom([72, 190], 138, -18));
   const bud = (p) => {
     const f = c.rad('bud', [0.62, 0.36, 0.62], [[0, '1'], [0.6, '3'], [1, '4']]);
     const sep = blade(34, u => 9 * Math.sin(Math.PI * Math.min(u, 0.97)) ** 0.6, { bend: 0.15 });
     return g(at(p), `<circle r="20" fill="${f}"/>` + g('translate(-6 14) rotate(-80)', path(sep.out, 'f-4')) + g('translate(4 16) rotate(-120)', path(sep.out, 'f-5')));
   };
-  c.item([-300, 1080],
-    stem([-300, 1080], [50, 760], [-70, 860], 4.6) + stem([-60, 850], [146, 668], [60, 720], 3) + leaf([-90, 900], 22, 140)
-    + leaf([40, 730], -40, 80) + bud([148, 664]) + bloom([52, 760], 104, -6));
+  c.item([-300, 1150],
+    stem([-300, 1150], [50, 830], [-70, 930], 4.6) + stem([-60, 920], [146, 738], [60, 790], 3) + leaf([-90, 970], 22, 140)
+    + leaf([40, 800], -40, 80) + bud([148, 734]) + bloom([52, 840], 104, -6));
   return c.svg('peony, a full bloom in three rings of ruffled petals, a second smaller bloom and a bud on stems from beyond the left edge, with lobed leaves');
 };
 
@@ -825,7 +827,7 @@ PIECES['pink-2'] = () => {
     let e = '';
     for (const v of V) e += `M${P(C)}L${P(v)}`;
     s += path(e, 'k-hi', 'fill="none" stroke-width="0.9" opacity=".3"') + path(poly(V), 'k-4', 'fill="none" stroke-width="1" opacity=".35" stroke-linejoin="round"');
-    c.item([-320, 300], g(at([-40, 300], 8), s));
+    c.item([-320, 210], g(at([-40, 210], 8), s));
   }
   const tumbled = (p, a, rx, ry, k) => {
     const d = stoneOutline(c, rx, ry, 0.07);
@@ -836,8 +838,8 @@ PIECES['pink-2'] = () => {
     return g(at(p, a), path(d, '', `fill="${f}"`) + `<g clip-path="${c.url(`t${k}`)}"><g filter="${c.soft(6)}">${cl}</g></g>`
       + `<ellipse cx="${fi(rx * 0.3)}" cy="${fi(-ry * 0.42)}" rx="${fi(rx * 0.3)}" ry="${fi(ry * 0.14)}" transform="rotate(-14 ${fi(rx * 0.3)} ${fi(-ry * 0.42)})" class="f-hi" opacity=".7" filter="${c.soft(2)}"/>`);
   };
-  c.item([-300, 620], tumbled([130, 620], 14, 58, 44, 1), { shadow: 0.14, blur: 6 });
-  c.item([-300, 850], tumbled([36, 850], -10, 76, 52, 2), { shadow: 0.14, blur: 6 });
+  c.item([-300, 950], tumbled([150, 950], 14, 58, 44, 1), { shadow: 0.14, blur: 6 });
+  c.item([-300, 830], tumbled([30, 830], -10, 76, 52, 2), { shadow: 0.14, blur: 6 });
   return c.svg('rose quartz, a raw faceted chunk and two tumbled pebbles, milky inside, cut by the left edge');
 };
 
@@ -868,9 +870,11 @@ PIECES['brown-1'] = () => {
     }
     return lower + path(ribbon(cv, 3, 0.8, 18), tones.stem) + s;
   };
-  c.item([-280, 560], frond([-280, 560], [-20, 200], [300, 210], 105, 24, { upper: ['f-1', 'f-3'], lower: ['f-2', 'f-4'], stem: 'f-4' }));
-  c.item([-300, 700], frond([-300, 700], [-60, 520], [210, 520], 70, 18, { upper: ['f-3', 'f-4'], lower: ['f-4', 'f-5'], stem: 'f-5' }), { shadow: 0.12 });
-  c.item([-280, 1100], frond([-280, 1100], [-30, 760], [290, 790], 100, 23, { upper: ['f-2', 'f-3'], lower: ['f-3', 'f-4'], stem: 'f-4' }));
+  // one big frond arching over the top; below, a small dark one lying low
+  // behind the second, as two fronds of one plant would
+  c.item([-280, 470], frond([-280, 470], [-20, 110], [300, 130], 105, 24, { upper: ['f-1', 'f-3'], lower: ['f-2', 'f-4'], stem: 'f-4' }));
+  c.item([-300, 1090], frond([-300, 1090], [-60, 980], [230, 960], 70, 18, { upper: ['f-3', 'f-4'], lower: ['f-4', 'f-5'], stem: 'f-5' }), { shadow: 0.12 });
+  c.item([-280, 1120], frond([-280, 1120], [-30, 800], [290, 820], 100, 23, { upper: ['f-2', 'f-3'], lower: ['f-3', 'f-4'], stem: 'f-4' }));
   return c.svg('fern, three arching fronds of lobed pinnae reaching in past the left edge');
 };
 
@@ -906,7 +910,7 @@ PIECES['brown-2'] = () => {
     s += `<g clip-path="${c.url('vane')}">${path(bars, 'k-4', `fill="none" stroke-width="11" opacity=".5" filter="${c.soft(3)}"`)}<g class="f-4" opacity=".3" filter="${c.soft(2)}">${mot}</g></g>`;
     s += path(`${top}${bot}`, 'k-2', `fill="none" stroke-width="4" opacity=".5" filter="${c.soft(2)}"`);
     s += path(open(Array.from({ length: 11 }, (_, i) => [i / 10 * L * 0.97, curve(i / 10)])), 'k-1', 'fill="none" stroke-width="2.4" stroke-linecap="round"');
-    c.item([-220, 360], g(at([-130, 390], -18), s));
+    c.item([-220, 200], g(at([-90, 210], -16), s));
   }
   const oak = (p, a, L, tones) => {
     const lobes = u => 0.5 + 0.5 * Math.abs(Math.cos(u * Math.PI * 4.5)) ** 0.7;
@@ -918,7 +922,8 @@ PIECES['brown-2'] = () => {
     }
     return g(at(p, a), path(b.a, tones[0]) + path(b.b, tones[1]) + path(b.rib + veins, 'k-hi', 'fill="none" stroke-width="1.1" opacity=".35"'));
   };
-  c.item([-300, 660], oak([-40, 660], -14, 250, ['f-2', 'f-3']) + path(ribbon(quad([-300, 700], [-160, 680], [-40, 660]), 2.6, 2), 'f-4'));
+  // an oak leaf under the feather at the top, the other with the acorns below
+  c.item([-300, 360], oak([-40, 340], -6, 230, ['f-2', 'f-3']) + path(ribbon(quad([-300, 380], [-160, 360], [-40, 340]), 2.6, 2), 'f-4'));
   const acorn = (p, a) => {
     const nut = c.rad('nut', [0.6, 0.35, 0.65], [[0, '1'], [0.6, '3'], [1, '4']]);
     const cup = c.rad('cup', [0.6, 0.3, 0.7], [[0, '3'], [1, '5']]);
@@ -967,10 +972,12 @@ PIECES['white-1'] = () => {
     return g(at(p, a), `<ellipse cx="0" cy="-10" rx="12" ry="24" fill="${f}"/>${path(hair, 'k-hi', 'fill="none" stroke-width="0.7" opacity=".45"')}`);
   };
   const branch = cv => path(ribbon(cv, 7, 2.6, 16), 'f-5') + path(open(Array.from({ length: 9 }, (_, i) => add(cubic(cv, i / 8), [0.6, -1.6]))), 'k-3', 'fill="none" stroke-width="1.4" opacity=".5"');
-  const b1 = quad([-300, 560], [-60, 420], [90, 300]);
-  c.item([-300, 560], branch(b1) + leaf(cubic(b1, 0.55), 30, 150) + leaf(cubic(b1, 0.7), -70, 120) + bloom([96, 300], -18, 128));
-  const b2 = quad([-300, 1060], [-40, 900], [70, 800]);
-  c.item([-300, 1060], branch(b2) + leaf(cubic(b2, 0.6), 24, 140) + bud([168, 690], 30) + path(ribbon(quad(cubic(b2, 0.82), [130, 760], [160, 712]), 3, 2), 'f-5') + bloom([74, 800], -8, 104));
+  // a bloom with its leaves held up along the top; the second, with its bud,
+  // low, the leaf swung down under it rather than up into the middle
+  const b1 = quad([-300, 440], [-60, 300], [90, 200]);
+  c.item([-300, 440], branch(b1) + leaf(cubic(b1, 0.5), -10, 150) + leaf(cubic(b1, 0.7), -80, 110) + bloom([96, 200], -18, 128));
+  const b2 = quad([-300, 1110], [-40, 960], [70, 870]);
+  c.item([-300, 1110], branch(b2) + leaf(cubic(b2, 0.6), 34, 140) + bud([176, 770], 30) + path(ribbon(quad(cubic(b2, 0.82), [136, 840], [168, 792]), 3, 2), 'f-5') + bloom([74, 870], -8, 104));
   return c.svg('magnolia, two cupped blooms and a furred bud on dark branches with glossy leaves, reaching in past the left edge');
 };
 
@@ -978,9 +985,11 @@ PIECES['white-1'] = () => {
 PIECES['white-2'] = () => {
   const c = canvas('white-2', 151);
   const cluster = (base, spec) => spec.map(([a, len, wid, tones]) => g(at(add(base, mul(dir(a), 30)), a), prism(c, len, wid, { tones, streaks: 3, angle: a }))).join('');
-  c.item([-300, 320], cluster([-110, 320], [[-70, 180, 50, 'mid'], [-46, 300, 78, 'light'], [-22, 340, 90, 'light'], [2, 260, 70, 'mid'], [24, 190, 56, 'light'], [-34, 160, 40, 'deep'], [40, 140, 40, 'mid']]));
-  c.item([-300, 820], cluster([-90, 820], [[-50, 200, 60, 'light'], [-24, 250, 70, 'mid'], [0, 200, 56, 'light'], [22, 150, 44, 'mid'], [-70, 130, 40, 'deep']]));
-  c.item([-300, 580], g(at([150, 590], -30), prism(c, 110, 36, { tones: 'light', streaks: 1, angle: -30 })), { shadow: 0.18, blur: 5 });
+  // the big cluster fans down from the top, the small one up from the bottom
+  // with its loose point beside it
+  c.item([-300, 200], cluster([-110, 200], [[-40, 180, 50, 'mid'], [-18, 300, 78, 'light'], [6, 340, 90, 'light'], [28, 260, 70, 'mid'], [46, 180, 56, 'light'], [-6, 160, 40, 'deep'], [-62, 140, 40, 'mid']]));
+  c.item([-300, 900], cluster([-90, 900], [[-50, 200, 60, 'light'], [-24, 250, 70, 'mid'], [0, 200, 56, 'light'], [22, 150, 44, 'mid'], [-70, 130, 40, 'deep']]));
+  c.item([-300, 960], g(at([170, 965], -14), prism(c, 110, 36, { tones: 'light', streaks: 1, angle: -14 })), { shadow: 0.18, blur: 5 });
   return c.svg('clear quartz, two clusters of points and one loose point, cut by the left edge');
 };
 
@@ -1010,9 +1019,11 @@ PIECES['grey-1'] = () => {
     }
     return path(ribbon(cv, 2.4, 1, 14), 'f-4') + leaves;
   };
-  c.item([-300, 480], stem([-300, 480], [-40, 200], [260, 210], 13, 70));
-  c.item([-300, 640], stem([-300, 640], [-60, 560], [200, 540], 9, 58), { shadow: 0.12 });
-  c.item([-300, 1040], stem([-300, 1040], [-40, 800], [250, 800], 12, 66));
+  // one stem arching over the top; two at the bottom, the shorter one
+  // drooping under the other
+  c.item([-300, 400], stem([-300, 400], [-40, 120], [260, 130], 13, 70));
+  c.item([-300, 1060], stem([-300, 1060], [-40, 940], [220, 925], 9, 58), { shadow: 0.12 });
+  c.item([-300, 1040], stem([-300, 1040], [-40, 780], [250, 770], 12, 66));
   return c.svg('silver-dollar eucalyptus, three arching stems of round powdery leaves reaching in past the left edge');
 };
 
@@ -1029,9 +1040,11 @@ PIECES['grey-2'] = () => {
     return g(at(p, a), path(d, '', `fill="${f}"`) + `<g clip-path="${c.url(`c${k}`)}">${inner}</g>`
       + `<ellipse cx="${fi(rx * 0.28)}" cy="${fi(-ry * 0.4)}" rx="${fi(rx * 0.42)}" ry="${fi(ry * 0.2)}" class="f-hi" opacity=".3" filter="${c.soft(6)}"/>`);
   };
-  c.item([-300, 300], stone([-10, 300], -8, 160, 92, 1, 'band'));
-  c.item([-300, 590], stone([130, 590], 14, 66, 40, 2, 'dark'), { shadow: 0.16, blur: 6 });
-  c.item([-300, 830], stone([20, 830], -14, 110, 64, 3, 'speck'));
+  // the banded stone with the small dark one tucked under it at the top, the
+  // speckled one alone at the bottom
+  c.item([-300, 200], stone([-10, 200], -8, 160, 92, 1, 'band'));
+  c.item([-300, 330], stone([150, 320], 14, 66, 40, 2, 'dark'), { shadow: 0.16, blur: 6 });
+  c.item([-300, 860], stone([20, 860], -14, 110, 64, 3, 'speck'));
   return c.svg('river stones, three smooth flat stones, one banded with quartz and one speckled, cut by the left edge');
 };
 
@@ -1064,8 +1077,9 @@ PIECES['black-1'] = () => {
     return g(at(p, a), path(b.a, 'f-3') + path(b.b, 'f-4') + path(b.rib, 'k-2', 'fill="none" stroke-width="1.1" opacity=".45"'));
   };
   const stem = (a, ctl, b) => path(ribbon(quad(a, ctl, b), 3.6, 2.2), 'f-4');
-  c.item([-300, 520], leaf([-60, 470], 4, 190) + leaf([-50, 500], 34, 150) + stem([-300, 520], [-10, 180], [110, 320]) + flower([116, 340], 28, 84));
-  c.item([-300, 1000], stem([-300, 1000], [-20, 640], [90, 780]) + flower([94, 800], 14, 72));
+  // each flower nods over leaves of its own, one pair at the top, one below
+  c.item([-300, 400], leaf([-60, 300], -10, 190) + leaf([-50, 330], 20, 140) + stem([-300, 400], [-10, 60], [110, 200]) + flower([116, 220], 28, 84));
+  c.item([-300, 1080], leaf([-70, 960], -4, 170) + stem([-300, 1080], [-20, 720], [90, 850]) + flower([94, 870], 14, 72));
   return c.svg('hellebores, two nodding flowers on arching stems and a palmate leaf, reaching in past the left edge');
 };
 
@@ -1083,10 +1097,10 @@ PIECES['black-2'] = () => {
     s += path(st, 'k-hi', 'fill="none" stroke-width="0.6" opacity=".18"');
     return g(at(p, a), s);
   };
-  const base = [-90, 300];
+  const base = [-90, 210];
   let cl = '';
   for (const [a, len, wid] of [[-50, 260, 46], [-28, 340, 58], [-8, 300, 52], [14, 220, 40]]) cl += tourmaline(add(base, mul(dir(a), 20)), a, len, wid);
-  c.item([-300, 300], cl);
+  c.item([-300, 210], cl);
   {
     const d = stoneOutline(c, 120, 86, 0.16, 9);
     c.def(`<clipPath id="${c.id('ob')}"><path d="${d}"/></clipPath>`);
@@ -1096,9 +1110,9 @@ PIECES['black-2'] = () => {
     const s = path(d, '', `fill="${f}"`) + `<g clip-path="${c.url('ob')}"><g class="k-hi" fill="none" stroke-width="1.4" opacity=".16">${rip}</g></g>`
       + path('M20 -62C60 -60 92 -38 104 -6C82 -30 56 -46 20 -62Z', 'f-hi', 'opacity=".55"')
       + `<ellipse cx="44" cy="-30" rx="38" ry="10" transform="rotate(24 44 -30)" class="f-hi" opacity=".22" filter="${c.soft(4)}"/>`;
-    c.item([-300, 640], g(at([40, 650], -6), s));
+    c.item([-300, 850], g(at([30, 850], -6), s));
   }
-  c.item([-300, 880], tourmaline([120, 890], -36, 120, 26), { shadow: 0.2, blur: 5 });
+  c.item([-300, 950], tourmaline([180, 965], -30, 120, 26), { shadow: 0.2, blur: 5 });
   return c.svg('obsidian and black tourmaline: a striated tourmaline cluster, a glassy obsidian chunk with conchoidal ripples, and one small loose crystal, cut by the left edge');
 };
 
