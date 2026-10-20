@@ -614,6 +614,25 @@
   transition-duration: var(--dur-base) !important;
 }
 
+/* Light to dark and back: not a fade of the sheet but a crossfade of two
+   pictures of the page, a view transition (swapScheme() in ui/appearance.ts),
+   in Chromium. Every frame of the sheet's fade restyles the whole page, and
+   Chromium took about 50ms a frame for it on a full board. So for the switch nothing moves
+   on the live page, the sheet included: the new picture is the page as it
+   lands, and the blend between the two runs on the compositor, as long as the
+   sheet's fade would have. */
+:root.is-swapping,
+:root.is-swapping *,
+:root.is-swapping *::before,
+:root.is-swapping *::after {
+  transition-duration: 0s !important;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-palette);
+  animation-timing-function: var(--ease);
+}
+
 /* =========================================================
    1c. The corners between whimsy tiers - and only the corners.
 

@@ -158,9 +158,13 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
     const next = fallback ? readStored() : cloneLook(look);
     fromPrefs = fallback;
     if (sameLook(next, current)) return;
+    // An undo across a dark switch crosses as the switch did. Not a board
+    // arriving, which brings its own look with everything else on it.
+    const flip = !load && (next.dark === true) !== (current.dark === true);
     current = next;
-    apply(current);
-    syncControls();
+    const paint = () => { apply(current); syncControls(); };
+    if (flip) swapScheme(paint);
+    else paint();
   };
   bus.on('board', () => syncFromBoard());
   // Apply on 'board:load' too — 'board' fires after consumers that need the resolved face.
@@ -180,15 +184,55 @@ export function setWhimsy(level: number | string) {
 
 /** Dark or light, the board's own and one Timeline step, as the palette is. */
 function setDark(on: boolean) {
-  if ((current.dark === true) === on) return;
-  const from = cloneLook(current);
-  if (on) current.dark = true;
-  else delete current.dark;
-  apply(current);
-  persist();
-  syncControls();
-  record(cloneLook(current), from);
+  swapScheme(() => {
+    // Asked again before the first had landed.
+    if ((current.dark === true) === on) return;
+    const from = cloneLook(current);
+    if (on) current.dark = true;
+    else delete current.dark;
+    apply(current);
+    persist();
+    syncControls();
+    record(cloneLook(current), from);
+  });
 }
+
+/**
+ * Light to dark or back, as a crossfade between two pictures of the page
+ * rather than a fade of its colours. The colours are custom properties on
+ * :root, so every frame of their fade restyles every element under it, and
+ * dark against light moves every one of them at once: about 50ms a frame on a
+ * full board in Chromium, which is the desktop app, so the fade stuttered
+ * through at a frame rate anybody could see. Firefox does the same restyle in
+ * a few. A view transition shows the page as it was, makes the change in one
+ * restyle under .is-swapping, which holds the colours' own fade and every
+ * element's transition at nothing (tokens.css), and blends the two pictures on
+ * the compositor for --dur-palette. Without one, or with motion reduced, the
+ * change runs as the palette's does.
+ *
+ * Chromium only, the desktop app and Edge with it. Firefox has view transitions
+ * too, but blends the two pictures at about 50ms a frame, twice what its own
+ * fade of the colours takes, so it keeps the fade. The user agent's `Chrome/`
+ * is what says Chromium: Chrome, Edge and Electron all carry it and Firefox and
+ * Safari do not. Not `userAgentData`, which only a secure context has, so the
+ * dev server's plain http would read as not Chromium.
+ */
+function swapScheme(change: () => void) {
+  if (typeof document !== 'object' || !document.startViewTransition || !navigator.userAgent.includes('Chrome/')
+    || reducedMotion()) {
+    change();
+    return;
+  }
+  root.classList.add('is-swapping');
+  swapping++;
+  const swap = document.startViewTransition(change);
+  swap.updateCallbackDone.catch(err => console.error('[mbrd] dark switch:', err));
+  // A second press skips the first's crossfade, which then finishes under it.
+  swap.finished.catch(() => {}).finally(() => {
+    if (--swapping === 0) root.classList.remove('is-swapping');
+  });
+}
+let swapping = 0;
 
 /** Set while record() runs. See there. */
 let recording = false;
@@ -318,7 +362,8 @@ let fadeEnd = 0, fading = false;
 // Drive per-frame canvas repaint during palette fade (canvas caches colours).
 function followFade() {
   if (typeof requestAnimationFrame !== 'function') return;
-  const still = reducedMotion();
+  // A dark switch is crossfaded as pictures (swapScheme()), so the colours land at once.
+  const still = reducedMotion() || root.classList.contains('is-swapping');
   fadeEnd = performance.now() + (still ? 0 : paletteMs());
   if (fading) return;
   fading = true;
