@@ -39,23 +39,43 @@
    the file). They all start together from past the edge, each from its own
    angle, and land one after another at their own rest angle, about their own
    pivot (transform-origin, set in px from the file's data-pivot). */
+/* The transition is written as four variables so the look-change rule below
+   can restate it whole: every state here sets the variables, not the transition. */
 .wp-piece {
   position: absolute;
   inset: 0;
   will-change: transform, opacity;
   transform: rotate(var(--wp-rest, 0deg));
-  transition:
-    transform var(--wp-dur, 1.2s) cubic-bezier(0.16, 0.8, 0.24, 1),
-    opacity var(--wp-dur, 1.2s) cubic-bezier(0.16, 0.8, 0.24, 1);
+  --wp-props: transform, opacity;
+  --wp-time: var(--wp-dur, 1.2s);
+  --wp-wait: 0s;
+  --wp-curve: cubic-bezier(0.16, 0.8, 0.24, 1);
+  transition-property: var(--wp-props);
+  transition-duration: var(--wp-time);
+  transition-delay: var(--wp-wait);
+  transition-timing-function: var(--wp-curve);
 }
 .wp-side.is-out .wp-piece {
   transform: translateX(-70%) rotate(var(--wp-from, -8deg));
   opacity: 0;
 }
 .wp-side.is-leaving .wp-piece {
-  transition-duration: 0.5s;
-  transition-delay: var(--wp-leave, 0s);
-  transition-timing-function: cubic-bezier(0.5, 0, 0.75, 0);
+  --wp-time: 0.5s;
+  --wp-wait: var(--wp-leave, 0s);
+  --wp-curve: cubic-bezier(0.5, 0, 0.75, 0);
+}
+
+/* A look change holds every other transition at 0s while the colours fade
+   (.is-fading) and gives the corners theirs (.is-reshaping), tokens.css. The
+   pieces are exempt, as a card's lift is: they swap as the colours change, at
+   their own pace, rather than waiting for the fade to end. The id outranks the
+   universal selector those rules use, both being !important. */
+:root.is-fading #wallpaper .wp-piece,
+:root.is-reshaping #wallpaper .wp-piece {
+  transition-property: var(--wp-props) !important;
+  transition-duration: var(--wp-time) !important;
+  transition-delay: var(--wp-wait) !important;
+  transition-timing-function: var(--wp-curve) !important;
 }
 
 /* Barely there: a few pixels and under half a degree about the same pivot, each
@@ -121,11 +141,11 @@
 /* Animated at Full only. Below it, on a phone and for reduced motion: a still
    picture that fades in and out, with no slide and no float. */
 :root:not([data-quality="full"]) .wp-float { animation: none; }
-:root:not([data-quality="full"]) .wp-piece { transition-property: opacity; transition-duration: 0.3s; }
+:root:not([data-quality="full"]) .wp-piece { --wp-props: opacity; --wp-time: 0.3s; }
 :root:not([data-quality="full"]) .wp-side.is-out .wp-piece { transform: rotate(var(--wp-rest, 0deg)); }
 @media (pointer: coarse), (prefers-reduced-motion: reduce) {
   .wp-float { animation: none; }
-  .wp-piece { transition-property: opacity; transition-duration: 0.3s; }
+  .wp-piece { --wp-props: opacity; --wp-time: 0.3s; }
   .wp-side.is-out .wp-piece { transform: rotate(var(--wp-rest, 0deg)); }
 }
 

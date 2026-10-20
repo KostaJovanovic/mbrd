@@ -4,7 +4,7 @@
 
 // Layout mode decides what is on screen — ui/sidebar.ts owns the subscription.
 import { board } from '../state.ts';
-import { cssMs, makeEl as make, readToken, reducedMotion } from '../util.ts';
+import { cssMs, icon, makeEl as make, readToken, reducedMotion } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
 import { isPatchPage } from '../page.ts';
 import { field, fieldStops } from './controls.ts';
@@ -595,6 +595,14 @@ function buildPicker(c: PickerControl) {
   btn.type = 'button';
   if (c.id) btn.id = c.id;
   btn.dataset.value = c.get?.() ?? '';
+  const choose = (value: string) => {
+    btn.dataset.value = value;
+    paintPicker(btn);
+    // The event, not a direct call, so this builder never learns what it
+    // is picking. `external` controls have no `set` at all.
+    btn.dispatchEvent(new CustomEvent('pick', { detail: value }));
+    c.set?.(value);
+  };
   // Rebuilt on every press rather than once: options() takes live context and
   // the tick has to follow a value anything else may have changed.
   // menuButton() is the toggle: a second press closes rather than reopening.
@@ -604,16 +612,11 @@ function buildPicker(c: PickerControl) {
       label: o.label,
       // Trailing edge: these are specimens of whole palettes, not icons for
       // them, and the point is comparing them down a column.
-      swatchEnd: c.swatches?.(o.value) ?? [],
+      // Only a picker with swatches gets the chip column: an empty array still
+      // draws an empty chip, which is the palette's fallback and nobody else's.
+      swatchEnd: c.swatches ? c.swatches(o.value) : undefined,
       check: o.value === now,
-      action: () => {
-        btn.dataset.value = o.value;
-        paintPicker(btn);
-        // The event, not a direct call, so this builder never learns what it
-        // is picking. `external` controls have no `set` at all.
-        btn.dispatchEvent(new CustomEvent('pick', { detail: o.value }));
-        c.set?.(o.value);
-      },
+      action: () => choose(o.value),
     }));
     // focus: true, since this was opened by a press, not a hover flyout -
     // openAnchored() defaults it off there so a drifting pointer can't steal
@@ -625,7 +628,31 @@ function buildPicker(c: PickerControl) {
   // module's chain into a cycle tests/imports.test.js refuses.
   btn.addEventListener('repaint', () => paintPicker(btn));
   paintPicker(btn);
-  label.append(btn);
+  if (c.cycle) {
+    // ‹ and ›: the previous and next option without opening the menu, wrapping
+    // at either end, for going through a long list one by one.
+    const row = make('span', 'field-picker-cycle');
+    const step = (by: number, name: string, ariaLabel: string) => {
+      const b = make('button', 'field-picker-step');
+      b.type = 'button';
+      b.setAttribute('aria-label', ariaLabel);
+      b.append(icon(name));
+      b.addEventListener('click', () => {
+        const options = c.options?.(ctx()) || [];
+        if (!options.length) return;
+        const at = options.findIndex(o => o.value === (btn.dataset.value ?? ''));
+        choose(options[(at + by + options.length) % options.length].value);
+      });
+      return b;
+    };
+    row.append(step(-1, 'i-chevron-left', `Previous ${c.label.toLowerCase()}`), btn, step(1, 'i-chevron-right', `Next ${c.label.toLowerCase()}`));
+    // A press on the label's words goes to its first button, which is now ‹:
+    // point it at the picker, as it was when the picker was alone in there.
+    if (c.id) label.setAttribute('for', c.id);
+    label.append(row);
+  } else {
+    label.append(btn);
+  }
   // `null` for the input slot: a picker's value is an attribute this module
   // writes itself, not the <input>/<select> painting writes into.
   register(c, label, null, null);

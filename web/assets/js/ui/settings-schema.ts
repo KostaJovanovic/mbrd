@@ -179,6 +179,8 @@ export type PickerControl = Common & {
    * handed such a value draws an empty box.
    */
   unlisted?: (value: string) => string,
+  /** ‹ and › either side of the button, stepping through the options in order. */
+  cycle?: boolean,
   get?: () => string,
   set?: (value: string) => void,
 };
@@ -1361,7 +1363,7 @@ export const SECTIONS: Section[] = [
         text: () => 'Experimental feature. Might suck.' },
       // Any Softish wallpaper piece by hand, over the palette's pick, to look at
       // each one on a real board. Per device, in prefs: ui/wallpaper.ts.
-      { id: 'opt-wallpaper-piece', type: 'picker', label: 'Wallpaper', advanced: true,
+      { id: 'opt-wallpaper-piece', type: 'picker', label: 'Wallpaper', advanced: true, cycle: true,
         options: () => [{ value: '', label: 'From the palette' },
           ...FAMILIES.flatMap(f => Array.from({ length: PIECES[f] }, (_, i) => {
             const name = `${f}-${i + 1}`;

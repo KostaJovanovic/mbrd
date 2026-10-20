@@ -87,20 +87,18 @@ async function refresh() {
   if (!host) return;
   const mine = ++gen;
   const w = board.wallpaper;
-  // A look change cross-fades the page's colours for --dur-palette with every
-  // other transition held at 0s (.is-fading, tokens.css). The tones follow the
-  // fade frame by frame; the pieces wait for it to end to come or go, or they
-  // would jump rather than slide. Its end is a class change, which wakes this.
-  // A new tier also eases every corner (.is-reshaping), with the same effect on
-  // what else may move.
+  // A look change cross-fades the page's colours for --dur-palette (.is-fading,
+  // tokens.css; .is-reshaping for a new tier). The tones follow the fade frame
+  // by frame, and the pieces swap at its start, as the colours begin to move:
+  // wallpaper.css exempts their transitions from the rule that holds every
+  // other one at 0s for the length of it.
   const { classList } = document.documentElement;
   const fading = classList.contains('is-fading') || classList.contains('is-reshaping');
-  if (!wanted(w) && !trial) { if (!fading) swap('', null); return; }
+  if (!wanted(w) && !trial) { swap('', null); return; }
   const tones = readTones();
   if (!tones) return;
   paintTones(tones.values);
-  // Every frame of it: the colours move without an attribute saying so.
-  if (fading) { schedule(); return; }
+  if (fading) followFade();
   // A board's own picture, or the one being asked about, wins over the pieces.
   const own = trial ?? (w.asset && getAsset(w.asset) ? { url: assetURL(w.asset) || '', tone: w.tone } : null);
   if (own?.url) {
@@ -115,6 +113,25 @@ async function refresh() {
   if (mine !== gen) return;
   if (!piece) { swap('', null); return; }
   if (piece.key !== shown) swap(piece.key, partsOf(piece.svg));
+}
+
+let following = 0;
+
+/**
+ * The tones, every frame of a look change: the colours move without an
+ * attribute saying so. A loop of its own rather than a refresh a frame, which
+ * would start a new pick each frame and drop the one waiting on its file.
+ */
+function followFade() {
+  if (following) return;
+  const step = () => {
+    const { classList } = document.documentElement;
+    if (!classList.contains('is-fading') && !classList.contains('is-reshaping')) { following = 0; return; }
+    const tones = readTones();
+    if (tones) paintTones(tones.values);
+    following = requestAnimationFrame(step);
+  };
+  following = requestAnimationFrame(step);
 }
 
 /** The board's pick, or the next arrangement in its family that loads. */
@@ -315,13 +332,35 @@ function placePivots() {
 
 let probeCanvas: CanvasRenderingContext2D | null = null;
 
-/** A token as OKLCh, whatever syntax the sheet wrote it in: the canvas resolves it. */
-function readColour(token: string): OKLCh | null {
-  const probe = document.createElement('span');
-  probe.style.color = `var(${token})`;
-  document.body.append(probe);
-  const css = getComputedStyle(probe).color;
-  probe.remove();
+/**
+ * Where a look change is taking a token: the end of the transition fading it
+ * on :root (its colours are registered, tokens.css, so the fade is a
+ * CSSTransition of its own), or '' when none is running or it cannot be read.
+ */
+function headingTo(token: string): string {
+  for (const anim of document.documentElement.getAnimations()) {
+    if (!(anim instanceof CSSTransition) || anim.transitionProperty !== token) continue;
+    if (!(anim.effect instanceof KeyframeEffect)) continue;
+    const frames = anim.effect.getKeyframes();
+    const end = frames[frames.length - 1]?.[token];
+    if (typeof end === 'string' && end) return end;
+  }
+  return '';
+}
+
+/**
+ * A token as OKLCh, whatever syntax the sheet wrote it in: the canvas resolves
+ * it. `settled` asks for where a running fade is going rather than where it is.
+ */
+function readColour(token: string, settled = false): OKLCh | null {
+  let css = settled ? headingTo(token) : '';
+  if (!css) {
+    const probe = document.createElement('span');
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    css = getComputedStyle(probe).color;
+    probe.remove();
+  }
   probeCanvas ??= document.createElement('canvas').getContext('2d', { willReadFrequently: true });
   if (!probeCanvas || !css) return null;
   probeCanvas.clearRect(0, 0, 1, 1);
@@ -341,7 +380,10 @@ function readTones() {
   const accent = readColour('--accent');
   if (!paper || !accent) return null;
   const dark = document.documentElement.dataset.scheme === 'dark';
-  return { family: familyOf(accent), values: wallpaperTones(paper, accent, dark) };
+  // The tones follow the fade frame by frame; the family is the one it is
+  // heading for, so the pieces can swap as it starts rather than as it ends.
+  const family = familyOf(readColour('--accent', true) ?? accent);
+  return { family, values: wallpaperTones(paper, accent, dark) };
 }
 
 /** The tones onto #wallpaper, where the pieces' classes read them, and into the filter. */

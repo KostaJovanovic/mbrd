@@ -408,6 +408,29 @@
               background var(--dur-fast) var(--ease);
 }
 .field-picker:hover { border-color: var(--accent-text); background: var(--paper-2); }
+/* A picker with ‹ and › either side (PickerControl.cycle): the steps are the
+   picker's height and square, and the picker takes what is left. */
+.field-picker-cycle { display: flex; align-items: center; gap: 4px; width: 100%; }
+.field-picker-cycle > .field-picker { flex: 1 1 auto; min-width: 0; }
+.field-picker-step {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(35px * var(--density));
+  height: calc(35px * var(--density));
+  padding: 0;
+  color: var(--ink-2);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ctl-radius);
+  background: var(--paper);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+.field-picker-step:hover { border-color: var(--accent-text); color: var(--accent); background: var(--paper-2); }
+.field-picker-step:focus { outline: none; }
+.field-picker-step:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: var(--sel-gap); }
+.field-picker-step > .ico { width: 14px; height: 14px; }
 .field-picker:focus { outline: none; }
 .field-picker:focus-visible {
   outline: var(--sel-line) solid var(--select);
