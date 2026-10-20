@@ -199,7 +199,7 @@ header.
 Generators, run when their source changes:
 `node tools/gen-formats.mjs` (→ `import/formats.ts`), `tools/gen-stickers.mjs`
 (→ `stickers.svg`), `node tools/gen-wallpaper.mjs [name...]` (→ the Softish
-wallpaper pieces in `web/assets/img/wallpaper/`, all but green-1, -3, -4 and -5,
+wallpaper pieces in `web/assets/img/wallpaper/`, all but green-1, -4 and -5,
 which are drawn by hand), `node tools/gen-patch-page.mjs` (→ `web/patch.html`),
 `node tools/gen-desktop-icons.mjs` (`icon.svg` → `desktop/icons/`, the `.ico`,
 `.icns` and PNG the three installers want), `node tools/gen-og.mjs`

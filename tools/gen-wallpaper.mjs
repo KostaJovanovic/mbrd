@@ -2,7 +2,7 @@
 // that are generated rather than hand-drawn: stand-ins for the photographs, to
 // the contract in tests/wallpaper.test.js and research/wallpaper-graphics-2026-10-20.md.
 // `node tools/gen-wallpaper.mjs [name...]` writes the named pieces, or all of them.
-// green-1, -3, -4 and -5 were drawn by hand and are not written from here.
+// green-1, -4 and -5 were drawn by hand and are not written from here.
 
 import { writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -266,6 +266,44 @@ PIECES['green-2'] = () => {
   frond([-250, 640], [-40, 190], [300, 250], 230, 15, 4.5, { upper: ['f-1', 'f-3'], lower: ['f-3', 'f-4'], stem: 'f-3' });
   frond([-270, 1120], [-20, 690], [310, 770], 255, 15, 5, { upper: ['f-2', 'f-4'], lower: ['f-3', 'f-5'], stem: 'f-4' });
   return c.svg('majesty palm, two fronds reaching in past the left edge: a short arching stem, folded strap leaflets on both sides angled forward and drooping');
+};
+
+// Zebra haworthia: two rosettes seen from a little above, and a pup. Stiff
+// keeled leaves in three rings, banded across with rows of white tubercles.
+PIECES['green-3'] = () => {
+  const c = canvas('green-3', 17);
+  // leaf variants: the outline takes its tone from the <use>, the far half is
+  // shaded over it, and the bands are dotted strokes clipped to the leaf
+  for (let k = 0; k < 3; k++) {
+    const b = blade(100, u => 16.5 * Math.min(1, u * 5 + 0.25) * (1 - u) ** (0.85 + 0.1 * k), { n: 12, bend: 0.06 + 0.05 * k });
+    c.def(`<clipPath id="${c.id(`lc${k}`)}"><path d="${b.out}"/></clipPath>`);
+    let bands = '';
+    for (let x = 14; x < 92; x += 8.5) {
+      const w = 17 * (1 - x / 100) + 1;
+      const y = (0.06 + 0.05 * k) * 100 * (x / 100) ** 2;
+      bands += `M${f1(x + 3)} ${f1(y - w)}Q${f1(x - 1.5)} ${f1(y)} ${f1(x + 3)} ${f1(y + w)}`;
+    }
+    c.def(`<g id="${c.id(`l${k}`)}"><path d="${b.out}"/>${path(b.b, 'f-5', 'opacity=".42"')}`
+      + `<g clip-path="${c.url(`lc${k}`)}">${path(bands, 'k-hi', 'fill="none" stroke-width="2.3" stroke-linecap="round" stroke-dasharray="0 3.4" opacity=".85"')}</g>`
+      + `${path(b.rib, 'k-hi', 'fill="none" stroke-width="0.8" opacity=".25"')}</g>`);
+  }
+  const rosette = (C, R, tilt) => {
+    const rings = [{ n: 11, len: R, tone: 'f-4', off: 0 }, { n: 9, len: R * 0.74, tone: 'f-3', off: 17 }, { n: 7, len: R * 0.5, tone: 'f-2', off: 7 }, { n: 5, len: R * 0.28, tone: 'f-2', off: 30 }];
+    let s = '';
+    for (const ring of rings) {
+      for (let i = 0; i < ring.n; i++) {
+        const a = ring.off + (i / ring.n) * 360 + c.rr(-7, 7);
+        // leaves curl toward the light side of the rosette less than away from it
+        const sy = Math.sin(a * D2R) > 0 ? 1 : -1;
+        s += `<use href="#${c.id(`l${Math.floor(c.rand() * 3)}`)}" class="${ring.tone}" transform="rotate(${f1(a)}) scale(${f1(ring.len * c.rr(0.9, 1.08)) / 100} ${f1(sy * ring.len) / 100})"/>`;
+      }
+    }
+    return g(at(C, tilt, 1, 0.78), s + `<circle r="${fi(R * 0.07)}" class="f-3"/>`);
+  };
+  c.item([-300, 320], rosette([-30, 320], 190, -8));
+  c.item([-300, 790], rosette([-20, 790], 130, 12));
+  c.item([-300, 900], rosette([150, 905], 54, 30), { shadow: 0.18, blur: 5 });
+  return c.svg('zebra haworthia, two rosettes seen from a little above and a pup, stiff keeled leaves banded with white tubercles, cut by the left edge');
 };
 
 // Anthurium: two glossy heart-shaped spathes with their spadix, each in front
@@ -626,11 +664,15 @@ PIECES['blue-2'] = () => {
     s += path(d, 'k-hi', 'fill="none" stroke-width="1.2" opacity=".22"');
     c.item([-300, 300], g(at([-20, 300], -10), s));
   }
+  // the frosting: fine noise, kept only where the glass is, as pale grain
+  c.def(`<filter id="${c.id('frost')}" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="2.2" numOctaves="2" seed="4"/><feColorMatrix values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.4 -0.55"/><feComposite in2="SourceGraphic" operator="in"/></filter>`);
   const glass = (p, a, rx, ry, inner, outer) => {
     const d = stoneOutline(c, rx, ry, 0.08);
-    const fill = c.rad(`gl${inner}`, [0.58, 0.4, 0.7], [[0, inner, 0.92], [1, outer, 0.88]]);
-    return g(at(p, a), path(d, '', `fill="${fill}"`) + path(d, 'k-hi', `fill="none" stroke-width="4" opacity=".45" filter="${c.soft(2)}"`)
-      + `<ellipse cx="${fi(rx * 0.2)}" cy="${fi(-ry * 0.25)}" rx="${fi(rx * 0.45)}" ry="${fi(ry * 0.3)}" class="f-hi" opacity=".45" filter="${c.soft(6)}"/>`);
+    // a worn edge: sea glass is milkier at its rim than through its middle
+    const fill = c.rad(`gl${inner}`, [0.5, 0.5, 0.55], [[0, outer, 0.8], [0.7, inner, 0.88], [1, 'hi', 0.95]]);
+    return g(at(p, a), path(d, '', `fill="${fill}"`) + path(d, 'f-hi', `filter="${c.url('frost')}" opacity=".3"`)
+      + path(d, 'k-hi', `fill="none" stroke-width="5" opacity=".5" filter="${c.soft(2.5)}"`)
+      + `<ellipse cx="${fi(rx * 0.25)}" cy="${fi(-ry * 0.3)}" rx="${fi(rx * 0.35)}" ry="${fi(ry * 0.18)}" transform="rotate(-12 ${fi(rx * 0.25)} ${fi(-ry * 0.3)})" class="f-hi" opacity=".5" filter="${c.soft(4)}"/>`);
   };
   c.item([-300, 610], glass([120, 610], 18, 48, 33, '1', '2'), { shadow: 0.12, blur: 6 });
   c.item([-300, 830], glass([30, 830], -12, 64, 42, '2', '3'), { shadow: 0.12, blur: 6 });
