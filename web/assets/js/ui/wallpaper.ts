@@ -336,13 +336,13 @@ let view: Viewport | null = null;
 /** A side's width and the art's px per file unit, kept by placePivots() so a zoom frame reads no layout. */
 let fit = { w: 0, scale: 1 };
 /** How far the art on the edges reaches at rest, in the file's units, or null for a board's own picture. */
-let extent: { near: number, far: number } | null = null;
+let extent: { far: number } | null = null;
 /** Units past the drawn edge, for the shadows and the float, which the box leaves out. */
 const EXTENT_PAD = 12;
 
-/** The art's nearest and farthest x across its pieces, each turned to its rest angle about its pivot. */
+/** The art's farthest x across its pieces, each turned to its rest angle about its pivot. */
 function measure(side: HTMLElement | undefined) {
-  let near = Infinity, far = -Infinity;
+  let far = -Infinity;
   for (const item of side?.querySelectorAll<HTMLElement>('.wp-piece') ?? []) {
     const svg = item.querySelector('svg');
     if (!svg) continue;
@@ -355,27 +355,24 @@ function measure(side: HTMLElement | undefined) {
     const cos = Math.cos(turn), sin = Math.sin(turn);
     for (const x of [box.x, box.x + box.width]) {
       for (const y of [box.y, box.y + box.height]) {
-        const turned = px + (x - px) * cos - (y - py) * sin;
-        near = Math.min(near, turned);
-        far = Math.max(far, turned);
+        far = Math.max(far, px + (x - px) * cos - (y - py) * sin);
       }
     }
   }
-  extent = Number.isFinite(far) ? { near: near - EXTENT_PAD, far: far + EXTENT_PAD } : null;
+  extent = Number.isFinite(far) ? { far: far + EXTENT_PAD } : null;
 }
 
 /**
  * Each side slid along so the art takes as much of the window as the zoom
- * gives it (edgeShare()): out past the edge as the board is zoomed in, further
- * in as it is zoomed out. Never so far in that the end of the art that crosses
- * the edge comes off it, so on a wide window the share is a ceiling.
+ * gives it (edgeShare()): out past the edge as the board is zoomed in, back
+ * in as it is zoomed out, but never further in than where the piece is drawn
+ * to sit, so zoomed out each piece reaches as far as its own drawing does.
  */
 function placeSides() {
   if (!view || !sides.length) return;
   const room = edgeShare(view.zoom / BASE_ZOOM) * innerWidth;
   const far = extent ? extent.far * fit.scale : fit.w;
-  const most = extent ? Math.max(0, -extent.near * fit.scale) : 0;
-  const shift = `${Math.min(room - far, most).toFixed(1)}px`;
+  const shift = `${Math.min(room - far, 0).toFixed(1)}px`;
   for (const side of sides) side.style.setProperty('--wp-shift', shift);
 }
 

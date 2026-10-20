@@ -19,8 +19,9 @@
    sets the art's size: it is drawn as the left side, its edge at x=0, and
    sliced to the box's height (xMinYMid slice). How much of the window it takes
    is the board zoom's, as --wp-shift, set by ui/wallpaper.ts each view frame:
-   the side slides out past the edge as the board is zoomed in and further in
-   as it is zoomed out, the art keeping its size. */
+   the side slides out past the edge as the board is zoomed in and back as it
+   is zoomed out, never further in than where it is drawn to sit, the art
+   keeping its size. */
 .wp-side {
   position: absolute;
   top: 0;
