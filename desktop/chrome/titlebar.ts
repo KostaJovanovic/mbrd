@@ -166,7 +166,14 @@ function updateButton(api: ChromeBridge): HTMLButtonElement {
   const word = document.createElement('span');
   word.className = 'tb-update-word';
   word.textContent = 'Update';
-  btn.append(svg, word);
+  // The download's percentage, in a box titlebar.css sizes to "000%", so the
+  // button keeps one width while it counts whatever figures the look's font has.
+  const count = document.createElement('span');
+  count.className = 'tb-update-count';
+  count.hidden = true;
+  const figure = document.createElement('span');
+  count.append(figure);
+  btn.append(svg, word, count);
   btn.addEventListener('click', () => api.update());
   return btn;
 }
@@ -174,7 +181,7 @@ function updateButton(api: ChromeBridge): HTMLButtonElement {
 /** The word the button says in each state. The tooltip carries the sentence. */
 const WORDS: Record<UpdateState, (offer: UpdateOffer) => string> = {
   available: () => 'Update',
-  downloading: offer => `Downloading ${Math.round((offer.progress ?? 0) * 100)}%`,
+  downloading: () => 'Downloading',
   installing: () => 'Restarting',
   manual: () => 'Update',
   failed: () => 'Retry update',
@@ -191,6 +198,12 @@ function paintUpdate(btn: HTMLButtonElement, offer: UpdateOffer | null): void {
   if (!offer) return;
   const word = btn.querySelector('.tb-update-word');
   if (word) word.textContent = WORDS[offer.state](offer);
+  const count = btn.querySelector<HTMLElement>('.tb-update-count');
+  const figure = count?.querySelector('span');
+  if (count && figure) {
+    count.hidden = offer.state !== 'downloading';
+    figure.textContent = `${Math.round((offer.progress ?? 0) * 100)}%`;
+  }
   btn.dataset.state = offer.state;
   btn.title = offer.note;
   btn.setAttribute('aria-label', offer.note);

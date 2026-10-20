@@ -124,10 +124,20 @@ body {
   padding: 0 12px;
   color: #2f9e5a;
   font-weight: 600;
-  /* The percentage counts without the button changing width. */
   font-variant-numeric: tabular-nums;
 }
 .tb-update[hidden] { display: none; }
+/* The percentage counts without the button changing width, in every look.
+   tabular-nums alone is not that: the count grows from one figure to three,
+   and the hand-drawn looks' faces may carry no tabular figures at all. So the
+   figure shares one grid cell with a hidden "000%", the widest it can be
+   (a 0 is no narrower than a 1, and three of them outrun any two), and the
+   box is the wider of the two. */
+.tb-update-count { display: inline-grid; justify-items: start; }
+.tb-update-count[hidden] { display: none; }
+.tb-update-count > span,
+.tb-update-count::after { grid-area: 1 / 1; }
+.tb-update-count::after { content: "000%"; visibility: hidden; }
 @media (hover: hover) {
   .tb-update:not(:disabled):hover { background: var(--paper-2); color: #248049; }
   .tb-update:disabled:hover { background: none; color: #2f9e5a; }
