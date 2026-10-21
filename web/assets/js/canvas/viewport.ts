@@ -553,6 +553,7 @@ export class Viewport {
   _iz: number;                     // what --iz was last written as
   _dpr: number;                     // what --dpr was last written as - see _setDpr()
   moving: boolean;                  // is the view mid-gesture? - see _moving()
+  holding: boolean;                 // is this paint the box resizing under a board held still? - see the ResizeObserver
   // How far an open panel reaches in from the window's left edge, in client px.
   // ui/sidebar.ts injects it. Fit, recenter and the zoom buttons centre in the
   // room that leaves - see _shift(). Unwired it is 0, and the room is the window.
@@ -594,15 +595,29 @@ export class Viewport {
     this._iz = 0;
     this._dpr = 0;
     this.moving = false;
+    this.holding = false;
     this._cover = () => 0;
 
     this.measure();
-    const ro = new ResizeObserver(() => { this.measure(); this.apply(); });
+    const ro = new ResizeObserver(() => {
+      if (!this.measure()) { this.apply(); return; }
+      // The board held where it was as its box changed height. Painted here,
+      // not queued: this runs after the new box is laid out and before it is
+      // drawn, and a paint queued for the next frame drew one frame of the
+      // board in the new box at the old pan - half the Timeline's band out of
+      // place, and back the frame after. Every fifteen seconds of rest, since
+      // that is when the band is given (ui/idle.ts). Nothing moved, so not the
+      // gesture mode (_moving()), and not activity to anybody listening.
+      this.holding = true;
+      try { this._paint(); } finally { this.holding = false; }
+    });
     ro.observe(this.el);
     addEventListener('scroll', () => this.measure(), { passive: true });
   }
 
+  /** Read the box. Whether it held the board still through a change of height. */
   measure() {
+    let held = false;
     const r = this.el.getBoundingClientRect();
     // The box changed height under a window that did not: the Timeline's band
     // given to the board or taken back (canvas.css). Its top is where it was,
@@ -613,6 +628,7 @@ export class Viewport {
     if (!this.isMobile && this.height > 0 && r.height !== this.height
         && r.top === this.top && r.width === this.width && winH === this._winH) {
       this.pan.y -= (r.height - this.height) / 2 / this.zoom;
+      held = true;
     }
     this._winH = winH;
     this.left = r.left;
@@ -625,6 +641,7 @@ export class Viewport {
       this.zoom = this._mobileZoom();
       this._constrainMobile();
     }
+    return held;
   }
 
   get cx() { return this.width / 2; }
@@ -1508,7 +1525,7 @@ export class Viewport {
       // is about to settle anyway.
       this._shadowsOut(this._shadowsHidden || z < farZoom() || z < this._pinned * SHADOWS_OUT);
     }
-    this._moving();
+    if (!this.holding) this._moving();
 
     // The origin mark, centred on the point the axes cross.
     //

@@ -17,8 +17,11 @@ export function initIdle(vp: Viewport | null): void {
   for (const type of ['pointermove', 'pointerdown', 'wheel', 'keydown']) {
     addEventListener(type, poke, opts);
   }
-  // Animated moves (fit, travel, fling) count as activity.
-  vp?.onChange?.(poke);
+  // Animated moves (fit, travel, fling) count as activity. The board held still
+  // while its box grows does not: that is the band the Timeline gives up when
+  // this goes idle (canvas.css), and counting it woke the page the moment it
+  // slept, every fifteen seconds, with the board jumping each time.
+  vp?.onChange?.(v => { if (!v.holding) poke(); });
   // Returning from a background tab resets the timer, not instant-fades.
   addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') poke();
