@@ -23,7 +23,7 @@ import {
 } from '../quality.ts';
 import { SOUND_STOPS, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
 import { drawingEnabled } from '../canvas/pen.ts';
-import { chosenWallpaper, setChosenWallpaper } from './wallpaper.ts';
+import { chosenWallpaper, setChosenWallpaper, phoneShaped } from './wallpaper.ts';
 import { FAMILIES, PIECES, PIECE_NAMES, tierSwitch } from './wallpaper-pieces.ts';
 import { DEFAULT_WHIMSY } from './look.ts';
 import {
@@ -342,6 +342,8 @@ const KEYS: readonly KeyRow[] = [
 const desktop = (ctx: Ctx) => !ctx.mobile;
 /** The wallpaper switch the whimsy dial's current tier reads (ui/wallpaper-pieces.ts). */
 const wallpaperKey = () => tierSwitch(board.settings.appearance.whimsy ?? DEFAULT_WHIMSY);
+/** The wallpaper's rows: absent on a phone-shaped window, which never shows it. */
+const wallpaperRoom = () => !phoneShaped();
 
 /** The long side of the box round every item - the board's own extent. */
 function spread() {
@@ -903,11 +905,12 @@ export const SECTIONS: Section[] = [
       // whimsy tier: on at Softish, off at Middle and Harsh until turned on, and
       // this row is the current tier's. Board-level and saved in the .mbrd,
       // like the palette they are chosen by. A board's own picture stands in
-      // for the built-in pieces whatever the palette.
-      { id: 'opt-wallpaper', type: 'check', label: 'Wallpaper graphics',
+      // for the built-in pieces whatever the palette. None of it on a
+      // phone-shaped window, where there is no wallpaper at all.
+      { id: 'opt-wallpaper', type: 'check', label: 'Wallpaper graphics', when: wallpaperRoom,
         get: () => { const key = wallpaperKey(); return !!key && board.wallpaper[key]; },
         set: v => { const key = wallpaperKey(); if (key) setSetting('wallpaper', { ...board.wallpaper, [key]: v }); } },
-      { type: 'buttons', buttons: [
+      { type: 'buttons', when: wallpaperRoom, buttons: [
         { cmd: 'wallpaper-add', label: 'Add your own…',
           title: () => 'A picture of your own on the edges, its subject cut out of the background' },
         { cmd: 'wallpaper-remove', label: 'Remove my picture', when: () => !!board.wallpaper.asset,
@@ -915,7 +918,7 @@ export const SECTIONS: Section[] = [
       ] },
       // There only while the board has a picture of its own.
       { id: 'opt-wallpaper-tone', type: 'check', label: 'Tone my picture to the palette',
-        when: () => !!board.wallpaper.asset,
+        when: () => wallpaperRoom() && !!board.wallpaper.asset,
         get: () => board.wallpaper.tone,
         set: v => setSetting('wallpaper', { ...board.wallpaper, tone: v }) },
       // The two face menus, in the fold with everything else that sets one
@@ -1365,7 +1368,7 @@ export const SECTIONS: Section[] = [
         text: () => 'Experimental feature. Might suck.' },
       // Any Softish wallpaper piece by hand, over the palette's pick, to look at
       // each one on a real board. The board's, in its wallpaper record: ui/wallpaper.ts.
-      { id: 'opt-wallpaper-piece', type: 'picker', label: 'Wallpaper', advanced: true, cycle: true,
+      { id: 'opt-wallpaper-piece', type: 'picker', label: 'Wallpaper', advanced: true, cycle: true, when: wallpaperRoom,
         options: () => [{ value: '', label: 'From the palette' },
           ...FAMILIES.flatMap(f => Array.from({ length: PIECES[f] }, (_, i) => {
             const name = `${f}-${i + 1}`;

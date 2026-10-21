@@ -159,3 +159,7 @@
 
 /* The Mobile sheet is not paper, as base.css says of the grain. */
 :root[data-board-mode="mobile"] #wallpaper { display: none; }
+/* Nor on a phone-shaped window, either way up (phoneShaped(), ui/wallpaper.ts). */
+@media (max-aspect-ratio: 3/5), (min-aspect-ratio: 5/3) and (max-height: 500px) {
+  #wallpaper { display: none; }
+}

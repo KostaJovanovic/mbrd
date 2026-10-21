@@ -79,6 +79,8 @@ export function initWallpaper(viewport: Viewport) {
     }).observe(panel, { attributes: true, attributeFilter: ['class'] });
   }
   addEventListener('resize', () => { placePivots(); placeSides(true); }, { passive: true });
+  phoneShaped();
+  phoneQuery?.addEventListener('change', schedule);
   schedule();
 }
 
@@ -88,11 +90,25 @@ function schedule() {
   queued = requestAnimationFrame(() => { queued = 0; refresh().catch(() => {}); });
 }
 
+/**
+ * A window the shape of a phone, either way up: taller than 3:5, or wider than
+ * 5:3 and no more than 500px high. No wallpaper there at all, and no rows for
+ * it in the panel: the edges are the board's. Matches wallpaper.css.
+ */
+const PHONE_SHAPE = '(max-aspect-ratio: 3/5), (min-aspect-ratio: 5/3) and (max-height: 500px)';
+let phoneQuery: MediaQueryList | null = null;
+
+export function phoneShaped(): boolean {
+  if (typeof matchMedia !== 'function') return false;
+  phoneQuery ??= matchMedia(PHONE_SHAPE);
+  return phoneQuery.matches;
+}
+
 /** Whether the pieces belong on screen at all: the current tier's switch is on. */
 function wanted(w: Wallpaper) {
   const root = document.documentElement;
   const key = tierSwitch(root.dataset.whimsy);
-  return !!key && w[key] && root.dataset.boardMode !== 'mobile';
+  return !!key && w[key] && root.dataset.boardMode !== 'mobile' && !phoneShaped();
 }
 
 async function refresh() {
@@ -106,7 +122,7 @@ async function refresh() {
   // other one at 0s for the length of it.
   const { classList } = document.documentElement;
   const fading = classList.contains('is-fading') || classList.contains('is-reshaping');
-  if (!wanted(w) && !trial) { swap('', null); return; }
+  if (phoneShaped() || (!wanted(w) && !trial)) { swap('', null); return; }
   const tones = readTones();
   if (!tones) return;
   paintTones(tones.values);
@@ -551,7 +567,7 @@ function toneFilter(): SVGSVGElement {
 
 /** Ask for a picture, cut its subject out, show it on the edges, and ask whether to keep it. */
 export async function addWallpaperPicture() {
-  if (notUsersBoard()) return;
+  if (notUsersBoard() || phoneShaped()) return;
   const file = await pickPicture();
   if (!file) return;
   const face = await decode(file);
