@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { FAMILIES, PIECES, PIECE_NAMES, edgeShare, familyOf, wallpaperTones, pieceByName, pieceFor, pieceURL, tierSwitch, TONES } from '../web/assets/js/ui/wallpaper-pieces.ts';
+import { FAMILIES, FAMILY_ACCENT, PIECES, PIECE_NAMES, edgeShare, familyOf, wallpaperTones, pieceByName, pieceFor, pieceURL, tierSwitch, TONES } from '../web/assets/js/ui/wallpaper-pieces.ts';
 import { normalizeWallpaper } from '../web/assets/js/board-schema.ts';
 import { oklch, parseHex } from '../web/assets/js/color.ts';
 
@@ -24,6 +24,10 @@ test('a palette picks its family by its accent', () => {
   for (const hex of ['#ffd400', '#f08a24', '#f4a6c0', '#7a5230', '#fafafa']) {
     assert.ok(FAMILIES.includes(familyOf(lch(hex))), hex);
   }
+});
+
+test('the debug row\'s colour for each family lands in that family', () => {
+  for (const f of FAMILIES) assert.equal(familyOf(lch(FAMILY_ACCENT[f])), f, FAMILY_ACCENT[f]);
 });
 
 test('the tones sink from the paper in the light and stay low-key in the dark', () => {

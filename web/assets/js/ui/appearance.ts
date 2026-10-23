@@ -10,7 +10,7 @@ import { whimsyControlsSnap, AXIS_TOKENS } from '../layout-settings.ts';
 import { DEFAULT_PALETTE_SOURCES } from '../board-schema.ts';
 import { cssMs, readToken, reducedMotion, toHex } from '../util.ts';
 import { readPrefJSON, writePref } from '../prefs.ts';
-import { paletteFromAccent, darkSheet, PALETTE_TOKENS } from './pigments.ts';
+import { paletteFromAccent, neutralPalette, darkSheet, PALETTE_TOKENS } from './pigments.ts';
 import { markScheme, isDarkShown, setDarkHandler } from './scheme.ts';
 // Dynamic, the palette from the board's pictures, lives there and borrows the
 // look through initPicturePalette(), as the panel borrows it below.
@@ -532,6 +532,52 @@ export function resetLook() {
   // The paper is built for a tier, so the kept pigments are built again for this one.
   reshade();
 }
+
+/** The look's colours before matchPigment() first wrote one, to go back to. */
+let beforeMatch: Look | null = null;
+
+/**
+ * The debug wallpaper switch's colours (ui/wallpaper.ts). A hex is written as
+ * the Pigment row writes it, the whole sheet built from it; null puts back the
+ * colours from before the first one - palette, pigments, Dynamic - or, with
+ * nothing kept (a reload since), the named palette under them. The tier and
+ * the faces are left as they are now.
+ */
+export function matchPigment(hex: string | null) {
+  if (hex) {
+    beforeMatch ??= cloneLook(current);
+    // A colour with no hue builds no sheet in setVar() (paletteFromAccent()),
+    // which left white, grey and black boards in the old palette with only
+    // the buttons changed. Those get the sheet with the colour taken out.
+    const neutral = paletteFromAccent(hex, { tier: current.whimsy }) ? null
+      : neutralPalette(hex, { tier: current.whimsy });
+    for (const [key, value] of Object.entries(neutral || {})) {
+      current.vars[key] = value;
+      root.style.setProperty(key, value);
+      applied.add(key);
+    }
+    setVar('--accent', hex);
+    syncControls();
+    return;
+  }
+  const was = beforeMatch;
+  beforeMatch = null;
+  dropPigments();
+  if (was) {
+    for (const key of PALETTE_TOKENS) if (key in was.vars) current.vars[key] = was.vars[key];
+    current.palette = was.palette;
+    if (was.auto === undefined) delete current.auto; else current.auto = was.auto;
+    if (was.derived) current.derived = true;
+  }
+  apply(current);
+  persist();
+  syncControls();
+  // The kept sheet was built for the tier it was kept at.
+  reshade();
+}
+
+/** The accent picked by hand, or '' while the colours are a palette's or the pictures'. */
+export const handAccent = () => (handPicked() ? current.vars['--accent'] ?? '' : '');
 
 /** Reset to default look: Middle, Papyrus, no overrides, extraction re-enabled. */
 export function resetAppearance() {

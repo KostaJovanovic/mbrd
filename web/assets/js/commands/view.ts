@@ -251,8 +251,7 @@ export function viewCommands(vp: CommandViewport, { resetAppearance }: ViewDeps)
     inventory: () => openInventory(),
     // The board's own wallpaper picture, at Softish (ui/wallpaper.ts).
     wallpaperAdd: () => addWallpaperPicture(),
-    wallpaperRemove: () => removeWallpaperPicture(),
-    // Toggle the timeline. Which face (strip or sheet) is decided by ui/timeline-view.ts.
+    wallpaperRemove: () => removeWallpaperPicture(),    // Toggle the timeline. Which face (strip or sheet) is decided by ui/timeline-view.ts.
     timeline: () => toggleTimeline(),
     // Navigate to patch notes. Same tab — board is flushed on pagehide/visibilitychange
     // (the desktop shell asks for the flush first), and in-place navigation avoids

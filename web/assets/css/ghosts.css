@@ -12,8 +12,11 @@
 .ghost-card {
   /* Carries its own shadow since items.ts builds no #item-shadows twin. */
   box-shadow: var(--item-shadow);
-  /* Screen units, like --board-hairline. */
-  --board-ghost-weight: calc(var(--ghost-weight) * var(--iz));
+  /* Board units, not screen units (no --iz): the dashes are part of the card
+     and keep their share of it at every zoom. --iz lands only when the view
+     settles (_setIz in viewport.ts), so an edge drawn in it rode the zoom and
+     then jumped to a new width on release. */
+  --board-ghost-weight: var(--ghost-weight);
   border: var(--board-ghost-weight) dashed var(--ghost-edge);
   border-radius: inherit;
   justify-content: center;
@@ -127,6 +130,18 @@
   .ghost-go:hover { background: color-mix(in srgb, var(--accent) 88%, var(--ink)); }
 }
 .ghost-go:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* "Show me around" (a <button>; the dead-address link stays filled): only a
+   dotted outline, so a hint card's button stays as provisional as the card. */
+button.ghost-go {
+  border: var(--board-ghost-weight) dotted var(--ghost-edge);
+  background: transparent;
+  color: var(--ghost-ink);
+  box-shadow: none;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+@media (hover: hover) {
+  button.ghost-go:hover { background: transparent; border-color: var(--ghost-ink); }
+}
 
 /* ---- Softish: a page torn out, taped down ------------------------------
    Perforation stubs (repeating mask), faint rules, margin. The mask applies

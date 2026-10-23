@@ -13,7 +13,7 @@ import { currentBoardId } from '../storage/storage.ts';
 import { surface, surfaceToPicture, type Surface } from '../canvas/surface.ts';
 import { cutout, matteAvailable } from '../canvas/matte.ts';
 import { ask } from './dialog.ts';
-import { edgeShare, familyOf, pieceByName, tierSwitch, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
+import { edgeShare, familyOf, FAMILY_ACCENT, pieceByName, tierSwitch, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
 import type { Wallpaper } from '../board-model.ts';
 import { BASE_ZOOM, onSmallScreen, type Viewport } from '../canvas/viewport.ts';
 
@@ -52,12 +52,40 @@ export function chosenWallpaper(): string {
   return pieceByName(name) ? name : '';
 }
 
-/** The 'settings' event this sends is what repaints. */
+/** The 'settings' event this sends is what repaints. A board coloured to match
+ *  its piece follows it to the next one, and back to its own colours with none. */
 export function setChosenWallpaper(name: string) {
-  setSetting('wallpaper', { ...board.wallpaper, piece: pieceByName(name) ? name : null });
+  const next = pieceByName(name);
+  // Colours first: the setting's event is what repaints the panel, and its
+  // switch reads the colours against the new piece.
+  if (wallpaperMatched()) pigment?.match(next ? FAMILY_ACCENT[next.family] : null);
+  setSetting('wallpaper', { ...board.wallpaper, piece: next ? name : null });
 }
 
-export function initWallpaper(viewport: Viewport) {
+/**
+ * The look's pigment, handed in by main.ts: ui/appearance.ts cannot be imported
+ * here, since settings-schema.ts reaches this module and the panel reaches it.
+ * Unwired, nothing matches and the switch does nothing.
+ */
+type PigmentHooks = { accent: () => string, match: (hex: string | null) => void };
+let pigment: PigmentHooks | null = null;
+
+/** Whether the board is in the chosen piece's colours: read off the look, so
+ *  the switch cannot disagree with the screen, a reload or an undo included. */
+export function wallpaperMatched(): boolean {
+  const piece = pieceByName(chosenWallpaper());
+  return !!piece && !!pigment && pigment.accent() === FAMILY_ACCENT[piece.family];
+}
+
+/** Debug: the board in the chosen piece's family's colours, or back out of them. */
+export function matchWallpaper(on: boolean) {
+  const piece = pieceByName(chosenWallpaper());
+  if (on && piece) pigment?.match(FAMILY_ACCENT[piece.family]);
+  else if (!on) pigment?.match(null);
+}
+
+export function initWallpaper(viewport: Viewport, hooks?: PigmentHooks) {
+  pigment = hooks ?? null;
   host = document.getElementById('wallpaper');
   if (!host) return;
   view = viewport;

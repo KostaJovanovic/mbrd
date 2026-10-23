@@ -1128,6 +1128,26 @@ export function paletteFromAccent(picked: string, { tier = 1 }: { tier?: number 
   return vars;
 }
 
+/**
+ * A whole palette from a colour with no hue: the sheet a pick builds, with
+ * every colour taken out of it and the pick kept as the accent. Not what the
+ * Pigment row does with a grey - that is refused above, on purpose - but the
+ * debug wallpaper switch's, which has to put a white, grey or black family's
+ * pieces on a board of their own colour (ui/wallpaper.ts).
+ */
+export function neutralPalette(picked: string, { tier = 1 }: { tier?: number } = {}) {
+  if (!/^#[0-9a-f]{6}$/i.test(picked)) return null;
+  const chosen = picked.toLowerCase();
+  const vars = build({ sheet: 0, accent: 0, leafy: 0, warm: 0 }, { tier });
+  for (const [key, value] of Object.entries(vars)) vars[key] = hex(oklch(...parseHex(value)).L, 0, 0);
+  vars['--accent'] = chosen;
+  vars['--accent-text'] = chosen;
+  const light = mixHex(vars['--paper'], '#ffffff', 0.55);
+  vars['--accent-fg'] =
+    contrast(chosen, light) >= contrast(chosen, vars['--ink']) ? light : vars['--ink'];
+  return vars;
+}
+
 // ---------------------------------------------------------------------------
 // The dark sheet
 // ---------------------------------------------------------------------------

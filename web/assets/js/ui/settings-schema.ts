@@ -23,7 +23,7 @@ import {
 } from '../quality.ts';
 import { SOUND_STOPS, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
 import { drawingEnabled } from '../canvas/pen.ts';
-import { chosenWallpaper, setChosenWallpaper, phoneShaped } from './wallpaper.ts';
+import { chosenWallpaper, setChosenWallpaper, phoneShaped, wallpaperMatched, matchWallpaper } from './wallpaper.ts';
 import { FAMILIES, PIECES, PIECE_NAMES, tierSwitch } from './wallpaper-pieces.ts';
 import { DEFAULT_WHIMSY } from './look.ts';
 import {
@@ -1368,14 +1368,22 @@ export const SECTIONS: Section[] = [
         text: () => 'Experimental feature. Might suck.' },
       // Any Softish wallpaper piece by hand, over the palette's pick, to look at
       // each one on a real board. The board's, in its wallpaper record: ui/wallpaper.ts.
+      // A to Z by colour, and the colour first in each row, so the list reads in its order.
       { id: 'opt-wallpaper-piece', type: 'picker', label: 'Wallpaper', advanced: true, cycle: true, when: wallpaperRoom,
         options: () => [{ value: '', label: 'From the palette' },
-          ...FAMILIES.flatMap(f => Array.from({ length: PIECES[f] }, (_, i) => {
+          ...[...FAMILIES].sort().flatMap(f => Array.from({ length: PIECES[f] }, (_, i) => {
             const name = `${f}-${i + 1}`;
-            return { value: name, label: `${PIECE_NAMES[name] ?? name} (${name})` };
+            return { value: name, label: `${name}: ${PIECE_NAMES[name] ?? name}` };
           }))],
         get: () => chosenWallpaper(),
         set: v => setChosenWallpaper(v) },
+      // The palette picks a piece by colour, so one chosen by hand is shown in
+      // whatever colours the board has. On puts the board in its family's and
+      // follows the piece; off puts the board's own colours back.
+      { id: 'opt-wallpaper-match', type: 'check', label: 'Colour the board to match', advanced: true,
+        when: () => wallpaperRoom() && !!chosenWallpaper(),
+        get: () => wallpaperMatched(),
+        set: v => matchWallpaper(v) },
       // Four readouts. Buttons rather than live rows, and that is forced rather
       // than chosen: paintPanel() repaints on `board`, `settings`, `layout` and
       // `lens`, and on none of the events these four would have to follow - not

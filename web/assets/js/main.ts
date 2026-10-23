@@ -87,7 +87,7 @@ import { initPen } from './canvas/pen.ts';
 import { initFlyouts } from './ui/flyout.ts';
 import { initPalette } from './ui/palette.ts';
 import { initStickerWindow } from './ui/sticker-window.ts';
-import { initAppearance, resetLook, setWhimsy } from './ui/appearance.ts';
+import { handAccent, initAppearance, matchPigment, resetLook, setWhimsy } from './ui/appearance.ts';
 import { initFonts } from './ui/fonts.ts';
 import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as closeHeaderPanel, styleFeedMasthead } from './ui/mobile-header.ts';
 import { initAudio } from './canvas/audio.ts';
@@ -302,7 +302,7 @@ initAppearance({
 });
 initGrain(vp);
 // The pieces at the edges at Softish; follows the look by watching :root.
-initWallpaper(vp);
+initWallpaper(vp, { accent: handAccent, match: matchPigment });
 // Board-edge warning mark.
 initFarLands(vp);
 initAudio();

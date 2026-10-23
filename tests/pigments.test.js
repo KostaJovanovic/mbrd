@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  contrast, extractPalette, hex, huesOf, oklch, paletteFor, paletteFromAccent,
+  contrast, extractPalette, hex, huesOf, neutralPalette, oklch, paletteFor, paletteFromAccent,
   PALETTE_TOKENS, samplePixels, MAX_SOURCES, ALL_SOURCES_MAX,
 } from '../web/assets/js/ui/pigments.ts';
 // Direct import: maxChroma is not re-exported by pigments.ts.
@@ -775,6 +775,22 @@ test('a grey is not a palette', () => {
   assert.equal(paletteFromAccent('#808080'), null);
   assert.equal(paletteFromAccent('#ffffff'), null);
   assert.equal(paletteFromAccent('#000000'), null);
+});
+
+test('a neutral palette is the whole sheet with no colour in it, the pick kept', () => {
+  const lchOf = h => oklch(...[1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)));
+  for (const picked of ['#8a8784', '#141216', '#f5f3ee']) {
+    for (const tier of [0, 1, 2]) {
+      const vars = neutralPalette(picked, { tier });
+      // Every token a hued pick writes, or the named palette shows through the gaps.
+      assert.deepEqual(Object.keys(vars).sort(), Object.keys(paletteFromAccent('#3355ff', { tier })).sort());
+      assert.equal(vars['--accent'], picked);
+      for (const key of ['--paper', '--paper-2', '--ink', '--rule', '--leafy', '--accent-warm']) {
+        assert.ok(lchOf(vars[key]).C < 0.01, `${picked} at ${tier}: ${key} is ${vars[key]}`);
+      }
+      assert.ok(contrast(vars['--ink'], vars['--paper']) >= 7, `${picked} at ${tier}: ink`);
+    }
+  }
 });
 
 test('a pick that is not a colour is refused rather than guessed at', () => {

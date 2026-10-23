@@ -35,6 +35,13 @@ export const PIECE_NAMES: Readonly<Record<string, string>> = Object.freeze({
   'black-1': 'Hellebores', 'black-2': 'Obsidian and tourmaline',
 });
 
+/** A pigment colourName() files under each family, well inside its band, for
+ *  putting a board in a piece's colours by hand (Settings → Debug). */
+export const FAMILY_ACCENT: Readonly<Record<Family, string>> = Object.freeze({
+  red: '#c0392b', orange: '#d9731f', yellow: '#d4b20f', green: '#3f8f4a', blue: '#2f6fb3',
+  purple: '#7b4bb3', pink: '#c45aa8', brown: '#7a4a24', white: '#f5f3ee', grey: '#8a8784', black: '#141216',
+});
+
 /** `pink-1` as its family and number, or null for a name no file answers to. */
 export function pieceByName(name: string): { family: Family, n: number } | null {
   const m = /^([a-z]+)-(\d+)$/.exec(name);

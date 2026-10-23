@@ -204,6 +204,10 @@
 :root[data-whimsy="0"] .item-ring[data-type="image"]:not([data-bare]) {
   --shape-radius: calc(var(--radius) * 0.12);
 }
+/* The whimsy dial's Softish pill (ghosts.css). */
+:root[data-whimsy="0"] .item-ring[data-hint="whimsy"] {
+  --shape-radius: var(--half-min, var(--radius));
+}
 .item-ring::before {
   content: '';
   position: absolute;

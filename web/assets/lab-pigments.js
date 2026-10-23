@@ -659,6 +659,17 @@ function paletteFromAccent(picked, { tier = 1 } = {}) {
   vars["--accent-fg"] = contrast(chosen, light) >= contrast(chosen, vars["--ink"]) ? light : vars["--ink"];
   return vars;
 }
+function neutralPalette(picked, { tier = 1 } = {}) {
+  if (!/^#[0-9a-f]{6}$/i.test(picked)) return null;
+  const chosen = picked.toLowerCase();
+  const vars = build({ sheet: 0, accent: 0, leafy: 0, warm: 0 }, { tier });
+  for (const [key, value] of Object.entries(vars)) vars[key] = hex(oklch(...parseHex(value)).L, 0, 0);
+  vars["--accent"] = chosen;
+  vars["--accent-text"] = chosen;
+  const light = mixHex(vars["--paper"], "#ffffff", 0.55);
+  vars["--accent-fg"] = contrast(chosen, light) >= contrast(chosen, vars["--ink"]) ? light : vars["--ink"];
+  return vars;
+}
 var DARK_PAPER = [0.245, 0.215, 0.175];
 var DARK_DEPTH = 0.6;
 var DARK_DEPTH_MAX = 0.03;
@@ -838,6 +849,7 @@ export {
   extractPalette,
   hex,
   huesOf,
+  neutralPalette,
   oklch,
   paletteFor,
   paletteFromAccent,

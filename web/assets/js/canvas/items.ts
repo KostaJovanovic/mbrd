@@ -2092,7 +2092,7 @@ function paintGrips() {
 
 /** What a card says on itself that its ring's rules read. Classes go across too:
  *  every `is-` state the card wears, from the drag lift to the roll. */
-const RING_ATTRS = ['data-type', 'data-locked', 'data-bare', 'data-grips'] as const;
+const RING_ATTRS = ['data-type', 'data-locked', 'data-bare', 'data-grips', 'data-hint'] as const;
 
 /**
  * Bring one card's selection ring into line with the card.

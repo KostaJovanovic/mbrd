@@ -7,6 +7,7 @@ import { extOf, icon, shuffle } from '../util.ts';
 import { formatName } from '../import/formats.ts';
 import { adjustFilter, baseStep, flipTransform, isFence, isLocked, itemBare, itemFaded } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
+import { hintKey } from './ghosts.ts';
 import { markLang, noteTint } from './note-model.ts';
 import type { Item } from '../board-model.ts';
 import { shownName } from '../board-model.ts';
@@ -294,7 +295,13 @@ export function buildItem(item: ItemLike, tilt: string, picked: boolean): HTMLDi
   el.dataset.type = item.type;
   // The ghost card's rules hang off this class, which the Feed's .feed-hint
   // wrapper carries too, so the hint lays out the same on both surfaces.
-  if (item.type === 'ghost') el.classList.add('ghost-mount');
+  if (item.type === 'ghost') {
+    el.classList.add('ghost-mount');
+    // On the item as well as the card, for the selection ring: it is a twin in
+    // another layer, so the dial's Softish pill (ghosts.css) has to be readable
+    // off an attribute paintRing() copies, not off a :has() into the card.
+    el.dataset.hint = hintKey(typeof item.meta?.hint === 'string' ? item.meta.hint : undefined);
+  }
   writeFit(el, item);
   writeAdjust(el, item);
   // The board is the tab stop; Tab walks the cards (walkCards() in canvas/input.ts).

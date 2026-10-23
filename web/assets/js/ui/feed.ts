@@ -774,10 +774,8 @@ function fillCard(t: Tile) {
  * second hint card for this surface - one place knows what a hint says and
  * how the whimsy dial is laid on it (canvas/renderers.ts, RENDERERS.ghost).
  *
- * Two things the canvas provides that this surface has to provide itself:
- * `--iz` (inverse zoom, keeping the ghost card's dashed border one screen
- * pixel at every zoom - the Feed has no zoom, so it's exactly 1), and wiring
- * the dial after mounting, the same as canvas/items.ts does.
+ * One thing the canvas provides that this surface has to provide itself:
+ * wiring the dial after mounting, the same as canvas/items.ts does.
  */
 function fillHint(t: Tile) {
   // .ghost-mount is what the dial's own rules hang off - every one of them
@@ -786,9 +784,6 @@ function fillHint(t: Tile) {
   // of its layout (no sized row, no stop names, no track). See the block
   // above .ghost-dial in ghosts.css.
   const host = div('feed-hint ghost-mount');
-  // The value the border width is computed from. Not inherited from anywhere
-  // on this surface - #world is where the canvas writes it.
-  host.style.setProperty('--iz', '1');
   host.append(buildContent(t.item));
   t.el.appendChild(host);
   const dial = host.querySelector<HTMLInputElement>('input[type="range"]');

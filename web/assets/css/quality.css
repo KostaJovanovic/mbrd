@@ -114,8 +114,15 @@
 /* The title card's outline, faint: the full-ink edge every other card wears
    here would box the board's name in. Its own declaration and not canvas.css's,
    whose list ends in --item-shadow, which is `none` here and voids the whole
-   box-shadow, outline included. */
-:root[data-whimsy="2"] .title-card {
+   box-shadow, outline included. The same void hits the title card at Light
+   and the whimsy dial at Light and at Harsh, whose edges end in that list
+   too, so they take this outline rather than none. */
+:root[data-whimsy="2"] .title-card,
+:root[data-quality="light"]:not([data-q-shadows]) .title-card,
+:root[data-q-shadows="off"] .title-card,
+:root[data-whimsy="2"] .ghost-card[data-hint="whimsy"],
+:root[data-quality="light"]:not([data-q-shadows]) .ghost-card[data-hint="whimsy"],
+:root[data-q-shadows="off"] .ghost-card[data-hint="whimsy"] {
   box-shadow: inset 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 16%, transparent);
 }
 
