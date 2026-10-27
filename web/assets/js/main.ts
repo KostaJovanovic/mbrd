@@ -88,6 +88,7 @@ import { initFlyouts } from './ui/flyout.ts';
 import { initPalette } from './ui/palette.ts';
 import { initStickerWindow } from './ui/sticker-window.ts';
 import { handAccent, initAppearance, matchPigment, resetLook, setWhimsy } from './ui/appearance.ts';
+import { markShade } from './ui/shade.ts';
 import { initFonts } from './ui/fonts.ts';
 import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as closeHeaderPanel, styleFeedMasthead } from './ui/mobile-header.ts';
 import { initAudio } from './canvas/audio.ts';
@@ -286,6 +287,8 @@ enableMath();
 if (!isPatch) setEmbedEnrich(enrichEmbed);
 // Before anything reads a quality flag.
 armQuality();
+// The Debug fold's plain shadows, if this device asked for them.
+markShade();
 // Interface sounds (Web Audio blips, not content playback). Before buildPanel()
 // so the Sounds dial reads the stored level. Skipped on /patch.
 if (!isPatch) initCuelume();

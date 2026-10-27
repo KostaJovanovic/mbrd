@@ -350,7 +350,7 @@
 }
 /* In the dark the sheet is the card stock rather than white, and the surround
    sinks rather than greys - a light wash over a dark page lifts it. */
-:root[data-scheme="dark"] #mobile-surround { background: color-mix(in srgb, var(--shade) 30%, transparent); }
+:root[data-scheme="dark"] #mobile-surround { background: color-mix(in srgb, var(--scrim) 30%, transparent); }
 :root[data-scheme="dark"] #mobile-board-frame {
   background: color-mix(in srgb, var(--accent) var(--mobile-board-accent), var(--paper-card));
 }

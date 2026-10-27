@@ -23,6 +23,7 @@ import {
 } from '../quality.ts';
 import { SOUND_STOPS, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
 import { drawingEnabled } from '../canvas/pen.ts';
+import { neutralShadows, setNeutralShadows } from './shade.ts';
 import { chosenWallpaper, setChosenWallpaper, phoneShaped, wallpaperMatched, matchWallpaper } from './wallpaper.ts';
 import { FAMILIES, PIECES, PIECE_NAMES, tierSwitch } from './wallpaper-pieces.ts';
 import { DEFAULT_WHIMSY } from './look.ts';
@@ -1384,6 +1385,11 @@ export const SECTIONS: Section[] = [
         when: () => wallpaperRoom() && !!chosenWallpaper(),
         get: () => wallpaperMatched(),
         set: v => matchWallpaper(v) },
+      // Shadows in plain black, or white in the dark, instead of mixed from the
+      // palette's ink - to judge the coloured ones against. Per device (ui/shade.ts).
+      { id: 'opt-neutral-shadows', type: 'check', label: 'Black and white shadows', advanced: true,
+        get: () => neutralShadows(),
+        set: v => setNeutralShadows(v) },
       // Four readouts. Buttons rather than live rows, and that is forced rather
       // than chosen: paintPanel() repaints on `board`, `settings`, `layout` and
       // `lens`, and on none of the events these four would have to follow - not

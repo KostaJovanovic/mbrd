@@ -82,8 +82,11 @@
      borrowed from Papyrus. A grey drop shadow on warm paper is the single most
      generic-web-app thing you can do; a brown one on a green board is worse.
      Through --shade, which is this ink in the light and black in the dark (3c),
-     where a shadow mixed from light print would be a glow. */
+     where a shadow mixed from light print would be a glow. Shadows only: the
+     backdrops behind dialogs and the viewer, and the vignette, are --scrim,
+     the same colour, so the Debug fold can plain the shadows and leave those. */
   --shade: var(--ink);
+  --scrim: var(--ink);
   --item-shadow: 0 1px 1px color-mix(in srgb, var(--shade) 11%, transparent),
                  0 10px 22px -10px color-mix(in srgb, var(--shade) 34%, transparent);
   /* How much the interface reacts to being touched. Drag/tilt are zero at this
@@ -1500,6 +1503,7 @@
      the print's own colour thinned out; in the dark the print is light, and a
      shadow mixed from it is a glow. */
   --shade: #000;
+  --scrim: #000;
   /* A flat sheet: no blooms and no vignette. Pigment washed into a dark ground
      reads as a stain, and shading the corners of something already dark only
      makes it murky. The grain stays. Later than the tier blocks, at the same
@@ -1526,6 +1530,13 @@
   --note-3: color-mix(in oklab, var(--leafy) 22%, var(--paper-card));
   --note-4: color-mix(in oklab, var(--accent-warm) 10%, var(--paper-2));
 }
+
+/* Debug: shadows in plain black, or white on the dark sheet, instead of the
+   palette's ink, to judge the coloured ones against on a real board
+   (ui/shade.ts). Translucent, so every shadow keeps its own percentage and is
+   scaled by one number per sheet. --scrim stays as it was. */
+:root[data-shade="neutral"] { --shade: rgb(0 0 0 / 0.8); }
+:root[data-shade="neutral"][data-scheme="dark"] { --shade: rgb(255 255 255 / 0.22); }
 
 /* Harsh mixes its notes into white, which is the one sheet it does not have here.
    And it draws every edge in full ink, which on white is a fine black line and
