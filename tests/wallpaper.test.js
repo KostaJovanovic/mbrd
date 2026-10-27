@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { FAMILIES, FAMILY_ACCENT, PIECES, PIECE_NAMES, edgeShare, familyOf, wallpaperTones, pieceByName, pieceFor, pieceURL, tierSwitch, TONES } from '../web/assets/js/ui/wallpaper-pieces.ts';
+import { FAMILIES, FAMILY_ACCENT, PALETTE_PIECE, PIECES, PIECE_NAMES, edgeShare, familyOf, wallpaperTones, pieceByName, pieceFor, pieceURL, tierSwitch, TONES } from '../web/assets/js/ui/wallpaper-pieces.ts';
 import { normalizeWallpaper } from '../web/assets/js/board-schema.ts';
 import { oklch, parseHex } from '../web/assets/js/color.ts';
 
@@ -56,6 +56,11 @@ test('every piece has a name to be chosen by, and only real pieces can be chosen
   assert.deepEqual(Object.keys(PIECE_NAMES).sort(), [...all].sort());
   for (const name of all) assert.ok(pieceByName(name), name);
   for (const bad of ['', 'pink', 'pink-0', 'pink-3', 'teal-1', 'pink-1x', '../pink-1']) assert.equal(pieceByName(bad), null, bad);
+});
+
+test('a palette starts on a piece that exists', () => {
+  assert.deepEqual({ ...PALETTE_PIECE }, { '': 'red-1', absinthe: 'green-1', orca: 'blue-1' });
+  for (const name of Object.values(PALETTE_PIECE)) assert.ok(pieceByName(name), name);
 });
 
 test('the zoom decides how much of the window each side takes', () => {

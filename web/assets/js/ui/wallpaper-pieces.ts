@@ -42,6 +42,13 @@ export const FAMILY_ACCENT: Readonly<Record<Family, string>> = Object.freeze({
   purple: '#7b4bb3', pink: '#c45aa8', brown: '#7a4a24', white: '#f5f3ee', grey: '#8a8784', black: '#141216',
 });
 
+/** The piece a palette starts on in its own colours, by its `data-palette`
+ *  ('' is Papyrus), over the pick by board. Not one for Dynamic or a hand-set
+ *  pigment, whose accent is the board's own. A palette absent here hashes. */
+export const PALETTE_PIECE: Readonly<Record<string, string>> = Object.freeze({
+  '': 'red-1', absinthe: 'green-1', orca: 'blue-1',
+});
+
 /** `pink-1` as its family and number, or null for a name no file answers to. */
 export function pieceByName(name: string): { family: Family, n: number } | null {
   const m = /^([a-z]+)-(\d+)$/.exec(name);

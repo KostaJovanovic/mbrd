@@ -13,7 +13,7 @@ import { currentBoardId } from '../storage/storage.ts';
 import { surface, surfaceToPicture, type Surface } from '../canvas/surface.ts';
 import { cutout, matteAvailable } from '../canvas/matte.ts';
 import { ask } from './dialog.ts';
-import { edgeShare, familyOf, FAMILY_ACCENT, pieceByName, tierSwitch, pieceFor, pieceURL, wallpaperTones, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
+import { edgeShare, familyOf, FAMILY_ACCENT, pieceByName, tierSwitch, pieceFor, pieceURL, wallpaperTones, PALETTE_PIECE, PIECES, TONES, type Family } from './wallpaper-pieces.ts';
 import type { Wallpaper } from '../board-model.ts';
 import { BASE_ZOOM, onSmallScreen, type Viewport } from '../canvas/viewport.ts';
 
@@ -164,11 +164,22 @@ async function refresh() {
   }
   if (!seed) seed = await currentBoardId().catch(() => 'board');
   if (mine !== gen) return;
-  const chosen = pieceByName(chosenWallpaper());
+  const chosen = pieceByName(chosenWallpaper()) ?? paletteDefault();
   const piece = chosen ? await firstPiece(chosen.family, chosen.n) : await firstPiece(tones.family, pieceFor(seed, tones.family));
   if (mine !== gen) return;
   if (!piece) { swap('', null); return; }
   if (piece.key !== shown) swap(piece.key, partsOf(piece.svg));
+}
+
+/**
+ * The palette's own piece (PALETTE_PIECE), while its colours are the sheet's.
+ * An inline --accent on :root is Dynamic's or a hand-set pigment, and the
+ * family then follows that accent as before.
+ */
+function paletteDefault() {
+  const root = document.documentElement;
+  if (root.style.getPropertyValue('--accent')) return null;
+  return pieceByName(PALETTE_PIECE[root.dataset.palette ?? ''] ?? '');
 }
 
 let following = 0;
