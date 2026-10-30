@@ -121,6 +121,27 @@ test('a STEP B-spline surface of an impossible degree is corrupt too (C3)', () =
   refusedFast(() => parseMesh('step', buf(text)), 1000, 'surface degree 1e8');
 });
 
+test('STEP colours of many items over one big shell share one walk budget', () => {
+  // 8,000 styled items each naming a solid of 8,000 faces walked the shell
+  // once each: 7.9 s, measured.
+  const n = 8000;
+  const text = stepFile(put => {
+    const at = [[0, 0, 0], [10, 0, 0], [0, 10, 0]];
+    const P = at.map(([x, y, z]) => put(`CARTESIAN_POINT('',(${x}.,${y}.,${z}.))`));
+    const loop = put(`POLY_LOOP('',(#${P[0]},#${P[1]},#${P[2]}))`);
+    const bound = put(`FACE_OUTER_BOUND('',#${loop},.T.)`);
+    const up = put(`DIRECTION('',(0.,0.,1.))`);
+    const plane = put(`PLANE('',#${put(`AXIS2_PLACEMENT_3D('',#${P[0]},#${up},$)`)})`);
+    const faces = [];
+    for (let i = 0; i < n; i++) faces.push(put(`ADVANCED_FACE('',(#${bound}),#${plane},.T.)`));
+    const shell = put(`CLOSED_SHELL('',(${faces.map(f => `#${f}`).join(',')}))`);
+    const brep = put(`MANIFOLD_SOLID_BREP('',#${shell})`);
+    const red = put(`COLOUR_RGB('',1.,0.,0.)`);
+    for (let i = 0; i < n; i++) put(`STYLED_ITEM('',(#${red}),#${brep})`);
+  });
+  endsFast(() => parseMesh('step', buf(text)), 2000, 'styled items over one shell');
+});
+
 test('a STEP record of bare words costs its length once, not once per word (H19)', () => {
   // `#1=X(A A A ...)`: every word scanned to the closing parenthesis before
   // being read as a word. 80,000 of them was 42 seconds.

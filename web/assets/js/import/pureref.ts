@@ -87,11 +87,24 @@ type Matrix = [number, number, number, number];
 
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const at = (b: Uint8Array, p: number, sig: number[]) => p + sig.length <= b.length && sig.every((s, i) => b[p + i] === s);
+/**
+ * What one scan of a file may spend walking pictures: a chunk or segment hop
+ * costs one, a byte of JPEG scan data one. A picture that is really there is
+ * walked once, so a real file spends about its length; a file made of
+ * picture starts that each run to the end (FF D8 FF FE 00 06 00 00, repeated)
+ * was quadratic, 1.6 s for 256 KB. Spent, every later walk finds nothing and
+ * the scan keeps what it found. A time limit, not a ceiling: there is nothing
+ * to lift, so it is no Oversize.
+ */
+type Steps = { left: number };
+const stepsFor =(b: Uint8Array): Steps => ({ left: 8 * b.length + 1e6 });
+
 /** The end of a PNG starting at `p`, walked chunk by chunk to IEND, or -1. */
-function pngEnd(b: Uint8Array, p: number): { end: number, width: number, height: number } | -1 {
+function pngEnd(b: Uint8Array, p: number, steps: Steps): { end: number, width: number, height: number } | -1 {
   if (!at(b, p, PNG)) return -1;
   let q = p + 8, width = 0, height = 0;
   while (q + 12 <= b.length) {
+    if (--steps.left < 0) return -1;
     const len = be32(b, q);
     if (len > b.length - q - 12) return -1;
     const type = String.fromCharCode(b[q + 4], b[q + 5], b[q + 6], b[q + 7]);
@@ -107,10 +120,11 @@ function pngEnd(b: Uint8Array, p: number): { end: number, width: number, height:
 }
 
 /** The end of a JPEG starting at `p`: segments to the scan, the scan to EOI. */
-function jpegEnd(b: Uint8Array, p: number): { end: number, width: number, height: number } | -1 {
+function jpegEnd(b: Uint8Array, p: number, steps: Steps): { end: number, width: number, height: number } | -1 {
   if (!(b[p] === 0xff && b[p + 1] === 0xd8 && b[p + 2] === 0xff)) return -1;
   let q = p + 2, width = 0, height = 0;
   while (q + 4 <= b.length) {
+    if (--steps.left < 0) return -1;
     if (b[q] !== 0xff) return -1;
     const m = b[q + 1];
     if (m === 0xff) { q++; continue; }
@@ -126,16 +140,18 @@ function jpegEnd(b: Uint8Array, p: number): { end: number, width: number, height
     q += 2 + len;
     if (m === 0xda) {
       // Entropy-coded data: a marker is 0xFF then anything but a stuffed zero or a restart.
+      const from = q;
       while (q + 1 < b.length && !(b[q] === 0xff && b[q + 1] !== 0 && !(b[q + 1] >= 0xd0 && b[q + 1] <= 0xd7))) q++;
+      steps.left -= q - from;
     }
   }
   return -1;
 }
 
-const pictureAt = (b: Uint8Array, p: number): (PurPicture & { end: number }) | null => {
-  const png = pngEnd(b, p);
+const pictureAt = (b: Uint8Array, p: number, steps: Steps): (PurPicture & { end: number }) | null => {
+  const png = pngEnd(b, p, steps);
   if (png !== -1) return { bytes: b.subarray(p, png.end), mime: 'image/png', width: png.width, height: png.height, end: png.end };
-  const jpg = jpegEnd(b, p);
+  const jpg = jpegEnd(b, p, steps);
   if (jpg !== -1) return { bytes: b.subarray(p, jpg.end), mime: 'image/jpeg', width: jpg.width, height: jpg.height, end: jpg.end };
   return null;
 };
@@ -244,9 +260,10 @@ function readLayout(b: Uint8Array): PurRead {
   // Pictures, each either the bytes or four bytes naming the item that has them.
   const pictures: PurPicture[] = [];
   const byStart = new Map<number, number>();
+  const steps = stepsFor(b);
   let p = HEADER;
   while (p < refsAt && !itemAt(b, p)) {
-    const pic = pictureAt(b, p);
+    const pic = pictureAt(b, p, steps);
     if (pic) {
       byStart.set(p, pictures.length);
       pictures.push({ bytes: pic.bytes, mime: pic.mime, width: pic.width, height: pic.height });
@@ -332,9 +349,10 @@ function readLayout(b: Uint8Array): PurRead {
 /** The fallback: every whole picture in the file, wherever it is, in a grid. */
 export function scanPictures(b: Uint8Array): PurPicture[] {
   const out: PurPicture[] = [];
+  const steps = stepsFor(b);
   for (let p = 0; p < b.length - 8; p++) {
     if (b[p] !== 0x89 && b[p] !== 0xff) continue;
-    const pic = pictureAt(b, p);
+    const pic = pictureAt(b, p, steps);
     if (!pic) continue;
     out.push({ bytes: pic.bytes, mime: pic.mime, width: pic.width, height: pic.height });
     p = pic.end - 1;

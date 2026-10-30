@@ -115,6 +115,19 @@ test('a JPEG is walked to its end through stuffed bytes and restarts', () => {
   assert.deepEqual([pics[0].mime, pics[0].width, pics[0].height, pics[0].bytes.length], ['image/jpeg', 40, 30, jpg.length]);
 });
 
+test('a file of JPEG starts that each run to the end is scanned in linear time', () => {
+  // Every eight bytes start a JPEG whose comment segment hops to the next one,
+  // so each start walked to the end: 256 KB took 1.6 s, 1 MB about 26.
+  const block = [0xff, 0xd8, 0xff, 0xfe, 0x00, 0x06, 0x00, 0x00];
+  const b = new Uint8Array(1024 * 1024);
+  for (let i = 0; i < b.length; i += 8) b.set(block, i);
+  const start = performance.now();
+  assert.deepEqual(scanPictures(b), []);
+  assert.throws(() => readPur(b));
+  const took = performance.now() - start;
+  assert.ok(took < 1000, `took ${took | 0} ms`);
+});
+
 test('past the ceiling is a question, not damage', () => {
   const big = new Uint8Array(8);
   Object.defineProperty(big, 'length', { value: PUR_LIMIT + 1 });

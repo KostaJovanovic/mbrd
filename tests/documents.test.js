@@ -17,7 +17,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  canReadDocument, parseDelimited, colIndex, scrub,
+  canReadDocument, parseDelimited, colIndex, scrub, tableOf, cellsFor,
 } from '../web/assets/js/ui/documents.ts';
 import { resolveFrom, slideNo } from '../web/assets/js/import/ooxml.ts';
 
@@ -142,6 +142,28 @@ test('other delimiters work the same', () => {
 
 test('an empty file has no rows', () => {
   assert.deepEqual(parseDelimited('', ','), []);
+});
+
+test('the cell ceiling is for the whole document, not each table in it', () => {
+  // A workbook of a thousand sheets drew a thousand times MAX_CELLS. A stand-in
+  // document is enough: tableOf() only makes elements and appends them.
+  let made = 0;
+  const saved = globalThis.document;
+  globalThis.document = {
+    createElement: tag => {
+      if (tag === 'td' || tag === 'th') made++;
+      return { append() {}, className: '', textContent: '' };
+    },
+  };
+  try {
+    const sheet = Array.from({ length: 300 }, () => new Array(100).fill('x'));
+    const cells = cellsFor();
+    for (let i = 0; i < 5; i++) tableOf(sheet, cells);
+    assert.equal(made, 40000);
+    assert.equal(cells.left, 0);
+  } finally {
+    globalThis.document = saved;
+  }
 });
 
 // ---------------------------------------------------------------------------

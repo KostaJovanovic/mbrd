@@ -828,11 +828,12 @@ function placements(db: Db) {
   // than up from the face, because a face has no back-reference to anything.
   const out = new Map<number, Matrix>();
   if (!parent.size) return out;
+  const budget = { left: FACE_STEPS };
   for (const [id, e] of db) {
     if (!e.type.endsWith('SHAPE_REPRESENTATION') && e.type !== 'SHAPE_REPRESENTATION') continue;
     const m = resolve(id, 0);
     if (m === UNIT) continue;
-    for (const face of facesUnder(db, e)) out.set(face, m);
+    for (const face of facesUnder(db, e, budget)) out.set(face, m);
   }
   return out;
 }
@@ -853,14 +854,19 @@ function between(a: Frame, b: Frame): Matrix {
   return { m, t: [b.o[0] - moved[0], b.o[1] - moved[1], b.o[2] - moved[2]] };
 }
 
+/** What the face walks of one pass (placing, or colouring) may spend between
+ *  them. One per pass, not one per walk: eight thousand styled items over one
+ *  shell of eight thousand faces walked the shell once each, 7.9 s. Spent, the
+ *  rest is left where it is and grey. A time limit, so no Oversize. */
+const FACE_STEPS = 4_000_000;
+
 /** Every ADVANCED_FACE reachable from a representation, by id. */
-function facesUnder(db: Db, root: Entity) {
+function facesUnder(db: Db, root: Entity, budget: { left: number }) {
   const out: number[] = [];
   const seen = new Set<number>();
   const stack: Val[] = [...root.args];
-  let steps = 0;
   while (stack.length) {
-    if (++steps > 2_000_000) break;
+    if (--budget.left < 0) break;
     const v = stack.pop()!;
     if (isList(v)) { stack.push(...v); continue; }
     if (!isRef(v) || seen.has(v.ref)) continue;
@@ -886,7 +892,9 @@ function facesUnder(db: Db, root: Entity) {
  * styled target. First colour wins (most-specific-first in practice). */
 function styleColours(db: Db) {
   const out = new Map<number, number[]>();
+  const budget = { left: FACE_STEPS };
   for (const e of db.values()) {
+    if (budget.left < 0) break;
     if (!isType(e, 'STYLED_ITEM')) continue;
     const args = partArgs(e, 'STYLED_ITEM') || e.args;
     const rgb = findColour(db, args[1], 0, new Set());
@@ -900,7 +908,7 @@ function styleColours(db: Db) {
     // it.
     const faces = isType(item, 'ADVANCED_FACE') || isType(item, 'FACE_SURFACE')
       ? [target.ref]
-      : facesUnder(db, item);
+      : facesUnder(db, item, budget);
     for (const face of faces) if (!out.has(face)) out.set(face, rgb);
   }
   return out;

@@ -127,27 +127,40 @@ function guessMime(path: string) {
   })[ext] || 'application/octet-stream';
 }
 
+/** The table cells one document may still draw: MAX_CELLS across all its
+ *  tables. One per document, never one per table, or a workbook of a thousand
+ *  sheets was a thousand times the ceiling (41 million cells from 3.3 MB). */
+type Cells = { left: number };
+/** Exported, with tableOf(), only for their test. */
+export const cellsFor = (): Cells => ({ left: MAX_CELLS });
+
+/** Said in place of the sheets past the document's cells. */
+function cutShort(what: string) {
+  const p = el('p', 'doc-missing');
+  p.textContent = `The rest of this ${what} is too large to show here.`;
+  return p;
+}
+
 /**
  * A table from rows of strings, with the first row as the head. Cells are
  * `string | null` because that's what DOM textContent answers and accepts.
  */
-function tableOf(rows: (string | null)[][]) {
+export function tableOf(rows: (string | null)[][], cells: Cells) {
   const t = el('table', 'doc-table');
-  let cells = 0;
   const wrap = el('div', 'doc-table-wrap');
   const body = el('tbody');
   rows.forEach((row, n) => {
-    if (cells > MAX_CELLS) return;
+    if (cells.left <= 0) return;
     const tr = el('tr');
     for (const value of row) {
       // Checked per *cell*, not per row: a .csv of one line with 20M commas
       // (well under MAX_CONTAINER) survived as one row and created 20M
       // elements here - not a truncated read, the tab going down.
-      if (cells > MAX_CELLS) break;
+      if (cells.left <= 0) break;
       const cell = el(n === 0 ? 'th' : 'td');
       cell.textContent = value;
       tr.append(cell);
-      cells++;
+      cells.left--;
     }
     if (n === 0) {
       const thead = el('thead');
@@ -196,11 +209,12 @@ async function ooxmlText(blob: Blob, urls: string[]) {
   let list = null;
   let images = 0;
   let n = 0;
+  const cells = cellsFor();
   for (const node of body.children) {
     if (n++ > MAX_BLOCKS) break;
     if (node.localName === 'tbl') {
       list = null;
-      out.append(wordTable(node));
+      out.append(wordTable(node, cells));
       continue;
     }
     if (node.localName !== 'p') continue;
@@ -331,14 +345,15 @@ function wordImage(node: Element, entries: Entries, rels: Rels, urls: string[],
   return img;
 }
 
-function wordTable(tbl: Element) {
+function wordTable(tbl: Element, cells: Cells) {
   const rows: string[][] = [];
   for (const tr of [...tbl.children].filter(n => n.localName === 'tr')) {
+    if (cells.left <= 0) break;
     rows.push([...tr.children]
       .filter(n => n.localName === 'tc')
       .map(tc => byLocal(tc, 't').map(t => t.textContent).join('')));
   }
-  return tableOf(rows);
+  return tableOf(rows, cells);
 }
 
 // ---------------------------------------------------------------------------
@@ -419,19 +434,24 @@ async function ooxmlSheets(blob: Blob) {
   const shared = sharedStrings(entries);
   const sheets = [...entries.keys()]
     .filter(k => /^xl\/worksheets\/sheet\d+\.xml$/.test(k))
-    .sort((a, b) => slideNo(a) - slideNo(b));
+    .sort((a, b) => slideNo(a) - slideNo(b))
+    .slice(0, MAX_PAGES);
   if (!sheets.length) throw new Error('That workbook has no sheets');
   const names = sheetNames(entries);
 
   const frag = document.createDocumentFragment();
-  sheets.forEach((path, n) => {
+  const budget = cellsFor();
+  sheets.every((path, n) => {
+    if (budget.left <= 0) { frag.append(cutShort('workbook')); return false; }
     const section = el('section', 'doc-sheet');
     section.append(partHead(names[n] || `Sheet ${n + 1}`));
     try {
       const doc = xmlOf(entries, path);
       const rows: (string | null)[][] = [];
+      let built = 0;
       for (const row of byLocal(doc, 'row')) {
-        if (rows.length > MAX_BLOCKS) break;
+        // Built no further than the table can draw.
+        if (rows.length > MAX_BLOCKS || built > budget.left) break;
         const cells: (string | null)[] = [];
         for (const c of [...row.children].filter(x => x.localName === 'c')) {
           // Bounded per row, like tableOf()'s .csv path: a <c> with no `r`
@@ -449,14 +469,16 @@ async function ooxmlSheets(blob: Blob) {
           }
         }
         rows.push(cells);
+        built += cells.length;
       }
-      section.append(tableOf(rows));
+      section.append(tableOf(rows, budget));
     } catch {
       const bad = el('p', 'doc-missing');
       bad.textContent = 'This sheet could not be read.';
       section.append(bad);
     }
     frag.append(section);
+    return true;
   });
   return frag;
 }
@@ -519,7 +541,7 @@ async function odfText(blob: Blob, urls: string[]) {
   const frag = document.createDocumentFragment();
 
   if (pages.length) {
-    const drawn: Drawn = { blocks: 0, images: 0 };
+    const drawn: Drawn = { blocks: 0, images: 0, cells: cellsFor() };
     pages.slice(0, MAX_PAGES).forEach((page, n) => {
       const section = el('section', 'doc-slide');
       section.append(partHead(page.getAttribute('draw:name') || `Slide ${n + 1}`));
@@ -541,10 +563,10 @@ async function odfText(blob: Blob, urls: string[]) {
 }
 
 /** How much of one document has been drawn, kept across its slides so the ceilings hold per document. */
-type Drawn = { blocks: number, images: number };
+type Drawn = { blocks: number, images: number, cells: Cells };
 
 function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: string[],
-  drawn: Drawn = { blocks: 0, images: 0 }) {
+  drawn: Drawn = { blocks: 0, images: 0, cells: cellsFor() }) {
   const walk = (node: Element, into: Element) => {
     for (const child of node.children) {
       if (drawn.blocks++ > MAX_BLOCKS) return;
@@ -589,11 +611,12 @@ function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: str
         case 'table': {
           const rows: (string | null)[][] = [];
           for (const tr of byLocal(child, 'table-row')) {
+            if (drawn.cells.left <= 0) break;
             rows.push([...tr.children]
               .filter(c => c.localName === 'table-cell')
               .map(c => c.textContent));
           }
-          into.append(tableOf(rows));
+          into.append(tableOf(rows, drawn.cells));
           break;
         }
         default:
@@ -609,28 +632,34 @@ function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: str
 async function odfSheets(blob: Blob) {
   const entries = await openDoc(blob);
   const doc = xmlOf(entries, 'content.xml');
-  const tables = byLocal(doc, 'table').filter(t => t.localName === 'table');
+  const tables = byLocal(doc, 'table').filter(t => t.localName === 'table').slice(0, MAX_PAGES);
   if (!tables.length) throw new Error('That workbook has no sheets');
   const frag = document.createDocumentFragment();
-  tables.forEach((table, n) => {
+  const budget = cellsFor();
+  tables.every((table, n) => {
+    if (budget.left <= 0) { frag.append(cutShort('workbook')); return false; }
     const section = el('section', 'doc-sheet');
     section.append(partHead(table.getAttribute('table:name') || `Sheet ${n + 1}`));
     const rows: (string | null)[][] = [];
+    let built = 0;
     for (const tr of byLocal(table, 'table-row')) {
-      if (rows.length > MAX_BLOCKS) break;
+      if (rows.length > MAX_BLOCKS || built > budget.left) break;
       const cells: (string | null)[] = [];
       for (const c of [...tr.children].filter(x => x.localName === 'table-cell')) {
         // ODF collapses identical cells into one with a repeat count, which
-        // a trailing empty run can claim is in the thousands - capped here.
+        // a trailing empty run can claim is in the thousands - capped here,
+        // and the row at 4096 as the xlsx one is.
         const repeat = Math.min(64, Number(c.getAttribute('table:number-columns-repeated') || 1) || 1);
-        for (let i = 0; i < repeat; i++) cells.push(c.textContent);
+        for (let i = 0; i < repeat && cells.length <= 4096; i++) cells.push(c.textContent);
       }
       // Trailing empties, which every ODF sheet has a great many of.
       while (cells.length && !cells[cells.length - 1]) cells.pop();
       if (cells.length) rows.push(cells);
+      built += cells.length;
     }
-    section.append(tableOf(rows));
+    section.append(tableOf(rows, budget));
     frag.append(section);
+    return true;
   });
   return frag;
 }
@@ -654,7 +683,7 @@ async function delimited(blob: Blob) {
   const rows = parseDelimited(text, sep).slice(0, MAX_BLOCKS);
   if (!rows.length) throw new Error('That file has no rows');
   const frag = document.createDocumentFragment();
-  frag.append(tableOf(rows));
+  frag.append(tableOf(rows, cellsFor()));
   return frag;
 }
 
