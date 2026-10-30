@@ -7,7 +7,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { boardAssetHashes, packBoard, packBoardFile, unpackBoard, MIME } from '../web/assets/js/storage/mbrd.ts';
+import { boardAssetHashes, boardHashes, packBoard, packBoardFile, unpackBoard, MIME } from '../web/assets/js/storage/mbrd.ts';
+import { heldHashes } from '../web/assets/js/util.ts';
 import { putAsset, clearAssets } from '../web/assets/js/storage/assets.ts';
 import { readZip, writeZip } from '../web/assets/js/storage/zip.ts';
 import { item, hash, realHash } from './helpers.js';
@@ -199,6 +200,17 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
   // The guard on the guard: two empty sets are deepEqual, so a stubAsset()
   // that stopped registering anything would pass while proving nothing.
   assert.equal(written.size, 13);
+  // And the web autosave's sweep keeps what the file holds: it walks the same
+  // tree, through heldHashes(), which adds only the optimiser's originals.
+  assert.deepEqual([...boardHashes(board, heldHashes)].sort(), [...written].sort(),
+    'the autosave would keep a different set of assets than the packer writes');
+});
+
+test('the autosave keeps an optimised picture original, which the file and the sync leave out', () => {
+  const was = 'a'.repeat(64), now = 'b'.repeat(64);
+  const board = boardOf([{ id: 'i1', type: 'image', name: 'a.png', asset: { hash: now }, meta: { was } }]);
+  assert.deepEqual([...boardAssetHashes(board)], [now]);
+  assert.deepEqual([...boardHashes(board, heldHashes)].sort(), [now, was].sort());
 });
 
 // ---------------------------------------------------------------------------

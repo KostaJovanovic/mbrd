@@ -302,11 +302,12 @@ included, because `tests/sw.test.js` reads that list by pulling out single-quote
   present the test also checks they are the shape Google issues, which catches
   the usual paste of a client *secret* where the client id goes.
 - **A new class of asset reference** → `itemHashes()` / `timelineHashes()` **and**
-  `boardAssetHashes()` in `storage/mbrd.ts`, which is what the cloud sync uploads
-  from. The packer and that walk are two implementations bound by an assertion in
-  `tests/mbrd.test.js`; a class added to one and not the other means the sync
-  silently stops uploading a whole category and the board comes back on another
-  machine with holes in it.
+  `boardHashes()` in `storage/mbrd.ts`, the one walk the cloud sync uploads from
+  (`boardAssetHashes()`) and the web autosave's sweep keeps from
+  (`storage/session.ts`). The packer and that walk are two implementations bound
+  by an assertion in `tests/mbrd.test.js`; a class added to one and not the
+  other means the sync silently stops uploading a whole category, or the
+  autosave deletes it from the browser, and the board comes back with holes in it.
 - **A size ceiling** → a `CeilingId` and a risk sentence in `consent.ts`, a
   `throw oversize(...)` where the number is measured, and a `lift()` at the
   nearest async caller that knows the file. **No ceiling refuses anything on its

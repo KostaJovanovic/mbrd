@@ -4,9 +4,9 @@
 // On the web this is crash recovery and the durable artefact is an exported
 // .mbrd. In the apps the board's own file is the save, and the store keeps no copy.
 
-import { heldHashes, itemHashes, isRecord, wallpaperHash } from '../util.ts';
-// Timeline references, read from the stored document like everything else.
-import { timelineHashes } from '../timeline.ts';
+import { heldHashes, itemHashes, isRecord } from '../util.ts';
+// The one walk over a board's references, the cloud sync's too.
+import { boardHashes } from './mbrd.ts';
 import { toast, busy } from '../notify.ts';
 import type { ToastAction } from '../notify.ts';
 import { clearPrefs } from '../prefs.ts';
@@ -72,8 +72,8 @@ export function initSession(deps: SessionDeps) {
   opened = false;
 }
 
-/** Loose board shape for referencedHashes() — asked of both serializeBoard()
- *  output and raw IndexedDB data (`unknown` until inspected). */
+/** Loose board shape for what is read back out of the store — asked of both
+ *  serializeBoard() output and raw IndexedDB data (`unknown` until inspected). */
 type BoardLike = {
   items?: unknown, trash?: unknown, settings?: unknown, timeline?: unknown, boards?: unknown, wallpaper?: unknown,
 };
@@ -239,41 +239,12 @@ function requestAutosave() {
   }
 }
 
-/** Every hash a snapshot needs: items, bin, and fonts. Taken from the
- *  serialised board (not in-memory store, which also holds undo-only bytes
- *  that do not survive a reload). */
-function referencedHashes(data: BoardLike) {
-  const out = new Set<string>();
-  // Item hashes and the optimiser's originals together (heldHashes()): the
-  // sweep would otherwise delete the bytes an undo entry needs to put back.
-  // Bin included — a binned optimised item still carries meta.was.
-  const add = (it: unknown) => {
-    if (!isRecord(it)) return;
-    for (const h of heldHashes(it)) out.add(h);
-  };
-  const level = (doc: BoardLike) => {
-    for (const it of listOf(doc.items)) add(it);
-    for (const t of listOf(doc.trash)) add(isRecord(t) ? t.item : null);
-    // Timeline — the one class whose purpose is naming things the board no longer
-    // has (a delete step carries the photo on its before side). Unlike undo, the
-    // timeline survives reloads, so its hashes must be kept.
-    for (const hash of timelineHashes(doc.timeline)) out.add(hash);
-    // Fonts — not on any item, so the sweep would delete them without this.
-    const settings = isRecord(doc.settings) ? doc.settings : null;
-    for (const f of listOf(settings?.fonts)) {
-      const hash = isRecord(f) ? str(f.hash) : undefined;
-      if (hash) out.add(hash);
-    }
-    // The wallpaper picture, on no item either (ui/wallpaper.ts).
-    const wall = wallpaperHash(doc.wallpaper);
-    if (wall) out.add(wall);
-  };
-  level(data);
-  // Every board inside this one. Their pictures share the one store, and a
-  // sweep that read only the top would delete a child's out from under it.
-  if (isRecord(data.boards)) for (const doc of Object.values(data.boards)) if (isRecord(doc)) level(doc);
-  return out;
-}
+/** Every hash a snapshot needs, from the serialised board (not the in-memory
+ *  store, which also holds undo-only bytes that do not survive a reload). The
+ *  optimiser's originals too (heldHashes()): the sweep would otherwise delete
+ *  the bytes an undo entry needs to put back. The walk is storage/mbrd.ts's,
+ *  the one the cloud sync uploads from, so the two cannot drift. */
+const referencedHashes = (data: BoardLike) => boardHashes(data, heldHashes);
 
 // ---------------------------------------------------------------------------
 // Save coordinator (single-flight)

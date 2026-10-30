@@ -117,29 +117,51 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 const json = (obj: unknown) => enc.encode(JSON.stringify(obj, null, 2));
 
-/** Every asset hash the board references (items, bin, fonts, timeline, wallpaper).
- *  Used by cloud sync. Kept in sync with packBoard() via tests/mbrd.test.js —
- *  shared code was rejected because pack needs labels, error handling and
- *  fatal/non-fatal distinction this function does not.
- *  Malformed hashes skipped (not thrown) — refusing to sync a whole board over
- *  one bad id would strand it. */
-export function boardAssetHashes(boardData: PackedBoard): Set<string> {
+const listOf = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
+/**
+ * Every hash a board names, at every level of its tree: items and the bin
+ * (through `each`), faces, the timeline, the wallpaper. The one walk for both
+ * questions asked of it: what the cloud sync uploads (boardAssetHashes(), with
+ * itemHashes) and what the web autosave keeps in the store (storage/session.ts,
+ * with heldHashes, which adds the optimiser's originals an undo puts back). A
+ * reference class added here reaches both; tests/mbrd.test.js holds it to the
+ * packer, whose own loop also needs labels and fatal errors.
+ *
+ * Takes a board as stored, unchecked: a level that is not the shape it should
+ * be is skipped rather than thrown on, since a malformed stored board must not
+ * fail a restore, and every child counts, since the sweep must not delete a
+ * picture a child the packer would skip still names.
+ */
+export function boardHashes(
+  board: unknown, each: (item: Record<string, unknown>) => string[] = itemHashes,
+): Set<string> {
   const out = new Set<string>();
-  // Every level of the tree, as the packer walks it: a child's pictures are in
-  // the one shared assets/, and a sync that skipped them would bring the board
-  // back on another machine with holes in it.
-  for (const level of [boardData, ...childrenOf(boardData).map(([, doc]) => doc)]) {
-    for (const item of [...level.items, ...(level.trash || []).map(t => t.item)]) {
-      for (const hash of itemHashes(item)) if (isHash(hash)) out.add(hash);
+  const level = (doc: unknown) => {
+    if (!isRecord(doc)) return;
+    for (const it of listOf(doc.items)) if (isRecord(it)) for (const h of each(it)) out.add(h);
+    for (const t of listOf(doc.trash)) {
+      if (isRecord(t) && isRecord(t.item)) for (const h of each(t.item)) out.add(h);
     }
-    for (const font of level.settings?.fonts || []) {
-      if (isHash(font?.hash)) out.add(font.hash);
+    const settings = isRecord(doc.settings) ? doc.settings : null;
+    for (const f of listOf(settings?.fonts)) {
+      if (isRecord(f) && typeof f.hash === 'string' && f.hash) out.add(f.hash);
     }
-    for (const hash of timelineHashes(level.timeline)) if (isHash(hash)) out.add(hash);
-    const wall = wallpaperHash(level.wallpaper);
+    // The one class whose purpose is naming what the board no longer has.
+    for (const hash of timelineHashes(doc.timeline)) out.add(hash);
+    const wall = wallpaperHash(doc.wallpaper);
     if (wall) out.add(wall);
-  }
+  };
+  level(board);
+  if (isRecord(board) && isRecord(board.boards)) for (const doc of Object.values(board.boards)) level(doc);
   return out;
+}
+
+/** Every asset hash the board references, for the cloud sync. Malformed hashes
+ *  skipped (not thrown) — refusing to sync a whole board over one bad id would
+ *  strand it. */
+export function boardAssetHashes(boardData: PackedBoard): Set<string> {
+  return new Set([...boardHashes(boardData)].filter(isHash));
 }
 
 /**
