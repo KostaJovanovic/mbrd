@@ -74,7 +74,7 @@
 #
 #   'self'      — sw.js caching, stickers.svg fetch
 #   blob:       — pigments.ts fetches blob URLs for createImageBitmap
-#   jsdelivr    — ffmpeg core (optimize/media.ts probe + media-worker.js fetch)
+#   jsdelivr    — ffmpeg core (optimize/media.ts: the probe, and the fetch it hash-checks)
 #   googleapis  — share link: upload to / download from Google Drive
 #
 # accounts.google.com is NOT here — the sign-in popup is a navigation, not a
@@ -134,8 +134,10 @@
 # forbids. If a host ignores the removal, the worker keeps the strict policy
 # and the feature degrades gracefully (the module already handles that).
 
-# ffmpeg core: importScripts from jsdelivr + wasm compile.
-# No DOM, no state, cannot reach the page.
+# ffmpeg core: importScripts of a blob + wasm compile. No DOM, but it runs on
+# this origin with its IndexedDB and caches, so it runs only bytes the page
+# fetched and checked against CORE_SHA256 (optimize/media.ts). The hash, not
+# this policy, is what keeps the CDN out.
 /assets/js/optimize/media-worker.js
   ! Content-Security-Policy
 

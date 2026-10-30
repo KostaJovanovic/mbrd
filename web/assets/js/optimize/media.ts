@@ -4,16 +4,32 @@
 // embeds), run in a worker. Degrades to null (no poster) on any failure.
 
 import { extOf } from '../util.ts';
+import { sha256 } from '../crypto.ts';
 import { platform, isDesktop } from '../platform/platform.ts';
 
 // Where the core lives. The single-threaded UMD build - the one that exposes a
 // `createFFmpegCore` factory and loads through importScripts, which is what
 // media-worker.js drives. (The ESM build would need a module worker; the
 // threaded build would need SharedArrayBuffer, hence COOP/COEP, which would
-// break the YouTube embeds - see the note above.) `locateFile` in the worker
-// resolves ffmpeg-core.wasm against this same URL, so both come from here.
+// break the YouTube embeds - see the note above.) Not vendored: the wasm is
+// 32 MB, past the 25 MiB a file may be on the deploy host.
 const CORE_DIR = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/';
 const CORE_JS = CORE_DIR + 'ffmpeg-core.js';
+const CORE_WASM = CORE_DIR + 'ffmpeg-core.wasm';
+
+/**
+ * The two files as @ffmpeg/core 0.12.6 published them. The worker runs the core
+ * on the app's origin, with its IndexedDB (every board in this browser) and its
+ * caches, so whatever the CDN serves has to be these bytes and nothing else.
+ * Taken by hand on 30 October 2026, the same from jsDelivr and from the npm
+ * registry's tarball (registry.npmjs.org/@ffmpeg/core/-/core-0.12.6.tgz,
+ * package/dist/umd/): `sha256sum ffmpeg-core.js ffmpeg-core.wasm`. A new
+ * CORE_DIR needs both taken again.
+ */
+export const CORE_SHA256 = {
+  js: 'a34873964b0f62aec516bac75e3aa9086ec3535d4d07f0269aa94ea748b6cb71',
+  wasm: '2390efa7fb66e7e42dbae15427571a5ffc96b829480904c30f471f0a78967f61',
+};
 
 /** Roughly what it weighs, for the sentence in the dialog. */
 const MEDIA_MB = 32;
@@ -422,8 +438,28 @@ function spawn(): Promise<void> {
     w.addEventListener('error', onDead);
     w.addEventListener('messageerror', onDead);
 
-    w.postMessage({ type: 'boot', core: new URL(CORE_JS, location.href).href });
+    loadCore().then(
+      ({ js, wasm }) => w.postMessage({ type: 'boot', js, wasm }, [wasm]),
+      // Only this worker: after a boot timeout a later call may have spawned another.
+      err => { reject(err); if (worker === w) killWorker(err); },
+    );
   });
+}
+
+/** The core's two files, fetched here rather than in the worker so the hash
+ *  has crypto.ts's fallback on an origin with no crypto.subtle (a dev server
+ *  on a LAN address), and refused unless each is the file CORE_SHA256 names. */
+export async function loadCore(): Promise<{ js: string, wasm: ArrayBuffer }> {
+  const [js, wasm] = await Promise.all([checked(CORE_JS, CORE_SHA256.js), checked(CORE_WASM, CORE_SHA256.wasm)]);
+  return { js: new TextDecoder().decode(js), wasm };
+}
+
+async function checked(url: string, want: string): Promise<ArrayBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`the media decoder could not be fetched (${res.status})`);
+  const bytes = await res.arrayBuffer();
+  if (await sha256(bytes) !== want) throw new Error('the media decoder the CDN sent is not the one this app was built against');
+  return bytes;
 }
 
 let seq = 0;

@@ -6,7 +6,7 @@
 // to be.
 //
 // It speaks four messages and holds no state beyond the core itself:
-//   { type: 'boot', core }                   -> { type: 'ready', ok }
+//   { type: 'boot', js, wasm }               -> { type: 'ready', ok }
 //   { type: 'run', id, inName, out, argv, bytes } -> { id, bytes } | { id, error }
 
 let core = null;
@@ -15,12 +15,11 @@ let core = null;
 //
 // A dedicated worker's port is reachable only by the document that spawned it -
 // there is no cross-origin postMessage into one - so this is not a boundary
-// against a stranger, and saying otherwise would overstate it. What the checks
-// buy is smaller and real: `boot` passes its argument to importScripts(), which
-// executes whatever is at that URL inside this worker, and a bug in
-// optimize/media.ts that posted the wrong field would have that run with no
-// complaint. The host is pinned to the one the CSP's connect-src already names,
-// so the two agree by construction rather than by memory. See CORE_JS there.
+// against a stranger, and saying otherwise would overstate it. `boot` brings the
+// core as bytes, never as a URL: optimize/media.ts fetched them from the CDN and
+// checked both against the SHA-256 it was built with (CORE_SHA256 there), since
+// this worker runs on the app's origin with its storage, every board in the
+// browser included, and runs whatever the core is. This fetches nothing.
 //
 // `run` is checked for shape rather than content: FS.writeFile with a number
 // for a name and callMain with a non-array both fail deep inside Emscripten,
@@ -32,19 +31,17 @@ let core = null;
 // `boot` answers itself rather than running twice. A second one used to
 // re-importScripts the core and re-instantiate it, which is minutes of work and
 // a fresh filesystem underneath whatever job was mid-encode.
-const CORE_ORIGIN = 'https://cdn.jsdelivr.net';
-
 let booted = false;
 
 self.onmessage = async e => {
   const msg = e.data || {};
   if (msg.type === 'boot') {
     if (booted) return self.postMessage({ type: 'ready', ok: !!core, error: 'already started' });
-    if (typeof msg.core !== 'string' || !msg.core.startsWith(CORE_ORIGIN + '/')) {
-      return self.postMessage({ type: 'ready', ok: false, error: 'the core url is not one we serve from' });
+    if (typeof msg.js !== 'string' || !(msg.wasm instanceof ArrayBuffer)) {
+      return self.postMessage({ type: 'ready', ok: false, error: 'the core did not come as checked bytes' });
     }
     booted = true;
-    return boot(msg.core);
+    return boot(msg.js, msg.wasm);
   }
   if (msg.type === 'run') {
     if (msg.id == null || typeof msg.inName !== 'string' || typeof msg.out !== 'string'
@@ -55,30 +52,23 @@ self.onmessage = async e => {
   }
 };
 
-async function boot(url) {
+async function boot(js, wasmBinary) {
   try {
-    importScripts(url);
+    // The checked text, run as importScripts runs a file: at global scope,
+    // where the UMD core defines its factory.
+    const url = URL.createObjectURL(new Blob([js], { type: 'text/javascript' }));
+    try { importScripts(url); } finally { URL.revokeObjectURL(url); }
     // 0.12-style cores export a factory; older ones assign the module directly.
     const factory = self.createFFmpegCore || self.Module;
     if (typeof factory !== 'function') {
       core = factory;
     } else {
-      // Hand the core the wasm *bytes* rather than let it fetch the file itself.
-      //
-      // The reason is a trap this walked straight into: the UMD core, loaded by
-      // importScripts in a classic worker, resolves `ffmpeg-core.wasm` against the
-      // worker's own origin and fetches it there, ignoring the locateFile below.
-      // That path does not exist on this origin, so a dev server answers its 404
-      // or SPA fallback - an HTML page - and Emscripten compiles the HTML as wasm
-      // and dies with "failed to match magic number". Fetching the bytes from the
-      // CDN ourselves and passing them as `wasmBinary` (which Emscripten consumes
-      // before it would fetch anything) makes the source unambiguous. locateFile
-      // stays for any other file the core resolves the same way.
-      const wasmURL = new URL('ffmpeg-core.wasm', url).href;
-      const res = await fetch(wasmURL);
-      if (!res.ok) throw new Error(`wasm ${res.status} at ${wasmURL}`);
-      const wasmBinary = await res.arrayBuffer();
-      core = await factory({ wasmBinary, locateFile: name => new URL(name, url).href });
+      // The wasm as *bytes*, which Emscripten consumes before it would fetch
+      // anything. Left to itself the UMD core resolves `ffmpeg-core.wasm`
+      // against the worker's own origin, where a dev server answers an HTML
+      // page and Emscripten dies with "failed to match magic number". The
+      // single-threaded build loads no other file.
+      core = await factory({ wasmBinary });
     }
     // Older cores run ffmpeg through callMain(). @ffmpeg/core 0.12 has no
     // callMain: it runs through exec() and wants reset() between runs, and

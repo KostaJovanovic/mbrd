@@ -9,7 +9,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { firstFrame, BOOT_TIMEOUT_MS } from '../web/assets/js/optimize/media.ts';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { firstFrame, loadCore, BOOT_TIMEOUT_MS, CORE_SHA256 } from '../web/assets/js/optimize/media.ts';
 import { setPlatform } from '../web/assets/js/platform/platform.ts';
 
 /** A file that never gets read: the boot fails long before the bytes matter. */
@@ -46,9 +49,9 @@ test('a worker that boots and then goes silent is given up on, and respawns', as
   const realLocation = globalThis.location;
   let attempts = 0;
 
-  globalThis.fetch = async () => ({ ok: true, status: 206 });
-  // spawn() resolves the core URL against the page; nothing here loads it,
-  // it just has to be resolvable.
+  // The probe answers; the core's own download stalls, which is one of the
+  // two ways a boot goes silent.
+  globalThis.fetch = async (url, init) => (init?.headers?.Range ? { ok: true, status: 206 } : new Promise(() => {}));
   globalThis.location = { href: 'https://example.invalid/' };
   // Constructs, accepts the boot message, then says nothing ever again -
   // what a stalled importScripts of the core looks like from out here.
@@ -79,6 +82,32 @@ test('a worker that boots and then goes silent is given up on, and respawns', as
     if (realWorker === undefined) delete globalThis.Worker;
     else globalThis.Worker = realWorker;
   }
+});
+
+test('the core is pinned by hash, and other bytes never reach the worker', async () => {
+  // The worker runs the core on the app's origin, with every board in the
+  // browser in reach, so the CDN serving something else must be a refusal.
+  for (const hash of Object.values(CORE_SHA256)) assert.match(hash, /^[0-9a-f]{64}$/);
+  const realFetch = globalThis.fetch;
+  const fetched = [];
+  globalThis.fetch = async url => {
+    fetched.push(url);
+    return { ok: true, status: 200, arrayBuffer: async () => new TextEncoder().encode('self.evil = 1').buffer };
+  };
+  try {
+    await assert.rejects(loadCore(), /not the one this app was built against/);
+    assert.deepEqual(fetched.map(u => u.slice(u.lastIndexOf('/') + 1)).sort(), ['ffmpeg-core.js', 'ffmpeg-core.wasm']);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('the worker boots only from bytes, never from a URL', () => {
+  // Read as text: the worker is a classic script with importScripts. It used
+  // to importScripts a URL, which ran whatever the CDN answered.
+  const src = readFileSync(join(import.meta.dirname, '..', 'web', 'assets', 'js', 'optimize', 'media-worker.js'), 'utf8');
+  assert.doesNotMatch(src, /\bfetch\(/, 'the worker fetches nothing; the page checks the bytes first');
+  assert.match(src, /msg\.wasm instanceof ArrayBuffer/);
 });
 
 /**
