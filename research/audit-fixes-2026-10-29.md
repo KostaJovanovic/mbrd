@@ -1,6 +1,23 @@
 # Audit fixes, 29 October 2026
 
-**Status: open.** Nothing built yet.
+**Status: built, 30 October 2026**, one commit a batch, v0.781 (A) to v0.790
+(J). What differs from the plan below:
+
+- **A4** (boards moving out of the private folder) and all of **H** were
+  compiled and their pure parts tested on the host, but not run on a phone.
+  Try A4 on a phone with boards made under "Not now" before a release.
+- **D2:** compaction on close stays. Its write is atomic, so one cut short by
+  the 10 s timer leaves the old file and a temp file, and the folder listing
+  now deletes temp files over an hour old.
+- **E:** pinned, not vendored: the wasm is 32 MB, past the host's 25 MiB per
+  file. The hashes are checked in the page, not the worker, so the check has
+  crypto.ts's fallback on a dev origin with no `crypto.subtle`; the worker now
+  boots from the checked bytes and fetches nothing. Booted in headless
+  Chromium against the real core.
+- **F:** `pushOnce` returns null when the board has no row, after checking that
+  only `startSyncingBoard()` makes one.
+- **J:** the control bytes were replaced with a Node one-liner, the one shell
+  edit, and the line checked with the Edit tool after.
 
 The plan for the 20 findings of the whole-repo audit of 29 October 2026 (bugs,
 safety, data loss, slow paths, dead code), and the six small ones it left out.

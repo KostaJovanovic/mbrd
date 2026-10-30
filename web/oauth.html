@@ -14,13 +14,13 @@
   The obvious version of this page posts the fragment back to the opener and
   closes itself. This one does nothing at all: once the provider has redirected
   here the popup is same-origin again, so the opener simply reads its location.
-  See storage/share/oauth.ts, which polls for exactly that.
+  See storage/cloud/oauth.ts, which polls for exactly that.
 
   Three things follow from having no script, and each is the reason:
 
     - no hash in web/_headers. tests/csp.test.js sweeps every inline <script>
       in web/ and requires script-src to carry its hash; a script here would be
-      a seventh hash whose bytes have to be kept in step with a file, for a page
+      a ninth hash whose bytes have to be kept in step with a file, for a page
       that is visible for a quarter of a second.
     - no postMessage, so no target-origin check to get wrong. The commonest way
       to leak an OAuth token is a postMessage sent to '*'.
@@ -43,7 +43,7 @@
   Its address is registered with each provider, so it may not move. Renaming
   this file breaks sign-in on the deploy and nowhere else, until every
   registered redirect URI is edited to match. REDIRECT_PATH in
-  storage/share/oauth.ts is the other half of the name.
+  storage/cloud/oauth.ts is the other half of the name.
 -->
 <html lang="en">
 <head>

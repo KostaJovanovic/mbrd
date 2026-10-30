@@ -13,7 +13,7 @@
 # with the code, so a breaking change fails in `npm test`.
 #
 # ---------------------------------------------------------------------------
-# script-src 'self' + seven hashes
+# script-src 'self' + eight hashes
 # ---------------------------------------------------------------------------
 #
 # No 'unsafe-inline'. Hashes present means browsers ignore the keyword anyway.
