@@ -117,6 +117,8 @@ const isID3 = (h: Bytes) => h.length >= 10 && ascii(h, 0, 3) === 'ID3' && h[3] <
 async function id3Body(file: Blob, head: Bytes, lift = false): Promise<Bytes | null> {
   const size = syncsafe(head, 6);
   if (size <= 0) return null;
+  // A tag longer than the file is a broken one, never a question to lift.
+  if (size > file.size - 10) throw new Error('This ID3 tag claims more bytes than the file has');
   // Cap before reading: size is a foreign claim, and desync() may double it.
   if (!lift && size > MAX_ID3_BYTES) throw oversize('cover-art', artTooBig(size));
   const footer = (head[5] & 0x10) ? 10 : 0;
@@ -277,6 +279,7 @@ async function flacArt(file: Blob, lift = false): Promise<Bytes | null> {
     const type = head[0] & 0x7f;
     const len = be24(head, 1);
     if (type === 6) {
+      if (at + 4 + len > file.size) throw new Error('This FLAC picture runs past the end of the file');
       // +4096 accounts for the block's own header fields around the picture.
       if (!lift && len > MAX_ART + 4096) throw oversize('cover-art', artTooBig(len));
       const b = await bytes(file, at + 4, len);

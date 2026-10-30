@@ -21,6 +21,7 @@ import {
   parseMesh, meshKind, defaultUpAxis, upAxisIsGuessed, MeshError,
 } from '../web/assets/js/mesh.ts';
 import { inflateRaw, inflateZlib, readZip } from '../web/assets/js/mesh/zip.ts';
+import { isOversize } from '../web/assets/js/consent.ts';
 import { scanXML, parseXML, find, findAll } from '../web/assets/js/mesh/xml.ts';
 
 const enc = new TextEncoder();
@@ -362,6 +363,11 @@ test('a PLY that declares more data than it carries is refused', () => {
   assert.throws(() => parseMesh('ply', asBuffer(full.subarray(0, full.length - 8))), MeshError);
 });
 
+test('an ascii PLY counting past the end of its text is corruption, not a question', () => {
+  const text = 'ply\nformat ascii 1.0\nelement vertex 900000000\nproperty float x\nproperty float y\nproperty float z\nend_header\n0 0 0\n';
+  assert.throws(() => parseMesh('ply', buf(text)), err => err instanceof MeshError && !isOversize(err));
+});
+
 test('a PLY with no header at all is not a PLY', () => {
   assert.throws(() => parseMesh('ply', buf('not a ply file')), MeshError);
 });
@@ -391,6 +397,8 @@ test('an OFF polygon is fanned into triangles', () => {
 
 test('an OFF that declares more rows than it has is refused', () => {
   assert.throws(() => parseMesh('off', buf('OFF 400 200 0\n0 0 0\n')), MeshError);
+  // Past the ceiling too: still corruption, never a question to lift.
+  assert.throws(() => parseMesh('off', buf('OFF 900000000 1 0\n0 0 0\n')), err => err instanceof MeshError && !isOversize(err));
 });
 
 // ---------------------------------------------------------------------------

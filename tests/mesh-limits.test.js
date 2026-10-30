@@ -431,6 +431,18 @@ test('FBX arrays are held to one ceiling for the parse, not one each (H16)', () 
   assert.ok(parseMesh('fbx', file, 'y', true).count > 0);
 });
 
+test('an FBX array that inflates past its declared length is corruption, not a question', () => {
+  // Nine elements declared over zlib data for 200,000: the inflate used to run
+  // to the 512 MB ceiling and then ask whether to allow the rest.
+  const packed = fbxArray('d', new Array(200_000).fill(0));
+  new DataView(packed.buffer).setUint32(1, 9, true);
+  const file = fbxFile([fbxNode('Geometry', [fbxLong(100)], [
+    fbxNode('Vertices', [packed]),
+    fbxNode('PolygonVertexIndex', [fbxArray('i', [0, 1, ~2])]),
+  ])]);
+  refusedFast(() => parseMesh('fbx', file), 1000, 'long array');
+});
+
 test('an ascii FBX with openings and no closing brace is read in one pass (H18)', () => {
   // 40,000 of these was 29 s: each opening scanned to the end of the file.
   refusedFast(() => parseMesh('fbx', buf('Vertices: *1 { a: '.repeat(20_000))), 1000, 'unclosed arrays');
@@ -576,6 +588,26 @@ test('two names over one entry of a model archive are corruption (M27)', () => {
   const plain = new Uint8Array(100);
   assert.throws(() => readZip(twoEntryZip(['a', plain], ['b', plain], { sameLocal: true })), MeshError);
   assert.equal(readZip(twoEntryZip(['a', plain], ['b', plain])).size, 2, 'the control archive reads');
+});
+
+/** `zip` with the first directory entry's uncompressed size set to `size`. */
+function claimSize(zip, size) {
+  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  const cd = view.getUint32(zip.length - 22 + 16, true);
+  view.setUint32(cd + 24, size, true);
+  return zip;
+}
+
+test('an archive entry that inflates past its declared size is corruption, not a question', () => {
+  const zip = readZip(claimSize(twoEntryZip(['a', new Uint8Array(2000)], ['b', new Uint8Array(10)]), 10));
+  assert.throws(() => zip.get('a').read(), err => err instanceof MeshError && !isOversize(err));
+});
+
+test('an archive entry claiming more than its deflate data can hold is corruption, not a question', () => {
+  // Some 20 bytes of data claiming 4 GB: past the ceiling, but no "yes" makes
+  // it true, so nobody is asked.
+  const zip = readZip(claimSize(twoEntryZip(['a', new Uint8Array(2000)], ['b', new Uint8Array(10)]), 0xfffffff0));
+  assert.throws(() => zip.get('a').read(), err => err instanceof MeshError && !isOversize(err));
 });
 
 test('the inflate ceiling is for the whole archive, not each entry (M27)', () => {

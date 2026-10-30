@@ -135,9 +135,22 @@ test('a tag with no picture in it yields nothing', async () => {
   assert.equal(await coverArt(audio(tag, 'song.mp3')), null);
 });
 
+test('an ID3 tag claiming more than the file holds is broken, not a question', async () => {
+  // 200 MB claimed in a file of a few dozen bytes: nobody is asked to allow it.
+  const lie = mp3();
+  lie.set(syncsafe(200 * 1024 * 1024), 6);
+  assert.equal(await coverArt(audio(lie, 'song.mp3')), null);
+});
+
 // ---------------------------------------------------------------------------
 // FLAC
 // ---------------------------------------------------------------------------
+
+test('a FLAC picture block running past the file is broken, not a question', async () => {
+  const lie = flac();
+  lie.set(be24(0xfffff0), 4 + 4 + 34 + 1);
+  assert.equal(await coverArt(audio(lie, 'song.flac')), null);
+});
 
 test('finds a PNG in a FLAC PICTURE block', async () => {
   const art = await coverArt(audio(flac(), 'song.flac'));

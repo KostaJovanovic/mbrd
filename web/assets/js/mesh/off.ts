@@ -34,11 +34,12 @@ export function parseOFF(bytes: string | ArrayBuffer): Mesh {
   if (!Number.isSafeInteger(vertN) || vertN < 0 || !Number.isSafeInteger(faceN) || faceN < 0) {
     throw new MeshError('This OFF file declares counts that are not numbers');
   }
-  if (vertN > CAPS.elem) throw oversize('mesh-triangles', tooBig(vertN));
-  // Checked against lines actually present, before anything is allocated.
+  // Checked against lines actually present, before anything is allocated, and
+  // before the ceiling: a count the file cannot hold is corruption, not a question.
   if (vertN + faceN > lines.length - cursor) {
     throw new MeshError('This OFF file declares more data than it contains');
   }
+  if (vertN > CAPS.elem) throw oversize('mesh-triangles', tooBig(vertN));
 
   // Numbers preceding the colour on a vertex line, per spec order; the
   // fallback below covers writers that put it somewhere else.

@@ -152,9 +152,11 @@ function unpack(p: Prop | undefined, budget: Budget): number[] | null {
   // Before the inflate, which is where the memory goes.
   if (p.length > budget.left) throw oversize('mesh-triangles', tooManyInTotal());
   budget.left -= p.length;
-  const bytes = p.encoding === 1 ? inflateZlib(p.data) : p.data;
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const width = p.type === 'd' || p.type === 'l' ? 8 : p.type === 'b' ? 1 : 4;
+  // Held to its declared length while it inflates: nine elements that unpack
+  // to 500 MB are a broken file, not a big one.
+  const bytes = p.encoding === 1 ? inflateZlib(p.data, p.length * width, p.length * width) : p.data;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (p.length * width > bytes.length) throw new MeshError('This FBX has an array shorter than it declares');
   const out = new Array<number>(p.length);
   for (let i = 0; i < p.length; i++) {

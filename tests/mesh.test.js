@@ -11,6 +11,8 @@ import {
   parseSTL, parseOBJ, parseGLB, parseMesh, parseMTL, applyMaterials,
   defaultUpAxis, meshKind, MeshError, MAX_TRIANGLES, MAX_ELEMENTS,
 } from '../web/assets/js/mesh.ts';
+import { CAPS, resetCaps } from '../web/assets/js/mesh/shared.ts';
+import { isOversize } from '../web/assets/js/consent.ts';
 
 // A unit triangle in the z=0 plane, wound anticlockwise so its normal is +z.
 const TRI = {
@@ -564,11 +566,11 @@ test('an accessor that declares an implausible count is refused before it alloca
     meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
     nodes: [{ mesh: 0 }],
     scenes: [{ nodes: [0] }],
-    // Still refused before it allocates (AUD-06, unchanged). What changed:
-    // a merely enormous count is now the triangle ceiling arriving early -
-    // thrown as Oversize - while an absent or fractional count stays the
-    // flat refusal below. The two used to share one message.
-  })), /vertex values in one array/);
+    // Still refused before it allocates (AUD-06). A buffer with no bytes in
+    // the file cannot hold the count, so it is corruption and nobody is asked
+    // to lift a ceiling for it; the ceiling is for data that is there (the
+    // MAT4 test below).
+  })), err => err instanceof MeshError && !isOversize(err));
 });
 
 test('a non-integer accessor count is refused rather than truncated', () => {
@@ -699,11 +701,10 @@ test('an index outside the position count does not read past the array', () => {
   }
 });
 
-test('a MAT4 accessor is bounded by what it allocates, not by its count', () => {
-  // 356 bytes that allocated 366MiB, measured. The count guard bounds
-  // `acc.count`, but allocation is `count * comps` and comps is 16 for a
-  // MAT4 - the ceiling was off by sixteen times its stated intent, and the
-  // per-element bounds check that would catch it runs afterwards.
+test('an accessor counting past the bytes it names is corruption, not a question', () => {
+  // 356 bytes that allocated 366MiB, measured, and then asked whether to
+  // allow it: the count was judged against the ceiling before anybody looked
+  // for the data. A 4-byte buffer holds no six million matrices.
   assert.throws(() => parseGLB(gltfBytes({
     accessors: [{ type: 'MAT4', componentType: 5126, count: 6_000_000, bufferView: 0 }],
     bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 4 }],
@@ -711,7 +712,26 @@ test('a MAT4 accessor is bounded by what it allocates, not by its count', () => 
     meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
     nodes: [{ mesh: 0 }],
     scenes: [{ nodes: [0] }],
-  })), /vertex values in one array/);
+  })), err => err instanceof MeshError && !isOversize(err) && /truncated/.test(err.message));
+});
+
+test('a MAT4 accessor whose data is there is bounded by what it allocates, not by its count', () => {
+  // The count guard bounds `acc.count`, but allocation is `count * comps` and
+  // comps is 16 for a MAT4. Two real matrices against a line of 20 values.
+  const bytes = Buffer.alloc(2 * 16 * 4);
+  CAPS.elem = 20;
+  try {
+    assert.throws(() => parseGLB(gltfBytes({
+      accessors: [{ type: 'MAT4', componentType: 5126, count: 2, bufferView: 0 }],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: bytes.length }],
+      buffers: [{ byteLength: bytes.length, uri: 'data:application/octet-stream;base64,' + bytes.toString('base64') }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      nodes: [{ mesh: 0 }],
+      scenes: [{ nodes: [0] }],
+    })), err => isOversize(err));
+  } finally {
+    resetCaps();
+  }
 });
 
 test('an accessor with no bufferView cannot claim gigabytes it does not carry', () => {

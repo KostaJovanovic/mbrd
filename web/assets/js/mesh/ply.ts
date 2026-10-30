@@ -177,6 +177,11 @@ function asciiBody(u8: Uint8Array, head: Header): Mesh {
       if (plan.x < 0 || plan.y < 0 || plan.z < 0) {
         throw new MeshError('This PLY has vertices with no coordinates');
       }
+      // Every vertex is at least one number a property: a count the text
+      // cannot hold is corruption, and is said so before the ceiling asks.
+      if (el.count * el.props.length > tokens.length - at) {
+        throw new MeshError('This PLY declares more data than it contains');
+      }
       if (el.count > CAPS.elem) throw oversize('mesh-triangles', tooBig(el.count));
       verts = new Array(el.count * 3);
       const coloured = plan.r >= 0 && plan.g >= 0 && plan.b >= 0;

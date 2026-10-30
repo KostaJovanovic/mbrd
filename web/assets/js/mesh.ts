@@ -586,29 +586,36 @@ function readAccessor(
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 0) {
     throw new MeshError('This model declares an implausible amount of geometry');
   }
+  // Whether the data is there comes before whether it is a lot: a 1 KB file
+  // declaring a hundred million values is broken, not big, and a broken file
+  // is never a question (CLAUDE.md, Safety rules).
+  const bv = json.bufferViews?.[acc.bufferView ?? -1];
+  const buf = !bv || bv.buffer === undefined ? null : buffers[bv.buffer];
+  if (!bv) {
+    if (count * comps > VIEWLESS_MAX) {
+      throw new MeshError('This model declares data it does not contain');
+    }
+  } else if (!buf) {
+    throw new MeshError('This model refers to data that is not in the file');
+  }
+  const start = (bv?.byteOffset || 0) + (acc.byteOffset || 0);
+  const stride = bv?.byteStride || comps * size;
+  if (buf && count > 0 && start + (count - 1) * stride + comps * size > buf.byteLength) {
+    throw new MeshError('This model is truncated');
+  }
+
   if (count > CAPS.elem) throw oversize('mesh-triangles', manyElements(count));
   // Also check count*comps — MAT4 multiplies the allocation by 16.
   if (count * comps > CAPS.elem) throw oversize('mesh-triangles', manyElements(count * comps));
   // And the parse as a whole: many arrays each under the line above still add up.
   if (count * comps > room) throw oversize('mesh-triangles', manyInTotal());
 
-  const bv = json.bufferViews?.[acc.bufferView ?? -1];
   const Arr = acc.componentType === 5126 ? Float32Array
     : reader.signed ? Int32Array
     : Uint32Array;
-  const alloc = () => new Arr(count * comps);
-  if (!bv) {
-    if (count * comps > VIEWLESS_MAX) {
-      throw new MeshError('This model declares data it does not contain');
-    }
-    return alloc();
-  }
-  const out = alloc();
-  const buf = bv.buffer === undefined ? null : buffers[bv.buffer];
-  if (!buf) throw new MeshError('This model refers to data that is not in the file');
+  const out = new Arr(count * comps);
+  if (!buf) return out;
 
-  const start = (bv.byteOffset || 0) + (acc.byteOffset || 0);
-  const stride = bv.byteStride || comps * size;
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const get = reader.read;
 

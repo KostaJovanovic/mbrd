@@ -132,12 +132,19 @@ class Out {
   buf: Uint8Array;
   len = 0;
   cap: number;
-  constructor(hint: number, cap: number) {
+  most: number;
+  constructor(hint: number, cap: number, most: number) {
     this.cap = cap;
+    this.most = most;
     const want = Number.isFinite(hint) && hint > 0 ? Math.min(hint, FIRST_ALLOC) : 1024;
     this.buf = new Uint8Array(Math.max(want, 1024));
   }
   need(extra: number) {
+    // Before the ceiling: a stream longer than its container says is broken,
+    // and a broken file is never a question somebody could say yes to.
+    if (this.len + extra > this.most) {
+      throw new MeshError('This compressed data is longer than its file says it is');
+    }
     if (this.len + extra <= this.buf.length) return;
     if (this.len + extra > this.cap) {
       throw oversize('inflated-bytes', tooMuch(this.len + extra));
@@ -162,10 +169,11 @@ const tooMuch = (n: number) =>
 const inflateCap = () => (CAPS.buf === Infinity ? Infinity : Math.min(CAPS.buf, MAX_INFLATE));
 
 /** Raw DEFLATE (RFC 1951). `hint` sizes the first allocation only — never
- * trusted as a limit; CAPS.buf checked as the output grows. */
-export function inflateRaw(src: Uint8Array, hint = 0, cap = inflateCap()): Uint8Array {
+ * trusted as a limit; CAPS.buf checked as the output grows. `most` is what the
+ * container declared the output to be: past it is a MeshError, never Oversize. */
+export function inflateRaw(src: Uint8Array, hint = 0, cap = inflateCap(), most = Infinity): Uint8Array {
   const d = new Bits(src);
-  const out = new Out(hint, cap);
+  const out = new Out(hint, cap, most);
   const lengths = new Uint8Array(288 + 32);
 
   for (;;) {
@@ -246,7 +254,7 @@ export function inflateRaw(src: Uint8Array, hint = 0, cap = inflateCap()): Uint8
 
 /** zlib (RFC 1950) — header checked, Adler-32 not verified (parsers downstream
  * already reject corrupt geometry). */
-export function inflateZlib(src: Uint8Array, hint = 0): Uint8Array {
+export function inflateZlib(src: Uint8Array, hint = 0, most = Infinity): Uint8Array {
   if (src.length < 2) throw new MeshError('This compressed data ends mid-stream');
   const cmf = src[0], flg = src[1];
   // Low nibble 8 is DEFLATE; the 16-bit header must be a multiple of 31; FDICT
@@ -254,7 +262,7 @@ export function inflateZlib(src: Uint8Array, hint = 0): Uint8Array {
   if ((cmf & 0x0f) !== 8 || ((cmf << 8) | flg) % 31 !== 0 || (flg & 0x20)) {
     throw new MeshError('This is not a zlib stream');
   }
-  return inflateRaw(src.subarray(2), hint);
+  return inflateRaw(src.subarray(2), hint, inflateCap(), most);
 }
 
 // ---------------------------------------------------------------------------
@@ -370,6 +378,9 @@ function entryBytes(
   const extraLen = view.getUint16(local + 28, true);
   const start = local + 30 + nameLen + extraLen;
   if (start + comp > bytes.length) throw new MeshError('This archive entry runs past the end of the file');
+  // DEFLATE cannot expand past about 1032 to 1, so a claim beyond that is the
+  // file lying, and asking whether to allow it would be asking about nothing.
+  if (method === 8 && size > comp * 1032 + 1024) throw new MeshError('This archive entry claims more than its data can hold');
   if (size > inflateCap()) throw oversize('inflated-bytes', tooMuch(size));
   const raw = bytes.subarray(start, start + comp);
   if (method === 0) return raw;
@@ -378,7 +389,7 @@ function entryBytes(
   // directory claims first, then against the bytes that actually come out,
   // since the claim is the file's own word.
   if (size > budget.left) throw oversize('inflated-bytes', tooMuch(inflateCap() - budget.left + size));
-  const done = inflateRaw(raw, size, Math.min(inflateCap(), budget.left));
+  const done = inflateRaw(raw, size, Math.min(inflateCap(), budget.left), size);
   budget.left -= done.length;
   return done;
 }
