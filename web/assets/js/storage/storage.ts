@@ -665,12 +665,16 @@ const cloudTurn = serial();
 /** A plain push queued behind another and not started yet, for sharing. */
 let waitingPush: ReturnType<typeof pushOnce> | null = null;
 
+/** Null when the board has no sync row, which only startSyncingBoard() makes:
+ *  a push queued behind a Stop finds it gone, and pushing then would upload a
+ *  board somebody just stopped and write its row back. */
 async function pushOnce(force: boolean, onProgress?: (done: number, total: number) => void) {
   const { shareProvider } = await import('./cloud/cloud.ts');
   const { pushBoard, syncFor, writeSyncRow, noteCurrentSync } = await import('./cloud/sync.ts');
   const id = await ensureBoardId();
   const known = await syncFor(id);
-  const provider = shareProvider(known?.provider || 'gdrive');
+  if (!known) return null;
+  const provider = shareProvider(known.provider);
   if (!provider) throw new Error('that cloud account is not available in this build');
   if (!provider.signedIn()) throw new Error(`sign in to ${provider.label} first`);
 
@@ -682,11 +686,16 @@ async function pushOnce(force: boolean, onProgress?: (done: number, total: numbe
   return out;
 }
 
-/** Stop keeping this board in the cloud. What is already up there stays. */
-export async function stopSyncingBoard() {
-  const { forgetSync, noteCurrentSync } = await import('./cloud/sync.ts');
-  await forgetSync(await ensureBoardId());
-  noteCurrentSync(null);
+/** Stop keeping this board in the cloud. What is already up there stays. In
+ *  turn with the pushes: a push in flight when Stop was pressed used to land
+ *  after it and write the row back, and the board went on syncing. */
+export function stopSyncingBoard(): Promise<void> {
+  // Queued before anything is awaited, so a push asked for after it waits behind it.
+  return cloudTurn(async () => {
+    const { forgetSync, noteCurrentSync } = await import('./cloud/sync.ts');
+    await forgetSync(await ensureBoardId());
+    noteCurrentSync(null);
+  });
 }
 
 /**
@@ -770,8 +779,11 @@ export async function openCloudBoard(remote: { boardId: string, folder: string, 
     // never opened.
     if (seen) {
       const row = adoptedRow(provider, remote, seen);
-      await writeSyncRow(remote.boardId, row);
-      noteCurrentSync(row);
+      // In turn with the pushes, which read and write the same table.
+      await cloudTurn(async () => {
+        await writeSyncRow(remote.boardId, row);
+        noteCurrentSync(row);
+      });
     }
     resetSessionLatches();
     // A file of its own in the boards folder, as every board has on the desktop.

@@ -805,7 +805,7 @@ function initCloudSync() {
         return;
       }
       const out = await pushBoardToCloud();
-      if (!out.ok) {
+      if (out && !out.ok) {
         stop();
         toast('This board changed somewhere else. Press Sync now to sort it out', 'error');
       }

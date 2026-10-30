@@ -123,7 +123,8 @@ test('a STEP B-spline surface of an impossible degree is corrupt too (C3)', () =
 
 test('STEP colours of many items over one big shell share one walk budget', () => {
   // 8,000 styled items each naming a solid of 8,000 faces walked the shell
-  // once each: 7.9 s, measured.
+  // once each: 7.9 s, measured. Half a second now alone, and the limit leaves
+  // room for the whole suite running beside it.
   const n = 8000;
   const text = stepFile(put => {
     const at = [[0, 0, 0], [10, 0, 0], [0, 10, 0]];
@@ -139,7 +140,7 @@ test('STEP colours of many items over one big shell share one walk budget', () =
     const red = put(`COLOUR_RGB('',1.,0.,0.)`);
     for (let i = 0; i < n; i++) put(`STYLED_ITEM('',(#${red}),#${brep})`);
   });
-  endsFast(() => parseMesh('step', buf(text)), 2000, 'styled items over one shell');
+  endsFast(() => parseMesh('step', buf(text)), 5000, 'styled items over one shell');
 });
 
 test('a STEP record of bare words costs its length once, not once per word (H19)', () => {

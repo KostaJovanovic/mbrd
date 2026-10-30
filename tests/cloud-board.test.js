@@ -10,7 +10,10 @@ import { memoryStore } from './helpers.js';
 import { setStoreBackend } from '../web/assets/js/storage/idb.ts';
 import { googleDrive } from '../web/assets/js/storage/cloud/google.ts';
 import { board, loadBoard, serializeBoard, leaveNotFoundBoard } from '../web/assets/js/state.ts';
-import { openCloudBoard, pushBoardToCloud } from '../web/assets/js/storage/storage.ts';
+import {
+  openCloudBoard, pushBoardToCloud, stopSyncingBoard, currentBoardId,
+} from '../web/assets/js/storage/storage.ts';
+import { syncFor } from '../web/assets/js/storage/cloud/sync.ts';
 
 /** A folder tree in a Map. `gate`, when set, holds every list() until opened. */
 function fakeStore() {
@@ -107,4 +110,23 @@ test('a push waits for the push before it, and a waiting push is shared', async 
   // written, and read the first's own write as somebody else's.
   assert.equal(a.ok, true);
   assert.equal(b.ok, true, 'the second push saw the first as a conflict');
+});
+
+test('Stop pressed during a push is not undone by the push landing', async () => {
+  // The push wrote its row back after the Stop had cleared it, and the board
+  // went on syncing. A push queued behind the Stop must not write it either.
+  assert.ok(await syncFor(await currentBoardId()), 'the board above is synced');
+  let open;
+  drive.gate = new Promise(resolve => { open = resolve; });
+  const before = drive.lists;
+  const inFlight = pushBoardToCloud();
+  while (drive.lists === before) await new Promise(r => setTimeout(r, 1));
+  const stopped = stopSyncingBoard();
+  const queued = pushBoardToCloud();
+  drive.gate = null;
+  open();
+  assert.equal((await inFlight).ok, true);
+  await stopped;
+  assert.equal(await queued, null, 'a push behind the Stop sends nothing');
+  assert.equal(await syncFor(await currentBoardId()), null, 'the row came back');
 });

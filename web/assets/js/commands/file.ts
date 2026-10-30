@@ -112,6 +112,8 @@ async function runSync({ force }: { force: boolean }): Promise<void> {
       force,
       onProgress: (done, total) => job.step(done, total),
     });
+    // Stopped while this waited its turn: nothing to send it to.
+    if (!out) return;
     if (out.ok) {
       toast(out.uploaded
         ? `Synced: ${out.uploaded} new file${out.uploaded === 1 ? '' : 's'} sent`
