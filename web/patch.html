@@ -210,21 +210,135 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>59 releases</span>
-      <span>790 commits</span>
+      <span>64 releases</span>
+      <span>791 commits</span>
       <span>since 24 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
-<li class="pn-rel" id="r-greenhouse">
+<li class="pn-rel" id="r-up-to-date">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>
-    <span class="pn-count">28</span>
+    <span class="pn-count">1</span>
   </div>
   <article class="pn-plate">
     <header class="pn-plate-head">
-      <p class="pn-ver">0.741 - 0.768</p>
+      <p class="pn-ver">0.791</p>
+      <h2 class="pn-name">Up to Date</h2>
+      <p class="pn-date">30 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Nothing in the app changed.</strong> These notes were brought up to date.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-belt-and-braces">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">10</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.781 - 0.790</p>
+      <h2 class="pn-name">Belt and Braces</h2>
+      <p class="pn-date">29 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>A round of repairs: boards on a phone are saved more safely, broken files are turned away plainly, and four file types draw as they should.</strong></li>
+    </ul>
+    <h3 class="pn-part">On a phone</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-fix">Fix</span><strong>A board is on the disk before the save counts as done,</strong> so a phone that loses power mid-save keeps the last good copy.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A backup opened from <code>Earlier versions</code> stays a backup.</strong> Editing it no longer writes over it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The bin keeps a board for 30 days from when it was binned,</strong> not from when it was last edited, so an old board no longer vanishes at once.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Boards made after <code>Not now</code> come with you</strong> when you allow the folder later: they move into Documents/<span class="wm">mbrd</span> and stay on the shelf.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Opening a board from a file manager no longer copies it again each time</strong> when it is already in the folder.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A rename that only changes capitals takes.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Pressing sign-in twice no longer leaves the first one waiting forever.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Declining an update's install turns the Update row back into an offer</strong> rather than a button that does nothing.</li>
+    </ul>
+    <h3 class="pn-part">Opening files</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-fix">Fix</span><strong>A broken file says it is broken</strong> rather than asking whether to lift a size limit for it: 3D models, model archives and cover art whose sizes do not add up.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A small file built to stall the app no longer freezes it.</strong> PureRef boards, STEP models and spreadsheets each get one time allowance per file, and a workbook too large to show says so.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>IGES arcs run from their start to their end</strong> instead of round the whole circle.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>An AMF model placed inside another is drawn once,</strong> in the right place.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Cover art is found in more MP3s,</strong> including ones whose tag carries an extended header.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Each spreadsheet sheet shows under its own tab's name,</strong> in the workbook's order.</li>
+    </ul>
+    <h3 class="pn-part">The desktop app and syncing</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-fix">Fix</span><strong>Two settings saved at the same moment can no longer leave one unreadable,</strong> and half-written board files a crash left behind are cleared away after an hour.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Optimize</code> checks the video encoder it downloads</strong> and refuses any copy that is not the published one.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Stop syncing</code> stops,</strong> even pressed while an upload is under way.</li>
+      <li class="is-plain"><strong>Maintenance:</strong> the browser's autosave and the cloud sync now agree on which of a board's files to keep, from one shared list.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-hand-picked">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">2</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.779 - 0.780</p>
+      <h2 class="pn-name">Hand Picked</h2>
+      <p class="pn-date">27 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Each palette opens with a wallpaper piece of its own.</strong></li>
+      <li><span class="pn-tag is-new">New</span><strong>Every palette starts on its own piece, in its own colours:</strong> Papyrus the anthurium, Absinthe the monstera, Orca the sea holly.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Black and white shadows</code> in Settings &gt; Debug</strong> casts every drop shadow in plain black on a light sheet and white on a dark one.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-steady-dashes">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">1</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.778</p>
+      <h2 class="pn-name">Steady Dashes</h2>
+      <p class="pn-date">23 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Hint cards hold still through a zoom, and the title card keeps its outline.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A hint card's dashed edge no longer jumps to a new width</strong> when a zoom ends.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>At Light quality, or with shadows off, the title card and the whimsy dial keep a faint outline</strong> rather than none.</li>
+      <li class="is-plain"><strong><code>Show me around</code> wears only a dotted outline,</strong> as provisional as the card it sits on, and the whimsy dial's selection ring follows its rounded shape at Softish.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Colour the board to match</code> in Settings &gt; Debug</strong> puts the board in the colours of a wallpaper piece picked by hand, and back again.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-clear-edges">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">2</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.776 - 0.777</p>
+      <h2 class="pn-name">Clear Edges</h2>
+      <p class="pn-date">21 October 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>No wallpaper on a phone-shaped window.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A window shaped like a phone, either way up, draws no wallpaper,</strong> and its rows leave the panel.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-greenhouse">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">35</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.741 - 0.775</p>
       <h2 class="pn-name">Greenhouse</h2>
       <p class="pn-date">20 October 2026</p>
     </header>
@@ -246,10 +360,16 @@
       <li><span class="pn-tag is-new">New</span><strong><code>Check for updates</code> on such a board updates at once</strong> and opens the board again afterwards: the desktop app downloads, installs and restarts, the phone installs what it finds, and the web reloads into the new version.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong><code>Check for updates</code> on the web checks.</strong> It did nothing there.</li>
       <li><span class="pn-tag is-new">New</span><strong>On the web a new version loads at the next quiet moment</strong> without a message first. A board that cannot be stored still says the new version is waiting, with <code>Reload now</code>.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The patch notes have a <code>Check for updates</code> button</strong> beside <code>Back to the board</code>. It opens the board and runs the same check.</li>
     </ul>
     <h3 class="pn-part">The desktop app</h3>
     <ul class="pn-notes">
       <li><span class="pn-tag is-fix">Fix</span><strong>The title-bar menus are the app's own menu in every look,</strong> follow a change of look while the app runs, fade in rather than drop, and no longer flash the last menu opened before the new one draws. The board's name sits on the same line as File, Edit, View and Help.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The title bar's Update button keeps one width while it downloads,</strong> in every look.</li>
+    </ul>
+    <h3 class="pn-part">Light and dark</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-faster">Faster</span><strong>Switching between light and dark starts at once</strong> in the desktop app, Chrome and Edge, where a full board held it a quarter of a second or more, and the page crossfades smoothly rather than stuttering. Firefox keeps its fade.</li>
     </ul>
     <h3 class="pn-part">On a phone</h3>
     <ul class="pn-notes">
@@ -261,6 +381,7 @@
     <ul class="pn-notes">
       <li><span class="pn-tag is-fix">Fix</span><strong>Below Full, a pinch or zoom no longer stretches the grid's dots</strong> and then snaps them back when the fingers lift.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>A picture resized past its smallest size can go back to the one it was placed at.</strong> A 2:3 photo held at 3x5 could not return to 3x4.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>With the Timeline open, the board stops jumping every fifteen seconds</strong> when the window goes quiet.</li>
       <li class="is-plain"><strong>At Harsh the title card's outline is faint,</strong> so the board's name is not boxed in.</li>
     </ul>
   </article>

@@ -162,8 +162,97 @@ back to the board.
 
 ## Releases
 
+## Up to Date
+version: 0.791
+date: 30 October 2026
+
+- **Nothing in the app changed.** These notes were brought up to date.
+
+## Belt and Braces
+version: 0.781 - 0.790
+date: 29 October 2026
+
+- **A round of repairs: boards on a phone are saved more safely, broken files
+  are turned away plainly, and four file types draw as they should.**
+
+### On a phone
+- [fix] **A board is on the disk before the save counts as done,** so a phone
+  that loses power mid-save keeps the last good copy.
+- [fix] **A backup opened from `Earlier versions` stays a backup.** Editing it
+  no longer writes over it.
+- [fix] **The bin keeps a board for 30 days from when it was binned,** not from
+  when it was last edited, so an old board no longer vanishes at once.
+- [fix] **Boards made after `Not now` come with you** when you allow the folder
+  later: they move into Documents/mbrd and stay on the shelf.
+- [fix] **Opening a board from a file manager no longer copies it again each
+  time** when it is already in the folder.
+- [fix] **A rename that only changes capitals takes.**
+- [fix] **Pressing sign-in twice no longer leaves the first one waiting
+  forever.**
+- [fix] **Declining an update's install turns the Update row back into an
+  offer** rather than a button that does nothing.
+
+### Opening files
+- [fix] **A broken file says it is broken** rather than asking whether to lift a
+  size limit for it: 3D models, model archives and cover art whose sizes do not
+  add up.
+- [fix] **A small file built to stall the app no longer freezes it.** PureRef
+  boards, STEP models and spreadsheets each get one time allowance per file, and
+  a workbook too large to show says so.
+- [fix] **IGES arcs run from their start to their end** instead of round the
+  whole circle.
+- [fix] **An AMF model placed inside another is drawn once,** in the right
+  place.
+- [fix] **Cover art is found in more MP3s,** including ones whose tag carries an
+  extended header.
+- [fix] **Each spreadsheet sheet shows under its own tab's name,** in the
+  workbook's order.
+
+### The desktop app and syncing
+- [fix] **Two settings saved at the same moment can no longer leave one
+  unreadable,** and half-written board files a crash left behind are cleared
+  away after an hour.
+- [fix] **`Optimize` checks the video encoder it downloads** and refuses any copy
+  that is not the published one.
+- [fix] **`Stop syncing` stops,** even pressed while an upload is under way.
+- **Maintenance:** the browser's autosave and the cloud sync now agree on which
+  of a board's files to keep, from one shared list.
+
+## Hand Picked
+version: 0.779 - 0.780
+date: 27 October 2026
+
+- **Each palette opens with a wallpaper piece of its own.**
+- [new] **Every palette starts on its own piece, in its own colours:** Papyrus
+  the anthurium, Absinthe the monstera, Orca the sea holly.
+- [new] **`Black and white shadows` in Settings > Debug** casts every drop
+  shadow in plain black on a light sheet and white on a dark one.
+
+## Steady Dashes
+version: 0.778
+date: 23 October 2026
+
+- **Hint cards hold still through a zoom, and the title card keeps its outline.**
+- [fix] **A hint card's dashed edge no longer jumps to a new width** when a zoom
+  ends.
+- [fix] **At Light quality, or with shadows off, the title card and the whimsy
+  dial keep a faint outline** rather than none.
+- **`Show me around` wears only a dotted outline,** as provisional as the card
+  it sits on, and the whimsy dial's selection ring follows its rounded shape at
+  Softish.
+- [new] **`Colour the board to match` in Settings > Debug** puts the board in
+  the colours of a wallpaper piece picked by hand, and back again.
+
+## Clear Edges
+version: 0.776 - 0.777
+date: 21 October 2026
+
+- **No wallpaper on a phone-shaped window.**
+- [fix] **A window shaped like a phone, either way up, draws no wallpaper,** and
+  its rows leave the panel.
+
 ## Greenhouse
-version: 0.741 - 0.768
+version: 0.741 - 0.775
 date: 20 October 2026
 
 - **Softish gets a wallpaper, and a board from a newer mbrd asks before it
@@ -203,12 +292,22 @@ date: 20 October 2026
 - [new] **On the web a new version loads at the next quiet moment** without a
   message first. A board that cannot be stored still says the new version is
   waiting, with `Reload now`.
+- [new] **The patch notes have a `Check for updates` button** beside `Back to
+  the board`. It opens the board and runs the same check.
 
 ### The desktop app
 - [fix] **The title-bar menus are the app's own menu in every look,** follow a
   change of look while the app runs, fade in rather than drop, and no longer
   flash the last menu opened before the new one draws. The board's name sits on
   the same line as File, Edit, View and Help.
+- [fix] **The title bar's Update button keeps one width while it downloads,** in
+  every look.
+
+### Light and dark
+- [faster] **Switching between light and dark starts at once** in the desktop
+  app, Chrome and Edge, where a full board held it a quarter of a second or
+  more, and the page crossfades smoothly rather than stuttering. Firefox keeps
+  its fade.
 
 ### On a phone
 - [new] **A pinch on the controls over the board zooms the board,** not the
@@ -225,6 +324,8 @@ date: 20 October 2026
   then snaps them back when the fingers lift.
 - [fix] **A picture resized past its smallest size can go back to the one it
   was placed at.** A 2:3 photo held at 3x5 could not return to 3x4.
+- [fix] **With the Timeline open, the board stops jumping every fifteen
+  seconds** when the window goes quiet.
 - **At Harsh the title card's outline is faint,** so the board's name is not
   boxed in.
 
