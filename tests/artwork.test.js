@@ -135,6 +135,22 @@ test('a tag with no picture in it yields nothing', async () => {
   assert.equal(await coverArt(audio(tag, 'song.mp3')), null);
 });
 
+test('an extended header in front of the frames is stepped over, in v2.3 and v2.4', async () => {
+  // Flag 0x40: the walk started on the extended header, read it as a frame,
+  // stopped, and the picture was never found.
+  for (const major of [3, 4]) {
+    const plain = mp3({ major });
+    const frames = plain.subarray(10, plain.length - 4);
+    // v2.3: a plain size that leaves out its own four bytes, then six bytes.
+    // v2.4: a syncsafe size of the whole, then one flag byte count and one flag byte.
+    const ext = major === 3 ? bytes(be32(6), [0, 0], be32(0)) : bytes(syncsafe(6), [1], [0]);
+    const tag = bytes('ID3', [major, 0], [0x40], syncsafe(ext.length + frames.length), ext, frames, [0xff, 0xfb, 0x90, 0x00]);
+    const art = await coverArt(audio(tag, 'song.mp3'));
+    assert.ok(art, `v2.${major} with an extended header found nothing`);
+    assert.deepEqual(new Uint8Array(await art.arrayBuffer()), JPEG);
+  }
+});
+
 test('an ID3 tag claiming more than the file holds is broken, not a question', async () => {
   // 200 MB claimed in a file of a few dozen bytes: nobody is asked to allow it.
   const lie = mp3();

@@ -17,7 +17,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  canReadDocument, parseDelimited, colIndex, scrub, tableOf, cellsFor,
+  canReadDocument, parseDelimited, colIndex, scrub, tableOf, cellsFor, sheetOrder,
 } from '../web/assets/js/ui/documents.ts';
 import { resolveFrom, slideNo } from '../web/assets/js/import/ooxml.ts';
 
@@ -142,6 +142,26 @@ test('other delimiters work the same', () => {
 
 test('an empty file has no rows', () => {
   assert.deepEqual(parseDelimited('', ','), []);
+});
+
+test('a workbook sheet is named by the tab that points at it, in tab order', () => {
+  // The third sheet's tab moved to the front: its part is still sheet3.xml,
+  // and pairing names with parts by position put "Summary" over sheet1.
+  const parts = ['xl/worksheets/sheet1.xml', 'xl/worksheets/sheet2.xml', 'xl/worksheets/sheet3.xml'];
+  const rels = new Map([
+    ['rId1', 'worksheets/sheet1.xml'], ['rId2', 'worksheets/sheet2.xml'],
+    ['rId3', '/xl/worksheets/sheet3.xml'], ['rId4', 'chartsheets/sheet1.xml'],
+  ]);
+  const tabs = [
+    { rid: 'rId3', name: 'Summary' }, { rid: 'rId4', name: 'Chart' },
+    { rid: 'rId1', name: 'January' },
+  ];
+  assert.deepEqual(sheetOrder(tabs, rels, parts), [
+    { path: 'xl/worksheets/sheet3.xml', name: 'Summary' },
+    { path: 'xl/worksheets/sheet1.xml', name: 'January' },
+    // No tab names it: kept, after the named ones, under no name.
+    { path: 'xl/worksheets/sheet2.xml', name: '' },
+  ]);
 });
 
 test('the cell ceiling is for the whole document, not each table in it', () => {

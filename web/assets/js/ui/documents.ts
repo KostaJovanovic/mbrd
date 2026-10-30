@@ -432,19 +432,18 @@ async function ooxmlSlides(blob: Blob, urls: string[]) {
 async function ooxmlSheets(blob: Blob) {
   const entries = await openDoc(blob);
   const shared = sharedStrings(entries);
-  const sheets = [...entries.keys()]
-    .filter(k => /^xl\/worksheets\/sheet\d+\.xml$/.test(k))
-    .sort((a, b) => slideNo(a) - slideNo(b))
-    .slice(0, MAX_PAGES);
+  const parts = [...entries.keys()]
+    .filter(k => /^xl\/worksheets\/[^/]+\.xml$/.test(k))
+    .sort((a, b) => slideNo(a) - slideNo(b));
+  const sheets = workbookSheets(entries, parts).slice(0, MAX_PAGES);
   if (!sheets.length) throw new Error('That workbook has no sheets');
-  const names = sheetNames(entries);
 
   const frag = document.createDocumentFragment();
   const budget = cellsFor();
-  sheets.every((path, n) => {
+  sheets.every(({ path, name }, n) => {
     if (budget.left <= 0) { frag.append(cutShort('workbook')); return false; }
     const section = el('section', 'doc-sheet');
-    section.append(partHead(names[n] || `Sheet ${n + 1}`));
+    section.append(partHead(name || `Sheet ${n + 1}`));
     try {
       const doc = xmlOf(entries, path);
       const rows: (string | null)[][] = [];
@@ -495,13 +494,39 @@ function sharedStrings(entries: Entries) {
   return out;
 }
 
-function sheetNames(entries: Entries) {
+/** The worksheets as workbook.xml lists its tabs, each tab's `r:id` resolved
+ *  through the workbook's relationships. */
+function workbookSheets(entries: Entries, parts: string[]) {
+  let tabs: { rid: string, name: string }[] = [];
   try {
     const doc = xmlOf(entries, 'xl/workbook.xml');
-    return byLocal(doc, 'sheet').map(s => s.getAttribute('name') || '');
+    tabs = byLocal(doc, 'sheet').map(s => ({ rid: s.getAttribute('r:id') || '', name: s.getAttribute('name') || '' }));
   } catch {
-    return [];
+    // No workbook part: the sheets alone, unnamed, in number order.
   }
+  return sheetOrder(tabs, relationships(entries, 'xl/_rels/workbook.xml.rels'), parts);
+}
+
+/**
+ * The sheets in tab order, each under its tab's name. A tab names its part
+ * through a relationship, never by number: a tab moved to the front is still
+ * sheet3.xml, and pairing names with parts by position put every name over
+ * another sheet. A part no tab names follows, unnamed, in number order; a tab
+ * naming something that is not a worksheet (a chart sheet) is left out.
+ * Exported only for its test.
+ */
+export function sheetOrder(tabs: { rid: string, name: string }[], rels: Rels, parts: string[]) {
+  const out: { path: string, name: string }[] = [];
+  const taken = new Set<string>();
+  for (const tab of tabs) {
+    const target = rels.get(tab.rid);
+    const path = target ? resolveFrom('xl/', target) : '';
+    if (!parts.includes(path) || taken.has(path)) continue;
+    taken.add(path);
+    out.push({ path, name: tab.name });
+  }
+  for (const path of parts) if (!taken.has(path)) out.push({ path, name: '' });
+  return out;
 }
 
 function cellValue(c: Element, shared: string[]) {

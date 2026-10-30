@@ -131,13 +131,20 @@ async function id3Body(file: Blob, head: Bytes, lift = false): Promise<Bytes | n
 // v2.4: 4-char + synchsafe (but v2.3-sized v2.4 files are common, so fallback).
 function eachID3Frame(
   tag: Bytes,
-  major: number,
+  head: Bytes,
   visit: (id: string, body: Bytes) => boolean | void,
 ) {
+  const major = head[3];
   const idLen = major <= 2 ? 3 : 4;
   const headLen = major <= 2 ? 6 : 10;
 
+  // An extended header (flag 0x40) sits before the first frame, and the walk
+  // read it as one, failed and found nothing. Its size is v2.3's plain number,
+  // which leaves out its own four bytes, or v2.4's syncsafe one, which does not.
   let at = 0;
+  if (major >= 3 && (head[5] & 0x40) && tag.length >= 4) {
+    at = major === 3 ? 4 + be32(tag, 0) : syncsafe(tag, 0);
+  }
   while (at + headLen <= tag.length) {
     const id = ascii(tag, at, idLen);
     if (!/^[A-Z0-9]+$/.test(id)) break;          // padding, or the end of the frames
@@ -169,12 +176,11 @@ function eachID3Frame(
 async function id3Art(file: Blob, head: Bytes, lift = false): Promise<Bytes | null> {
   const tag = await id3Body(file, head, lift);
   if (!tag) return null;
-  const major = head[3];
-  const want = major <= 2 ? 'PIC' : 'APIC';
+  const want = head[3] <= 2 ? 'PIC' : 'APIC';
   let art: Bytes | null = null;
-  eachID3Frame(tag, major, (id, body) => {
+  eachID3Frame(tag, head, (id, body) => {
     if (id !== want) return;
-    art = readAPIC(body, major);
+    art = readAPIC(body, head[3]);
     return false;
   });
   return art;
@@ -200,9 +206,8 @@ async function id3Tags(file: Blob, head: Bytes): Promise<TagPair[]> {
     throw err;
   });
   if (!tag) return [];
-  const major = head[3];
   const out: TagPair[] = [];
-  eachID3Frame(tag, major, (id, body) => {
+  eachID3Frame(tag, head, (id, body) => {
     const key = ID3_TAGS[id];
     if (key) out.push([key, id3Text(body)]);
   });

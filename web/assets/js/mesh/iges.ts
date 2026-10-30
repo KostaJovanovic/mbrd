@@ -445,7 +445,12 @@ function rawCurve(db: Db, e: Entity, scaleHint: number, depth: number): CurveInf
       const r = Math.hypot(s[0] - c[0], s[1] - c[1]);
       if (!r) return null;
       const f = frame(c, [0, 0, 1], [1, 0, 0]);
-      return { curve: circleCurve(f, r), domain: [0, Math.PI * 2] };
+      // From the start's angle round to the end's. An end on the start is the
+      // whole circle, which is how IGES writes one.
+      const a0 = Math.atan2(s[1] - c[1], s[0] - c[0]);
+      let a1 = Math.atan2(numAt(e, 6) - c[1], numAt(e, 5) - c[0]);
+      if (a1 <= a0 + 1e-12) a1 += Math.PI * 2;
+      return { curve: circleCurve(f, r), domain: [a0, a1] };
     }
     case COPIOUS_DATA: {
       // Form 1 is (x,y) pairs at a common z, forms 2 and 3 are triples. Form 11

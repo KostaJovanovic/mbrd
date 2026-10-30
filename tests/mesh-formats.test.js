@@ -508,6 +508,20 @@ test('an AMF places one object twice through its constellation', () => {
   near(m.bounds.min[0], -1, 'and the turned one');
 });
 
+test('an AMF constellation inside another is drawn once, turned by both in order', () => {
+  // The inner one turns the triangle 90 degrees about z; the outer turns that
+  // 90 about x and moves it 10 along x. Each constellation used to be drawn as
+  // a root as well, and the two turns were added, which is not the same turn.
+  const nested = AMF.replace(/<constellation[\s\S]*<\/constellation>/,
+    `<constellation id="inner"><instance objectid="0"><rz>90</rz></instance></constellation>
+     <constellation id="outer"><instance objectid="inner"><deltax>10</deltax><rx>90</rx></instance></constellation>`);
+  const m = parseMesh('amf', buf(nested), 'y');
+  assert.equal(m.count, 3, 'one triangle, placed once');
+  assert.ok(has(m, [10, 0, 0]), 'the corner at the origin');
+  assert.ok(has(m, [10, 0, 1]), 'the corner on x: z, then x');
+  assert.ok(has(m, [9, 0, 0]), 'the corner on y');
+});
+
 test('an AMF colours per vertex rather than per triangle', () => {
   const m = parseMesh('amf', buf(AMF), 'y');
   assert.deepEqual([...m.colors.slice(0, 3)], [1, 0, 0]);
@@ -1216,6 +1230,22 @@ test('an IGES entity takes the colour its directory entry names', () => {
   const m = parseMesh('iges', buf(igesPatch()), 'y');
   assert.ok(m.colors, 'colours');
   assert.deepEqual([...m.colors.slice(0, 3)], [0, 1, 0], 'colour number three is green');
+});
+
+test('an IGES arc runs from its start to its end, not round the whole circle', () => {
+  // The patch trimmed to a half disc: an arc anticlockwise from (9,5) to (1,5)
+  // about (5,5). Read as a full circle, every slot and fillet came out round.
+  const entities = [
+    { type: 128, colour: 3, params: [1, 1, 1, 1, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1,
+      0, 0, 0, 10, 0, 0, 0, 10, 0, 10, 10, 0, 0, 1, 0, 1] },
+    { type: 100, params: [0, 5, 5, 9, 5, 1, 5] },
+    { type: 144, params: [1, 1, 0, 3] },
+  ];
+  const m = parseMesh('iges', buf(igesFile(entities)), 'y');
+  assert.ok(m.count >= 3, `some geometry: ${m.count}`);
+  const pts = points(m);
+  assert.ok(pts.every(p => p[1] > 5 - 1e-3), 'a point below the chord: the arc went the whole way round');
+  near(Math.max(...pts.map(p => p[1])), 9, 'the top of the half disc', 0.1);
 });
 
 test('an IGES file with no directory is not an IGES file', () => {

@@ -22,31 +22,34 @@ export function parseAMF(bytes: ArrayBuffer): Mesh {
 
   const build = new MeshBuild();
   let visits = 0;
-  const emit = (id: string, delta: number[], rot: number[], depth: number) => {
+  const emit = (id: string, place: Place, depth: number) => {
     if (depth > MAX_INSTANCE_DEPTH) throw new MeshError('This AMF nests its constellations too deeply');
     // The depth limit bounds a chain, not a tree: two instances a level is
     // four billion visits at depth 32, and an instance of an empty object
     // adds no triangle for the triangle ceiling to count.
     if (++visits > MAX_INSTANCE_VISITS) throw new MeshError('This AMF places more instances than a model has');
     const obj = doc.objects.get(id);
-    if (obj) { addObject(build, obj, doc, delta, rot); return; }
-    // Constellations can nest (assemblies).
+    if (obj) { addObject(build, obj, doc, place); return; }
+    // Constellations can nest (assemblies): an instance is placed in its
+    // constellation's space, which is then placed in the one above. Composed,
+    // not added: two rotations about different axes do not sum.
     const nested = doc.constellations.get(id);
     if (!nested) return;
-    for (const inst of nested) {
-      const spun = rotate(inst.delta, rot);
-      emit(inst.objectid, [spun[0] + delta[0], spun[1] + delta[1], spun[2] + delta[2]],
-           [inst.rot[0] + rot[0], inst.rot[1] + rot[1], inst.rot[2] + rot[2]], depth + 1);
-    }
+    for (const inst of nested) emit(inst.objectid, compose(place, instancePlace(inst)), depth + 1);
   };
 
-  // Without constellations, all objects sit at the origin.
+  // Without constellations, all objects sit at the origin. With them, only
+  // the top ones are drawn: one placed inside another is drawn through it,
+  // and drawn again on its own it came out twice, once in the wrong place.
   if (doc.constellations.size) {
-    for (const insts of doc.constellations.values()) {
-      for (const inst of insts) emit(inst.objectid, inst.delta, inst.rot, 0);
-    }
+    const inner = new Set<string>();
+    for (const insts of doc.constellations.values()) for (const inst of insts) inner.add(inst.objectid);
+    const top = [...doc.constellations.keys()].filter(id => !inner.has(id));
+    // A file whose constellations all name each other has no top; each is then
+    // drawn as one, as before, and the depth limit ends the loop.
+    for (const id of top.length ? top : [...doc.constellations.keys()]) emit(id, IDENTITY, 0);
   } else {
-    for (const id of doc.objects.keys()) emit(id, [0, 0, 0], [0, 0, 0], 0);
+    for (const id of doc.objects.keys()) emit(id, IDENTITY, 0);
   }
 
   if (!build.count) throw new MeshError('This AMF has no geometry in it');
@@ -215,13 +218,10 @@ function read(text: string): Doc {
 // Emitting
 // ---------------------------------------------------------------------------
 
-function addObject(build: MeshBuild, obj: Obj, doc: Doc, delta: number[], rot: number[]) {
+function addObject(build: MeshBuild, obj: Obj, doc: Doc, place: Place) {
   const vertN = (obj.verts.length / 3) | 0;
   const held = (i: number) => Number.isInteger(i) && i >= 0 && i < vertN;
-  const at = (i: number) => {
-    const p = rotate([obj.verts[i * 3], obj.verts[i * 3 + 1], obj.verts[i * 3 + 2]], rot);
-    return [p[0] + delta[0], p[1] + delta[1], p[2] + delta[2]];
-  };
+  const at = (i: number) => apply(place, [obj.verts[i * 3], obj.verts[i * 3 + 1], obj.verts[i * 3 + 2]]);
   for (const volume of obj.volumes) {
     const flat = doc.materials.get(volume.material || obj.material) || null;
     for (let t = 0; t + 3 <= volume.tris.length; t += 3) {
@@ -248,6 +248,31 @@ function addObject(build: MeshBuild, obj: Obj, doc: Doc, delta: number[], rot: n
       }
     }
   }
+}
+
+/** Where a thing lands: p -> m p + t, m a 3x3 row-major rotation. */
+type Place = { m: number[]; t: number[] };
+const IDENTITY: Place = { m: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] };
+
+const apply = (P: Place, p: number[]) => [0, 1, 2].map(r =>
+  P.m[r * 3] * p[0] + P.m[r * 3 + 1] * p[1] + P.m[r * 3 + 2] * p[2] + P.t[r]);
+
+/** An instance's own placement: its rotation, then its delta. The matrix's
+ *  columns are the axes rotate() turns. */
+function instancePlace(inst: Instance): Place {
+  const [x, y, z] = [rotate([1, 0, 0], inst.rot), rotate([0, 1, 0], inst.rot), rotate([0, 0, 1], inst.rot)];
+  return { m: [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]], t: inst.delta };
+}
+
+/** `inner` first, then `outer`. */
+function compose(outer: Place, inner: Place): Place {
+  const m = new Array<number>(9);
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      m[r * 3 + c] = outer.m[r * 3] * inner.m[c] + outer.m[r * 3 + 1] * inner.m[3 + c] + outer.m[r * 3 + 2] * inner.m[6 + c];
+    }
+  }
+  return { m, t: apply(outer, inner.t) };
 }
 
 // Euler rotation in degrees, x → y → z.
