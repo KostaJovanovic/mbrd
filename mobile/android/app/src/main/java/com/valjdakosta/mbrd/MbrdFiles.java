@@ -256,20 +256,26 @@ public class MbrdFiles extends Plugin {
     }
 
     /** The board as a file in this run's folder: itself when it already is one,
-     *  a copy otherwise. */
+     *  the file there holding the same bytes under its name (a file manager
+     *  whose URI directFile() cannot read hands over the board in the folder,
+     *  and every tap made another "(2)" of it), a copy otherwise. */
     private static File adopt(Context ctx, Uri uri) throws IOException {
         File direct = directFile(ctx, uri);
         if (direct != null) return direct;
         String name = displayName(ctx, uri);
         boolean named = name.toLowerCase(Locale.ROOT).endsWith(BOARD_EXT);
-        if (!named && !isZip(ctx, uri)) throw new IOException(name + " is not an mbrd board");
+        // The ZIP magic decides only for a name with no extension, as in
+        // incoming(): every .zip, .docx and .apk starts with it.
+        if (!named && !(MbrdNames.extension(name).isEmpty() && isZip(ctx, uri))) {
+            throw new IOException(name + " is not an mbrd board");
+        }
         File dir = MbrdRoot.boards();
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
         String safe = MbrdNames.safeName(name, "board" + BOARD_EXT);
         if (!named) safe += BOARD_EXT;
-        File dest = new File(dir, MbrdNames.freeName(dir, safe));
-        File tmp = new File(dest.getPath() + ".mbrd-tmp");
+        // Hidden and ending in -tmp, so the folder's list never shows it.
+        File tmp = new File(dir, "." + UUID.randomUUID() + ".mbrd-tmp");
         try (InputStream in = ctx.getContentResolver().openInputStream(uri); FileOutputStream out = new FileOutputStream(tmp)) {
             if (in == null) throw new IOException("could not read " + name);
             byte[] buf = new byte[1 << 16];
@@ -282,7 +288,23 @@ public class MbrdFiles extends Plugin {
             tmp.delete();
             throw e;
         }
-        if (!tmp.renameTo(dest)) throw new IOException("could not save " + dest.getName());
+        File same = new File(dir, safe);
+        if (MbrdRoot.sameBytes(same, tmp)) {
+            //noinspection ResultOfMethodCallIgnored
+            tmp.delete();
+            return same.getCanonicalFile();
+        }
+        // Named and taken under the lock MbrdBytes' "create" holds, so a board
+        // made meanwhile is never renamed over.
+        File dest;
+        synchronized (MbrdBoards.NAMES) {
+            dest = new File(dir, MbrdNames.freeName(dir, safe));
+            if (!tmp.renameTo(dest)) {
+                //noinspection ResultOfMethodCallIgnored
+                tmp.delete();
+                throw new IOException("could not save " + dest.getName());
+            }
+        }
         return dest.getCanonicalFile();
     }
 

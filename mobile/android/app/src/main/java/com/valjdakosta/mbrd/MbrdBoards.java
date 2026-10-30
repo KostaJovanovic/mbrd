@@ -107,7 +107,9 @@ public class MbrdBoards extends Plugin {
             File to;
             synchronized (NAMES) {
                 to = freeFile(dir, MbrdNames.plainName(call.getString("suggested")), from);
-                if (same(to, from)) to = from;
+                // Unchanged only when spelled alike: "trip" to "Trip" names the
+                // same file here, and is still a rename, as on the desktop.
+                if (to.getName().equals(from.getName())) to = from;
                 else if (!from.renameTo(to)) throw new IOException("could not rename " + from.getName());
             }
             call.resolve(ref(to));

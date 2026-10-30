@@ -129,6 +129,13 @@ public final class MbrdUpdate {
                 if (!taken) {
                     announce.send("none", "", 0, "");
                     say("Android did not take the update. mbrd tries again at the next start.");
+                } else if (waiting != null) {
+                    // Back to an offer, as download() does: a no on Android's
+                    // confirm screen left a Ready row whose file was gone, and
+                    // a press did nothing. On a yes Android closes mbrd.
+                    offerLater(waitingVersion, waiting);
+                } else {
+                    announce.send("none", "", 0, "");
                 }
             });
             return;
@@ -204,6 +211,9 @@ public final class MbrdUpdate {
         try {
             save(url, file, digest.group(1), new AtomicBoolean(false), permille -> {});
             verify(app, file);
+            // Kept too, so a press after a refused install downloads it again.
+            waiting = apk;
+            waitingVersion = version;
             offerReady(file, version);
         } catch (Exception e) {
             // Offline, or a bad file. The next day's check tries again.

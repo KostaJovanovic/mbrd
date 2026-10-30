@@ -66,12 +66,17 @@ public class MbrdAuth extends Plugin {
             call.reject("a sign-in is already open");
             return;
         }
+        // Taken before authorize() answers, not after: two presses in that gap
+        // both passed the check above, and the second left the first waiting
+        // forever. Every way out below hands it back.
+        pending = call;
         AuthorizationRequest request = AuthorizationRequest.builder()
             .setRequestedScopes(Collections.singletonList(new Scope(DRIVE_FILE)))
             .build();
         client().authorize(request)
             .addOnSuccessListener(result -> {
                 if (!result.hasResolution()) {
+                    pending = null;
                     answer(call, result);
                     return;
                 }
@@ -79,13 +84,16 @@ public class MbrdAuth extends Plugin {
                 // screens ask, and consented() reads what they answered.
                 PendingIntent ask = result.getPendingIntent();
                 if (ask == null) {
+                    pending = null;
                     call.reject("Google asked for a step it did not give");
                     return;
                 }
-                pending = call;
                 consent.launch(new IntentSenderRequest.Builder(ask.getIntentSender()).build());
             })
-            .addOnFailureListener(e -> call.reject("Google refused the sign-in: " + e.getMessage()));
+            .addOnFailureListener(e -> {
+                pending = null;
+                call.reject("Google refused the sign-in: " + e.getMessage());
+            });
     }
 
     private void consented(ActivityResult result) {
