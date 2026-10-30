@@ -5,6 +5,7 @@
 import { app } from 'electron';
 import { mkdir, readdir, readFile, rename, rm, unlink, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { writeAtomic } from './atomic.mts';
 import { log } from './log.ts';
 // Pure envelope format, split out for testing without Electron.
@@ -47,9 +48,11 @@ const keyOf = (file: string) => decodeURIComponent(file);
 /** Write to .tmp then rename — atomic within a directory. A truncated file is
  * worse than a missing one (missing = last snapshot; truncated = corruption).
  * No folder flush: a lost rename leaves the last value, and a batch of assets
- * would pay one flush a file. */
+ * would pay one flush a file. A temp name of its own per write: two writes to
+ * one key at once shared `<key>.tmp`, their bytes mixed, and the rename kept
+ * the mix, which then read back as nothing. */
 function writeFileAtomic(file: string, data: Uint8Array | string): Promise<void> {
-  return writeAtomic(file, data, file + '.tmp');
+  return writeAtomic(file, data, `${file}.${randomUUID()}.tmp`);
 }
 
 async function readValue(file: string): Promise<unknown> {

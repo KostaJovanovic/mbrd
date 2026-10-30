@@ -6,7 +6,7 @@
 // and that rule come from board-names.mts.
 
 import { app, shell } from 'electron';
-import { access, mkdir, readdir, rename as move, stat } from 'node:fs/promises';
+import { access, mkdir, readdir, rename as move, stat, unlink } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { writeAtomic } from './atomic.mts';
 import { isFolderBoard, nthName, plainName } from './board-names.mts';
@@ -69,12 +69,29 @@ function inTurn<T>(work: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** A write's temp file older than this was left by a process that died
+ *  mid-write: no live write takes an hour. */
+const STALE_TMP_MS = 60 * 60 * 1000;
+
 /** The folder and the boards in it, made if it is missing. Hidden files and
- *  the temp files of a write (`.mbrd-tmp`) are not boards. */
+ *  the temp files of a write (`.mbrd-tmp`) are not boards; a stale temp file
+ *  is deleted here, since nothing else ever sees it. */
 export async function list(): Promise<{ folder: string, files: (Ref & { at: number })[] }> {
   await mkdir(root, { recursive: true });
   const files: (Ref & { at: number })[] = [];
   for (const entry of await readdir(root, { withFileTypes: true })) {
+    if (entry.isFile() && /\.mbrd-tmp$/i.test(entry.name)) {
+      const path = join(root, entry.name);
+      try {
+        if (Date.now() - (await stat(path)).mtimeMs > STALE_TMP_MS) {
+          await unlink(path);
+          log('info', 'deleted a temp file a write left behind', { path });
+        }
+      } catch {
+        // Gone already, or not ours to delete: either way not a board.
+      }
+      continue;
+    }
     if (!entry.isFile() || entry.name.startsWith('.') || !/\.mbrd$/i.test(entry.name)) continue;
     const path = join(root, entry.name);
     try {

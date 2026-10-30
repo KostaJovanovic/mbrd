@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -34,6 +34,37 @@ test('a write into a missing folder fails and keeps nothing', async () => {
   try {
     const target = join(dir, 'gone', 'a.mbrd');
     await assert.rejects(writeAtomic(target, 'x', target + '.tmp'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a write that fails takes its temp file with it', async () => {
+  // A full disk, or here a rename onto a folder: the temp file used to stay,
+  // and nothing else ever deletes it.
+  const dir = mkdtempSync(join(tmpdir(), 'mbrd-atomic-'));
+  try {
+    const target = join(dir, 'a.mbrd');
+    mkdirSync(target);
+    await assert.rejects(writeAtomic(target, 'x', target + '.mbrd-tmp'));
+    assert.deepEqual(readdirSync(dir), ['a.mbrd']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('two writes to one store key at once each have a temp file of their own', async () => {
+  // Both on `<key>.tmp`, the bytes of the two mixed in one file, and the
+  // rename kept the mix. store.ts needs Electron, so its name is read as text.
+  const store = readFileSync(join(DESKTOP, 'store.ts'), 'utf8');
+  assert.match(store, /writeAtomic\(file, data, `\$\{file\}\.\$\{randomUUID\(\)\}\.tmp`\)/);
+  const dir = mkdtempSync(join(tmpdir(), 'mbrd-atomic-'));
+  try {
+    const target = join(dir, 'key');
+    const a = 'a'.repeat(1 << 20), b = 'b'.repeat(1 << 20);
+    await Promise.all([writeAtomic(target, a, target + '.1.tmp'), writeAtomic(target, b, target + '.2.tmp')]);
+    assert.ok([a, b].includes(readFileSync(target, 'utf8')));
+    assert.deepEqual(readdirSync(dir), ['key']);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -3,22 +3,29 @@
 // the rename and lose the bytes, and the only copy of a board opens as zeros.
 // Pure Node with no `app`, like format.mts, so the root suite runs it.
 
-import { open, rename } from 'node:fs/promises';
+import { open, rename, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 /** Write `data` to `tmp`, flush it, and rename it over `target`. `durable`
- *  also flushes the folder, so the rename itself outlives a power loss. */
+ *  also flushes the folder, so the rename itself outlives a power loss. A
+ *  write that fails (a full disk) takes its temp file with it: nothing else
+ *  would, and a board's half-written copy is the size of the board. */
 export async function writeAtomic(
   target: string, data: Uint8Array | string, tmp: string, durable = false,
 ): Promise<void> {
-  const handle = await open(tmp, 'w');
   try {
-    await handle.writeFile(data);
-    await handle.sync();
-  } finally {
-    await handle.close();
+    const handle = await open(tmp, 'w');
+    try {
+      await handle.writeFile(data);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await rename(tmp, target);
+  } catch (err) {
+    await unlink(tmp).catch(() => {});
+    throw err;
   }
-  await rename(tmp, target);
   if (durable) await syncFolder(dirname(target));
 }
 
