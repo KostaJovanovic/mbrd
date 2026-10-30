@@ -136,6 +136,47 @@ final class MbrdNames {
         return !name.startsWith(".") && name.toLowerCase(Locale.ROOT).endsWith(BOARD_EXT);
     }
 
+    // Thirteen digits, as every millisecond time until 2286 has: a board binned
+    // before this, named "2024-trip.mbrd", is not read as binned in 1970.
+    private static final Pattern BINNED = Pattern.compile("^(\\d{13})-.");
+
+    /** A bin entry's name: when it was binned, in front. Shared storage can
+     *  refuse setLastModified(), so the name is what the bin counts from. */
+    static String binName(long now, String name) {
+        return now + "-" + name;
+    }
+
+    /** When a bin entry went in: the time in its name, or `mtime` for one binned
+     *  before the name carried it. */
+    static long binnedAt(String name, long mtime) {
+        java.util.regex.Matcher m = BINNED.matcher(name);
+        return m.find() ? Long.parseLong(m.group(1)) : mtime;
+    }
+
+    /**
+     * A stored value (desktop/format.mts: a JSON line, then raw bytes) with
+     * every JSON string that is exactly an old path turned into its new one.
+     * Only the line is touched, so the byte offsets in it stay right. A path
+     * holds no quote, backslash or control character (safeName and plainName
+     * strip them), so it stands in the JSON as it is. `raw` itself when nothing
+     * changed.
+     */
+    static byte[] repath(byte[] raw, java.util.Map<String, String> moved) {
+        int split = 0;
+        while (split < raw.length && raw[split] != '\n') split++;
+        String head = new String(raw, 0, split, StandardCharsets.UTF_8);
+        String out = head;
+        for (java.util.Map.Entry<String, String> e : moved.entrySet()) {
+            out = out.replace("\"" + e.getKey() + "\"", "\"" + e.getValue() + "\"");
+        }
+        if (out.equals(head)) return raw;
+        byte[] line = out.getBytes(StandardCharsets.UTF_8);
+        byte[] result = new byte[line.length + raw.length - split];
+        System.arraycopy(line, 0, result, 0, line.length);
+        System.arraycopy(raw, split, result, line.length, raw.length - split);
+        return result;
+    }
+
     /** `name`, or "name (2).ext" and on, whichever `dir` does not hold yet. */
     static String freeName(File dir, String name) {
         if (!new File(dir, name).exists()) return name;

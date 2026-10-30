@@ -61,6 +61,8 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
     private final Handler main = new Handler(Looper.getMainLooper());
 
     private OutputStream out;
+    /** The file under `out` for a whole-file target, flushed to the disk at the end. */
+    private FileOutputStream fos;
     /** What the bytes go into. */
     private File target;
     /** What `target` is renamed to at the end, or null to keep it where it is. */
@@ -146,6 +148,13 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
                 return OK;
             case "end":
                 if (out == null) throw new IOException("no transfer open");
+                if (fos != null) {
+                    // On the disk before the rename, as desktop/atomic.mts: a power
+                    // cut can keep the rename and lose unflushed bytes.
+                    out.flush();
+                    fos.getFD().sync();
+                    fos = null;
+                }
                 out.close();
                 out = null;
                 if (expected >= 0 && written != expected) {
@@ -226,7 +235,8 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
         written = 0;
         target = file;
         dest = last;
-        out = new BufferedOutputStream(new FileOutputStream(file), 1 << 20);
+        fos = new FileOutputStream(file);
+        out = new BufferedOutputStream(fos, 1 << 20);
     }
 
     /** A copy of the board as it is, before the save changes it (MbrdBackups). Never stops the save. */
@@ -288,6 +298,7 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
             } catch (IOException ignored) {}
             out = null;
         }
+        fos = null;
         if (deletePartial && target != null) {
             //noinspection ResultOfMethodCallIgnored
             target.delete();

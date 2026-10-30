@@ -49,9 +49,10 @@ final class MbrdRoot {
     }
 
     /**
-     * Pick this run's folder. When the grant has arrived and Documents/mbrd/ has
-     * no store yet, the private store moves there once, on a thread of its own:
-     * every read of the root waits for it.
+     * Pick this run's folder. When the grant has arrived, the private store
+     * moves to Documents/mbrd/ once (when that has no store yet), and every
+     * board a "Not now" run saved privately moves with it, on a thread of its
+     * own: every read of the root waits for it.
      */
     static synchronized void use(Context ctx, boolean publicRoot) {
         privateBoards = new File(ctx.getFilesDir(), "mbrd");
@@ -59,7 +60,8 @@ final class MbrdRoot {
         boards = publicRoot ? publicBoards() : privateBoards;
         File to = new File(boards, ".store");
         File from = new File(privateBoards, ".store");
-        if (!publicRoot || !holdsValues(from) || holdsValues(to)) {
+        boolean moveStore = publicRoot && holdsValues(from) && !holdsValues(to);
+        if (!moveStore && !(publicRoot && privateBoardFiles().length > 0)) {
             //noinspection ResultOfMethodCallIgnored
             to.mkdirs();
             return;
@@ -69,13 +71,131 @@ final class MbrdRoot {
         new Thread(
             () -> {
                 try {
-                    move(from, to);
+                    if (moveStore) move(from, to);
+                    if (shared) moveBoards(to);
                 } finally {
                     latch.countDown();
                 }
             },
             "mbrd-store-move"
         ).start();
+    }
+
+    /** The boards directly in the private folder. */
+    private static File[] privateBoardFiles() {
+        File[] found = privateBoards.listFiles(f -> f.isFile() && MbrdNames.isFolderBoard(privateBoards, f));
+        return found == null ? new File[0] : found;
+    }
+
+    /**
+     * The private boards into Documents/mbrd/, which "Not now" said allowing
+     * access would do, before an uninstall takes them. Each is copied and
+     * flushed under a free name (or found there already, from a run that died
+     * before the delete), every stored value naming its old path is rewritten,
+     * and only then is the private copy deleted. Whatever fails stays private,
+     * where boardRoots() still reaches it, and the next run tries again.
+     */
+    private static void moveBoards(File store) {
+        java.util.Map<String, String> moved = new java.util.LinkedHashMap<>();
+        for (File board : privateBoardFiles()) {
+            try {
+                File from = board.getCanonicalFile();
+                File dest;
+                synchronized (MbrdBoards.NAMES) {
+                    dest = landingFor(boards, from);
+                    if (!dest.exists()) {
+                        File tmp = new File(dest.getPath() + ".mbrd-tmp");
+                        try {
+                            copyFile(from, tmp);
+                        } catch (IOException e) {
+                            //noinspection ResultOfMethodCallIgnored
+                            tmp.delete();
+                            throw e;
+                        }
+                        if (!tmp.renameTo(dest)) throw new IOException("could not write " + dest.getName());
+                    }
+                }
+                moved.put(from.getPath(), dest.getCanonicalPath());
+            } catch (IOException e) {
+                Logger.warn(TAG, "could not move " + board.getName() + " into Documents/mbrd: " + e.getMessage());
+            }
+        }
+        if (moved.isEmpty()) return;
+        try {
+            repathValues(new File(store, "kv"), moved);
+        } catch (IOException e) {
+            // The shelf still names the private copies, which stay. The public
+            // ones are found again by their bytes next run, not copied twice.
+            Logger.error(TAG, "could not point the shelf at the moved boards, so they stay private this run", e);
+            return;
+        }
+        for (String path : moved.keySet()) {
+            //noinspection ResultOfMethodCallIgnored
+            new File(path).delete();
+            Logger.info(TAG, "moved " + path + " to " + moved.get(path));
+        }
+    }
+
+    /** Where `board` lands in `dir`: a file there already holding its bytes,
+     *  else the first free name. */
+    private static File landingFor(File dir, File board) throws IOException {
+        for (int n = 1; n <= 999; n++) {
+            File f = new File(dir, MbrdNames.nthName(MbrdNames.plainName(board.getName()), n));
+            if (!f.exists() || sameBytes(f, board)) return f;
+        }
+        throw new IOException("the boards folder has too many boards named " + board.getName());
+    }
+
+    /** Whether two files hold the same bytes. */
+    static boolean sameBytes(File a, File b) throws IOException {
+        if (!a.isFile() || !b.isFile() || a.length() != b.length()) return false;
+        try (InputStream x = new FileInputStream(a); InputStream y = new FileInputStream(b)) {
+            byte[] p = new byte[1 << 16];
+            byte[] q = new byte[1 << 16];
+            while (true) {
+                int n = fill(x, p);
+                if (fill(y, q) != n) return false;
+                for (int i = 0; i < n; i++) if (p[i] != q[i]) return false;
+                if (n < p.length) return true;
+            }
+        }
+    }
+
+    /** As many bytes as `buf` holds, or fewer only at the end of the stream.
+     *  InputStream.readNBytes is API 33. */
+    private static int fill(InputStream in, byte[] buf) throws IOException {
+        int at = 0;
+        int n;
+        while (at < buf.length && (n = in.read(buf, at, buf.length - at)) > 0) at += n;
+        return at;
+    }
+
+    /** Every value in `kv` that names a moved board's old path, rewritten to the
+     *  new one: the shelf's rows and the session's open board. Temp and rename,
+     *  as MbrdBytes writes them. */
+    private static void repathValues(File kv, java.util.Map<String, String> moved) throws IOException {
+        File[] values = kv.listFiles(f -> f.isFile() && !f.getName().endsWith(".tmp"));
+        if (values == null) return;
+        for (File value : values) {
+            byte[] raw = java.nio.file.Files.readAllBytes(value.toPath());
+            byte[] out = MbrdNames.repath(raw, moved);
+            if (out == raw) continue;
+            File tmp = new File(value.getPath() + ".tmp");
+            try (FileOutputStream o = new FileOutputStream(tmp)) {
+                o.write(out);
+                o.getFD().sync();
+            }
+            if (!tmp.renameTo(value)) throw new IOException("could not rewrite " + value.getName());
+        }
+    }
+
+    private static void copyFile(File from, File to) throws IOException {
+        try (InputStream in = new FileInputStream(from); FileOutputStream out = new FileOutputStream(to)) {
+            byte[] buf = new byte[1 << 16];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            out.getFD().sync();
+        }
     }
 
     /** This run's folder for boards: Documents/mbrd/ or the private one. */

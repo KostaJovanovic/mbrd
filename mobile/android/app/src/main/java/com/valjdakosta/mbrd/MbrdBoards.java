@@ -126,11 +126,10 @@ public class MbrdBoards extends Plugin {
             File bin = new File(dir, BIN);
             if (!bin.isDirectory() && !bin.mkdirs()) throw new IOException("could not make the bin");
             synchronized (NAMES) {
-                File to = new File(bin, MbrdNames.freeName(bin, file.getName()));
+                // A rename keeps the time of the last write, so the bin counts
+                // from the time in the name (MbrdNames.binnedAt).
+                File to = new File(bin, MbrdNames.freeName(bin, MbrdNames.binName(System.currentTimeMillis(), file.getName())));
                 if (!file.renameTo(to)) throw new IOException("could not move " + file.getName() + " to the bin");
-                // A rename keeps the time of the last write. The bin counts from now.
-                //noinspection ResultOfMethodCallIgnored
-                to.setLastModified(System.currentTimeMillis());
             }
             call.resolve();
         } catch (IOException e) {
@@ -167,7 +166,7 @@ public class MbrdBoards extends Plugin {
             File[] old = new File(folder(), BIN).listFiles();
             long cutoff = System.currentTimeMillis() - BIN_DAYS * 24 * 60 * 60 * 1000;
             if (old != null) for (File f : old) {
-                if (f.lastModified() >= cutoff) continue;
+                if (MbrdNames.binnedAt(f.getName(), f.lastModified()) >= cutoff) continue;
                 MbrdRoot.deleteTree(f);
                 Logger.info(TAG, "emptied from the bin: " + f.getName());
             }

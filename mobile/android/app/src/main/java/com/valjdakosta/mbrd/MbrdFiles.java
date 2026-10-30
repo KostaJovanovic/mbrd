@@ -28,7 +28,6 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -271,11 +270,13 @@ public class MbrdFiles extends Plugin {
         if (!named) safe += BOARD_EXT;
         File dest = new File(dir, MbrdNames.freeName(dir, safe));
         File tmp = new File(dest.getPath() + ".mbrd-tmp");
-        try (InputStream in = ctx.getContentResolver().openInputStream(uri); OutputStream out = new FileOutputStream(tmp)) {
+        try (InputStream in = ctx.getContentResolver().openInputStream(uri); FileOutputStream out = new FileOutputStream(tmp)) {
             if (in == null) throw new IOException("could not read " + name);
             byte[] buf = new byte[1 << 16];
             int n;
             while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            // On the disk before the rename, as MbrdBytes' "end".
+            out.getFD().sync();
         } catch (IOException e) {
             //noinspection ResultOfMethodCallIgnored
             tmp.delete();
@@ -397,7 +398,17 @@ public class MbrdFiles extends Plugin {
     public void read(PluginCall call) {
         try {
             String path = call.getString("path");
-            File file = path != null && READ_ONLY.contains(path) ? new File(path) : checked(path);
+            if (path != null && READ_ONLY.contains(path)) {
+                // Never into KNOWN: that is what checked() lets the byte channel
+                // write, and a backup is never written. desktop/files.ts's read() too.
+                File copy = new File(path);
+                if (!copy.isFile()) throw new IOException(copy.getName() + " is not there any more");
+                JSObject r = new JSObject();
+                r.put("file", described(copy.getName(), copy.getPath(), token(new Handed(copy, null))));
+                call.resolve(r);
+                return;
+            }
+            File file = checked(path);
             if (!file.isFile()) throw new IOException(file.getName() + " is not there any more");
             call.resolve(fileResult(file));
         } catch (IOException e) {

@@ -104,6 +104,35 @@ public class MbrdNamesTest {
         assertFalse(MbrdNames.isFolderBoard(root, new File("/storage/emulated/0/Documents/x.mbrd")));
     }
 
+    /** MbrdBoards' bin counts from the time in the name, which shared storage
+     *  cannot refuse as it can refuse setLastModified(). */
+    @Test
+    public void theBinCountsFromTheTimeInTheName() {
+        long now = 1_790_000_000_000L;
+        String name = MbrdNames.binName(now, "trip.mbrd");
+        assertEquals("1790000000000-trip.mbrd", name);
+        assertEquals(now, MbrdNames.binnedAt(name, 5));
+        assertEquals(now, MbrdNames.binnedAt(name.replace(".mbrd", " (2).mbrd"), 5));
+        // Binned before the name carried it: the modified time, as it was.
+        assertEquals(5, MbrdNames.binnedAt("trip.mbrd", 5));
+        assertEquals(5, MbrdNames.binnedAt("2024-trip.mbrd", 5));
+    }
+
+    /** MbrdRoot.moveBoards: the shelf's row follows its board out of the
+     *  private folder, and the bytes after the JSON line stay where they were. */
+    @Test
+    public void aMovedBoardsPathIsRewrittenInTheJsonLineOnly() {
+        String old = "/data/user/0/com.valjdakosta.mbrd/files/mbrd/trip.mbrd";
+        String now = "/storage/emulated/0/Documents/mbrd/trip.mbrd";
+        java.util.Map<String, String> moved = java.util.Collections.singletonMap(old, now);
+        byte[] raw = ("{\"v\":1,\"value\":[{\"id\":\"a\",\"path\":\"" + old + "\"},{\"path\":\"" + old + "x\"}]}\n"
+            + old).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String out = new String(MbrdNames.repath(raw, moved), java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals("{\"v\":1,\"value\":[{\"id\":\"a\",\"path\":\"" + now + "\"},{\"path\":\"" + old + "x\"}]}\n" + old, out);
+        byte[] untouched = "{\"v\":1,\"value\":{}}\n".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(MbrdNames.repath(untouched, moved) == untouched);
+    }
+
     @Test
     public void aClashGetsTheNextNumber() throws IOException {
         File dir = Files.createTempDirectory("mbrd-names").toFile();
