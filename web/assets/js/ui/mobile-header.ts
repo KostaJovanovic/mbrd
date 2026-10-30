@@ -128,7 +128,10 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
   const endSliderFocus = (e: PointerEvent) => sliderFocus.end(e.pointerId);
   globalThis.addEventListener('pointerup', endSliderFocus);
   globalThis.addEventListener('pointercancel', endSliderFocus);
-  panel.addEventListener('lostpointercapture', endSliderFocus, true);
+  // The row losing a touch to the panel is the drag starting (ui/sidebar.ts).
+  panel.addEventListener('lostpointercapture', e => {
+    if (!panel.hasPointerCapture(e.pointerId)) endSliderFocus(e);
+  }, true);
 
   // Toggle — a mid-fade interrupt can leave the pen pressable over an open panel.
   button.addEventListener('click', () => (isPanelOpen() ? closePanel() : openPanel()));

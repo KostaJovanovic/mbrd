@@ -120,7 +120,11 @@ export function initSidebar(cmds: SidebarCommands, viewport: Viewport | null = n
   const endSliderFocus = (e: PointerEvent) => sliderFocus.end(e.pointerId);
   globalThis.addEventListener('pointerup', endSliderFocus);
   globalThis.addEventListener('pointercancel', endSliderFocus);
-  sidebar!.addEventListener('lostpointercapture', endSliderFocus, true);
+  // A touch is held by the row it landed on, and touchSliders() moves that hold
+  // to the panel as the drag starts: the row losing it is the drag beginning.
+  sidebar!.addEventListener('lostpointercapture', e => {
+    if (!sidebar!.hasPointerCapture(e.pointerId)) endSliderFocus(e);
+  }, true);
 
   // Seven quick taps on the wordmark. The h1 and not #version, which is a
   // link whose first tap would open the patch notes - and a way in
