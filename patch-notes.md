@@ -163,7 +163,7 @@ back to the board.
 ## Releases
 
 ## In Step
-version: 0.794
+version: 0.794 - 0.796
 date: 5 November 2026
 
 - **Nothing in the app changed.** These notes were brought up to date.
