@@ -162,11 +162,29 @@ back to the board.
 
 ## Releases
 
-## Up to Date
-version: 0.791
-date: 30 October 2026
+## In Step
+version: 0.794
+date: 5 November 2026
 
 - **Nothing in the app changed.** These notes were brought up to date.
+
+## Themed Icon
+version: 0.793
+date: 4 November 2026
+
+- **On Android, the mbrd icon joins a themed home screen.**
+- [fix] **With themed icons on (Android 13 and later), the icon takes the
+  home screen's colour** rather than staying in full colour beside the rest.
+
+## Up to Date
+version: 0.791 - 0.792
+date: 30 October 2026
+
+- **These notes were brought up to date, and a slider on a phone stopped
+  flashing the board.**
+- [fix] **Dragging a slider in the phone's panel keeps the panel see-through
+  until your finger lifts.** It used to turn solid a moment into the drag, a
+  flash of the board on every whimsy change.
 
 ## Belt and Braces
 version: 0.781 - 0.790
