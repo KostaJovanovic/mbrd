@@ -113,7 +113,7 @@ function runWorker({ fails = [], existing = [], seed = {},
 
   const handlers = new Map();
   const self = {
-    location: { hostname: 'mbrd.example', origin: 'https://mbrd.example' },
+    location: { hostname: 'mbrd.example', origin: 'https://mbrd.example', href: 'https://mbrd.example/sw.js' },
     addEventListener: (type, fn) => handlers.set(type, fn),
     skipWaiting: async () => { self.skipped = true; },
     clients: { claim: async () => {} },
@@ -220,6 +220,38 @@ test('an offline navigation gets a shell page that forgets its redirect', async 
   assert.equal(res.redirected, false, 'a redirected response cannot answer a navigation');
   assert.equal(res.status, 200);
   assert.equal(await res.text(), 'page ./index.html');
+});
+
+test('an online navigation to a shell page answers from this version, not the network', async () => {
+  // Network first, the page after a deploy was the new markup while the
+  // bundle under it still came from this cache: two versions in one tab.
+  const worker = runWorker({
+    net: async url => ({ ok: true, status: 200, type: 'basic', redirected: false, body: `net ${url}` }),
+  });
+  await worker.fire('install');
+  for (const [path, page] of [['/', './index.html'], ['/index.html', './index.html'],
+    ['/patch', './patch.html'], ['/privacy.html', './privacy.html']]) {
+    const res = await worker.fireFetch({ url: `https://mbrd.example${path}`, mode: 'navigate' });
+    assert.equal(res.body, `net ${page}`, `${path} must be the precached ${page}`);
+  }
+});
+
+test('a navigation to any other path still goes to the network first', async () => {
+  // oauth.html is the sign-in popup: answered with the app, the board would
+  // boot inside it. A missing path gets the host 404 page, and offline the app.
+  let online = true;
+  const worker = runWorker({
+    net: async url => {
+      if (!online) throw new TypeError('offline');
+      return { ok: true, status: 200, type: 'basic', redirected: false, body: `net ${typeof url === 'string' ? url : url.url}` };
+    },
+  });
+  await worker.fire('install');
+  const oauth = await worker.fireFetch({ url: 'https://mbrd.example/oauth.html', mode: 'navigate' });
+  assert.equal(oauth.body, 'net https://mbrd.example/oauth.html');
+  online = false;
+  const missing = await worker.fireFetch({ url: 'https://mbrd.example/nowhere', mode: 'navigate' });
+  assert.equal(missing.body, 'net ./index.html', 'offline, a missing path is the app');
 });
 
 test('a complete update does replace the previous shell', async () => {

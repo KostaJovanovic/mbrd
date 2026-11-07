@@ -133,6 +133,10 @@ function marksOf(r: Marks): Marks {
 export const sameMarks = (a: Marks, z: Marks) =>
   MARK_KEYS.every(k => !!a[k] === !!z[k]) && (a.href || '') === (z.href || '');
 
+/** Two runs of text the same, words and marks. One rule for the view's redraw and Vomit Mode's lock. */
+export const sameRuns = (x: Run[], y: Run[]) =>
+  x.length === y.length && x.every((r, n) => r.text === y[n].text && !!r.raw === !!y[n].raw && sameMarks(r, y[n]));
+
 /**
  * Runs as the rest of this module expects them: no empty ones, neighbours with
  * one look joined, and no bold, italic or strike on a run of nothing but space,

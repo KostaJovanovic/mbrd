@@ -4,7 +4,7 @@
 
 // Namespaced: activate only deletes its own PREFIX caches.
 // VERSION is literal because save.bat bumps it by regex.
-const VERSION = 'mbrd-v797';
+const VERSION = 'mbrd-v798';
 const PREFIX = 'mbrd-';
 
 // Local dev: pass-through so a refresh always shows the latest edit. 169.254 is
@@ -152,18 +152,25 @@ self.addEventListener('fetch', event => {
 
   // Looks in this version's cache only, never the origin-wide caches.match().
 
-  // Navigations: known pages get their own cached shell; everything else gets
-  // index.html (the app handles unknown paths as not-found).
+  // Navigations. The three shell pages come from this version's cache, as the
+  // bundle does: fetched fresh after a deploy, the page ran the old cached
+  // bundle under its new markup. ui/web-update.ts moves the tab on. Any other
+  // path is a file of its own (oauth.html, the labs) or a missing one, so the
+  // network first, and index.html offline (the app handles it as not-found).
   if (req.mode === 'navigate') {
-    const page = /\/patch(\.html)?\/?$/.test(url.pathname) ? './patch.html'
-      : /\/privacy(\.html)?\/?$/.test(url.pathname) ? './privacy.html'
-        : './index.html';
+    const home = new URL('./', self.location.href).pathname;
+    const rest = url.pathname.startsWith(home) ? url.pathname.slice(home.length) : null;
+    const shell = rest === '' || rest === 'index.html' ? './index.html'
+      : /^patch(\.html|\/)?$/.test(rest) ? './patch.html'
+        : /^privacy(\.html|\/)?$/.test(rest) ? './privacy.html'
+          : null;
     event.respondWith((async () => {
+      const cache = await caches.open(VERSION);
+      if (shell) return (await cache.match(shell, { ignoreSearch: true })) || fetch(req);
       try {
         return await fetch(req);
       } catch {
-        const cache = await caches.open(VERSION);
-        return (await cache.match(page, { ignoreSearch: true })) || fetch(req);
+        return (await cache.match('./index.html', { ignoreSearch: true })) || fetch(req);
       }
     })());
     return;

@@ -3,8 +3,8 @@
 // the change arrived - a key, a paste, a phone keyboard's own replacement.
 // DOM-free, so node --test reaches it; view.ts asks these and enforces the answers.
 
-import { cmpPos, isText, sliceRuns, sameMarks, blockLen, blockText } from './model.ts';
-import type { Block, Doc, Pos, Run } from './model.ts';
+import { cmpPos, isText, sliceRuns, sameRuns, blockLen, blockText } from './model.ts';
+import type { Block, Doc, Pos } from './model.ts';
 
 /** How long Super waits after a word's last keystroke before locking it, mid-word or not. */
 export const SUPER_MS = 10_000;
@@ -31,9 +31,6 @@ export function lockAtEnd(doc: Doc): Pos {
 
 /** A position moved up to the lock if it was behind it. */
 export const clampToLock = (lock: Pos, p: Pos): Pos => (cmpPos(p, lock) < 0 ? lock : p);
-
-const sameRuns = (x: Run[], y: Run[]) =>
-  x.length === y.length && x.every((r, n) => r.text === y[n].text && !!r.raw === !!y[n].raw && sameMarks(r, y[n]));
 
 /** The same kind of block with the same settings, its words aside. The blank lines above it are spacing, not text. */
 function sameShape(a: Block, z: Block): boolean {

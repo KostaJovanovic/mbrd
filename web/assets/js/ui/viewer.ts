@@ -19,12 +19,12 @@ import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { travelMs, fastMs, baseMs } from '../canvas/viewport.ts';
 // The card a picture closes back into, measured live: the board may have moved since it opened.
 import { nodeFor } from '../canvas/items.ts';
-import { addFile, assetURL, getAsset, readText } from '../storage/assets.ts';
+import { addFile, getAsset, readText, urlOf } from '../storage/assets.ts';
 import { fileKey, lift } from '../consent.ts';
 import { mountEditor } from './editor/view.ts';
 import type { Editor, EditorOptions } from './editor/view.ts';
 import { measureForEdit } from './editor/markdown.ts';
-import { baseName, capturePointerSafely, copyText, formatBytes, icon, markClosed, wasClosed } from '../util.ts';
+import { baseName, capturePointerSafely, copyText, formatBytes, icon, markClosed, str, wasClosed } from '../util.ts';
 import { MARKDOWN, enrichEmbedCard } from '../canvas/renderers.ts';
 import { linkURL } from '../canvas/links.ts';
 import { embedFor, frameFor } from '../canvas/embed.ts';
@@ -38,13 +38,6 @@ import { LATEX, LATEX_SNIPPETS, latexPreview } from './latex-doc.ts';
 import { canReadDocument, readDocument } from './documents.ts';
 import type { Item } from '../board-model.ts';
 
-/**
- * `meta` is open by design (board-model.ts), so the three keys read out of
- * it here are narrowed rather than trusted. A non-string value reads as missing.
- */
-const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-/** The object URL for a hash out of `meta`, or null for anything that is not one. */
-const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? assetURL(hash) : null);
 
 /**
  * How much of a text file the viewer reads - ten times the card's preview,

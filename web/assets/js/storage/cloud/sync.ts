@@ -9,6 +9,7 @@ import { idbGet, idbSet } from '../idb.ts';
 import { getAsset, putAsset } from '../assets.ts';
 import { boardAssetHashes, mimeFor } from '../mbrd.ts';
 import { isHash } from '../../util.ts';
+import { sha256 } from '../../crypto.ts';
 
 import type { Asset } from '../assets.ts';
 import type { PackedBoard } from '../mbrd.ts';
@@ -336,6 +337,12 @@ export async function pullBoard(
     if (!file) continue;
     const ext = hashOf(file.name)?.ext ?? '';
     const blob = await store.fetch(file.id);
+    // The name is a claim. Bytes filed under a hash they do not have go into
+    // the next .mbrd, and unpackBoard() then refuses that whole file. A hole.
+    if (await sha256(await blob.arrayBuffer()) !== hash) {
+      console.warn(`[mbrd] ${file.name} in the cloud does not hold the bytes its name claims, so it was left out`);
+      continue;
+    }
     putAsset(hash, blob, { ext, mime: mimeFor(ext) || blob.type });
     onProgress(++done, wanted.length);
   }

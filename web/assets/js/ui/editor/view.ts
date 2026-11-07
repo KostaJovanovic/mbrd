@@ -9,7 +9,7 @@
 import {
   insertText, deleteRange, splitBlock, joinBackward, joinForward, toggleMark, hasMark, setHeading,
   toggleList, indent, toggleTask, blockShortcut, fenceShortcut, inlineShortcut, insertBlocks, sliceDoc,
-  findAll, replaceMatch, replaceAll, wordCount, marksAt, sameMarks, tidy, isText, isAtom, blockLen,
+  findAll, replaceMatch, replaceAll, wordCount, marksAt, sameRuns, tidy, isText, isAtom, blockLen,
   blockText, ordered, samePos, cmpPos, clampPos, para, withRoom, outlineOf, MATCH_MAX, toLevel,
 } from './model.ts';
 import type { Block, Doc, Edit, ListKind, Level, MarkKey, Marks, Match, OutlineEntry, Pos, Run, SceneEl } from './model.ts';
@@ -230,9 +230,6 @@ function scanRuns(el: HTMLElement): Run[] {
   walk(el, {});
   return tidy(out);
 }
-
-const sameRuns = (x: Run[], y: Run[]) =>
-  x.length === y.length && x.every((r, n) => r.text === y[n].text && !!r.raw === !!y[n].raw && sameMarks(r, y[n]));
 
 /**
  * The block an element shows now. The same object when nothing in it moved,

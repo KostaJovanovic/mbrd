@@ -9,15 +9,13 @@ import { byId } from '../state.ts';
 import { toast, busy } from '../notify.ts';
 import { withLift, fileKey, mb } from '../consent.ts';
 import { getAsset } from '../storage/assets.ts';
-import { extOf, isHash, isRecord } from '../util.ts';
+import { extOf, isHash, isRecord, str } from '../util.ts';
 import type { Item } from '../board-model.ts';
 import { readArchive, children, type ArchiveFile } from './archive.ts';
 import { importFiles, folderDraft, type Incoming } from './drop.ts';
 
 /** Cards being opened now. A second press while the first is reading does nothing. */
 const opening = new Set<string>();
-
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
 /** Unzip an archive card, or open a folder card. */
 export async function unpackItem(id: string) {

@@ -455,6 +455,31 @@ test('a missing asset in the cloud is a hole, not a refusal', async () => {
   assert.equal(getAsset(a), undefined);
 });
 
+test('a cloud asset whose bytes do not match its name is a hole, not a picture', async () => {
+  // Registered under the hash it claims, it went into the next .mbrd, and
+  // unpackBoard() then refused that whole file.
+  clearAssets();
+  const drive = fakeStore();
+  const a = await stubAsset('one');
+  const pushed = await pushBoard(drive.provider, 'brd1', boardWith([a]));
+  assert.ok(pushed.ok);
+  for (const f of drive.files.values()) {
+    if (f.name === `${a}.png`) drive.files.set(f.id, { ...f, blob: new Blob(['not one']) });
+  }
+
+  clearAssets();
+  const [remote] = await remoteBoards(drive.provider);
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const { board } = await pullBoard(drive.provider, remote);
+    assert.equal(board.items.length, 1);
+    assert.equal(getAsset(a), undefined);
+  } finally {
+    console.warn = warn;
+  }
+});
+
 // ---------------------------------------------------------------------------
 // The row
 // ---------------------------------------------------------------------------

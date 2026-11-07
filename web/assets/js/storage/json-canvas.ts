@@ -15,7 +15,7 @@ import type { Connection, ConnMeta, Item, ItemType } from '../board-model.ts';
 import { NOTE_MAX } from '../board-model.ts';
 import { flattenNoteRich } from '../canvas/note-model.ts';
 import type { NoteRichInput } from '../canvas/note-model.ts';
-import { isRecord } from '../util.ts';
+import { isRecord, str } from '../util.ts';
 
 type CanvasNode = {
   id: string,
@@ -125,7 +125,6 @@ export type Resolved = { hash: string, type: ItemType, name: string };
 export type Incoming = Partial<Item> & { id: string, type: ItemType, x: number, y: number, w: number, h: number };
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-const str = (v: unknown) => (typeof v === 'string' ? v : '');
 
 /**
  * A parsed .canvas as board items and connections. `file` finds the bytes of

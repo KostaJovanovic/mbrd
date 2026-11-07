@@ -9,7 +9,7 @@ import {
   select, selection, setAudioOrder, trackTitle,
 } from '../state.ts';
 import {
-  animMs, clamp, div, actAsButton, makeEditable, markClosed, readToken, reducedMotion, selectContents,
+  animMs, clamp, div, actAsButton, makeEditable, markClosed, readToken, reducedMotion, selectContents, str,
 } from '../util.ts';
 import {
   bindScrub, clock, seekInnerHTML, sizeSeekWave, reportPlayError, trackLength,
@@ -17,7 +17,7 @@ import {
 } from '../media/transport.ts';
 import { mobileOrder, applyAudioOrder } from '../arrange/arrangements.ts';
 import { cue } from '../cuelume/engine.ts';
-import { assetURL, getAsset, addFile } from '../storage/assets.ts';
+import { assetURL, getAsset, addFile, urlOf } from '../storage/assets.ts';
 import { nowPlaying, onNowPlaying } from '../canvas/audio.ts';
 import { edgeSpeed, EDGE_MAX } from '../canvas/edge-pan.ts';
 import {
@@ -44,9 +44,7 @@ const isTrack = (it: Item) => it.type === 'audio';
  */
 const isHidden = (it: Item) => it.meta?.playlistHidden === true;
 
-// Narrow open `meta` fields to the expected types.
-const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? assetURL(hash) : null);
+// Narrow open `meta` fields to the expected types (str and urlOf are shared).
 const secs = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
 type Row = { el: HTMLElement; item: Item };

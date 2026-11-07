@@ -798,6 +798,14 @@ export async function openCloudBoard(remote: { boardId: string, folder: string, 
 }
 
 /**
+ * The camera, for a merge's receipt: the merged block lands beside the whole
+ * board, usually out of sight. Injected, as the import summary's is, because
+ * storage sits below the viewport; unwired, the receipt has no Show.
+ */
+let showItems: ((ids: readonly string[]) => void) | null = null;
+export function setShowItems(fn: ((ids: readonly string[]) => void) | null) { showItems = fn; }
+
+/**
  * Fold a .mbrd into the board that is already open, instead of replacing it.
  *
  * The third thing that can be done with a board file, beside Open and Export,
@@ -826,17 +834,7 @@ export async function openCloudBoard(remote: { boardId: string, folder: string, 
  * had not thrown away. Mobile geometry is left for completeLayout() to pack,
  * since a column somebody else's phone packed says nothing about this one.
  */
-export const mergeBoardFile = (file: File) => mergeFile(file);
-
-/**
- * The camera, for a merge's receipt: the merged block lands beside the whole
- * board, usually out of sight. Injected, as the import summary's is, because
- * storage sits below the viewport; unwired, the receipt has no Show.
- */
-let showItems: ((ids: readonly string[]) => void) | null = null;
-export function setShowItems(fn: ((ids: readonly string[]) => void) | null) { showItems = fn; }
-
-async function mergeFile(file: File) {
+export async function mergeBoardFile(file: File) {
   const job = busy('Merging ' + file.name);
   try {
     const { board: data } = await unpackBoard(file);
@@ -899,7 +897,7 @@ export async function openOrMergeFile(file: File) {
     cancel: 'Cancel',
     danger: false,
   });
-  if (answer === 'go') return mergeFile(file);
+  if (answer === 'go') return mergeBoardFile(file);
   if (answer === 'keep') return openFile(file);
   return false;
 }

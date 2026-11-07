@@ -41,6 +41,9 @@ export function assetURL(hash: string): string | null {
   return a.url;
 }
 
+/** assetURL() for a hash read off a board, which may be anything. */
+export const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? assetURL(hash) : null);
+
 // Register a blob under a known hash (used by .mbrd unpack).
 export function putAsset(hash: string, blob: Blob, meta: AssetMeta = {}): Asset {
   const existing = store.get(hash);

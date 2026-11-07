@@ -404,6 +404,9 @@ export function formatBytes(n: number) {
 export const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/** A string, or '' for anything else: one field of a board read as text. */
+export const str = (v: unknown): string => (typeof v === 'string' ? v : '');
+
 /** Own-property test via prototype — Safari 15.4+ has hasOwn, older WebKit does not. */
 export const hasOwn = <T extends object>(table: T, key: PropertyKey): boolean =>
   Object.prototype.hasOwnProperty.call(table, key);

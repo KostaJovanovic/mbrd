@@ -14,12 +14,12 @@ import { bakeDisplayFor } from '../optimize/picture.ts';
 import {
   displayURLReady, ensureDisplay, bakedServes, type Crop, type Turn, type Matte,
 } from '../canvas/display.ts';
-import { baseName, clamp, div, actAsButton, readToken } from '../util.ts';
+import { baseName, clamp, div, actAsButton, readToken, str } from '../util.ts';
 import { mobileOrder } from '../arrange/arrangements.ts';
 // Shortest-column-first, shared with the board's own masonry - see the head of
 // that file for why the two walls are one rule and two surfaces.
 import { packColumns } from '../arrange/columns.ts';
-import { assetURL, readText } from '../storage/assets.ts';
+import { assetURL, readText, urlOf } from '../storage/assets.ts';
 import { buildContent, swatchHex, MARKDOWN, enrichEmbedCard, linkGlyph, fitMode } from '../canvas/renderers.ts';
 import { bareHost, linkURL } from '../canvas/links.ts';
 import { openExternal } from './leaving.ts';
@@ -50,12 +50,9 @@ import type { Viewport } from '../canvas/viewport.ts';
 
 /**
  * `meta` is open by design (see board-model.ts), so everything read out of it
- * here is narrowed rather than trusted - the same pair ui/viewer.ts and
- * ui/nowplaying.ts keep. A key of the wrong type is treated as missing.
+ * here is narrowed rather than trusted, by str() (util.ts) and urlOf()
+ * (storage/assets.ts). A key of the wrong type is treated as missing.
  */
-const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-/** The object URL for a hash out of `meta`, or null for anything that is not one. */
-const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? assetURL(hash) : null);
 const bakedHash = (item: Item): string => (typeof item.meta?.display === 'string' ? item.meta.display : '');
 
 /** Which shape a tile is drawn as, and which filler builds it - see kindOf(). */
