@@ -28,6 +28,21 @@ type Centre = () => Point;
 /** A way out is under way: the picture is being taken. One press, one level. */
 let leaving = false;
 
+/**
+ * The shape (width over height) of each board card's window, by the board it
+ * opens, measured on the way in while the card is on screen. The picture taken
+ * on the way out is drawn to it, so it fills the window with no bands. A board
+ * not entered through its card this session gets its own shape, as before.
+ */
+const windowShape = new Map<string, number>();
+
+function measureWindow(cardId: string, child: string) {
+  const peek = document.querySelector<HTMLElement>(`.item[data-id="${CSS.escape(cardId)}"] .board-peek`);
+  if (peek && peek.clientWidth > 0 && peek.clientHeight > 0) {
+    windowShape.set(child, peek.clientWidth / peek.clientHeight);
+  }
+}
+
 export function boardCommands(centre: Centre) {
   return {
     isBoardCard: (id: string) => !!childOf(byId(id)),
@@ -44,6 +59,7 @@ export function boardCommands(centre: Centre) {
       const child = childOf(byId(id));
       if (!child || held()) return;
       flushNoteEdit();
+      measureWindow(id, child);
       if (!enterBoard(child)) toast('That board cannot be opened from here');
     },
     /** The board cards a card could be moved into: every one on this board
@@ -93,7 +109,8 @@ async function leaveTo(level: number) {
   try {
     flushNoteEdit();
     while (boardPath().length > Math.max(0, level)) {
-      const thumb = await boardThumb().catch(() => null);
+      const here = boardPath().pop();
+      const thumb = await boardThumb(360, (here && windowShape.get(here)) || 0).catch(() => null);
       if (!leaveBoard(thumb)) break;
     }
   } finally {

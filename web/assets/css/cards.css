@@ -635,7 +635,10 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 8px 6px;
+  /* Everything inside the bookplate rule (.card::after, inset by
+     --card-rule-gap), with one margin all round: tighter, and the window
+     lies on the rule and the name sits on it. */
+  padding: calc(var(--card-rule-gap) + 6px);
 }
 .board-peek {
   flex: 1;
@@ -659,6 +662,9 @@
 }
 .board-card .card-name {
   flex: none;
+  /* A hair in from the window's edge, so the first letter does not look
+     shaved against the window's rounded corner above it. */
+  padding-inline: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

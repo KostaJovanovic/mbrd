@@ -71,6 +71,7 @@
 .item[data-type="note"] .item-bar,
 .item[data-type="link"] .item-bar,
 .item[data-type="model"] .item-bar,
+.item[data-type="board"] .item-bar,
 .item[data-type="generic"] .item-bar { display: none; }
 /* :not() avoids unhiding plates that types hide on purpose. */
 #world.zoom-far .item:not(.is-editing) .item-label { display: none; }

@@ -367,8 +367,17 @@
   box-shadow: var(--shadow-1);
   font-size: var(--t-small);
   white-space: nowrap;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s;
 }
 #board-path[hidden] { display: none; }
+/* The sidebar opens over this corner: faded out as the drawer dock is
+   (drawer.css), visibility held until the fade is done. */
+#sidebar.is-open ~ #board-path {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+}
 #board-path button {
   min-width: 0;
   overflow: hidden;

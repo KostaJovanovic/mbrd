@@ -367,6 +367,25 @@
   color: var(--ink-3);
 }
 
+/* The short card menu's top: Copy, Paste, Open, Tags as icons in a row, each
+   a full ctx-item to the keyboard and the press (ui/menu.ts, shortEntries). */
+.ctx-bar {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+}
+.ctx-bar .ctx-item {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+}
+.ctx-bar .ctx-item .ico {
+  width: 17px;
+  height: 17px;
+}
+.ctx-bar .ctx-item.is-inert .ico { opacity: 0.45; }
+
 .ctx-sep {
   height: 1px;
   margin: 5px 8px;

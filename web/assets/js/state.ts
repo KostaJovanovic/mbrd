@@ -30,7 +30,7 @@ export {
 import {
   clipboardBounds, clipboardHasOurs, clipboardOnBoardLoad, clipboardSize,
   copyItems as copyExactly, itemCount, itemsIn, linksAmong, pasteCopies, relink, clippedBoards,
-  setClipboardCarry, takeItems,
+  clippedItems, setClipboardCarry, takeItems,
 } from './clipboard.ts';
 
 export { clipboardBounds, clipboardHasOurs, clipboardSize, setClipboardCarry };
@@ -215,7 +215,7 @@ import {
   itemTags, boardTags, cleanTag,
   TAGS_PER_ITEM, TAG_MAX, MIN_CROP,
 } from './board-model.ts';
-import type { Connection, Item, ItemMeta, MobileHeader } from './board-model.ts';
+import type { Connection, Item, ItemMeta, MobileHeader, TrashEntry } from './board-model.ts';
 import type { MergePlan } from './merge.ts';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
@@ -302,13 +302,17 @@ export function setAssetNameLookup(fn: AssetNameLookup | null | undefined) {
 export function addItems(
   items: Record<string, unknown>[],
   label = 'Add',
-  options: { avoidOverlap?: boolean, links?: readonly Connection[] } = {},
+  options: { avoidOverlap?: boolean, links?: readonly Connection[], unbin?: readonly TrashEntry[] } = {},
 ) {
   // Lines between the arrivals (Duplicate, Paste), in the same step: undo takes
   // the cards, and a second commit for their lines would be a step that undid
   // nothing visible once they were gone.
   const room = Math.max(0, MAX_CONNECTIONS - board.connections.length);
   const links = (options.links ?? []).slice(0, room);
+  // Bin entries the arrivals replace - a cut landing (pasteItems()), in the
+  // same step for the same reason. Undo puts each back at its own place.
+  const unbin = new Set(options.unbin ?? []);
+  let unbinned: { entry: TrashEntry, index: number }[] = [];
   // Assign ascending z — a batch all reading topZ() would land flat.
   // Explicit z is honoured (loadBoard, bin restore need exact positions).
   let z = topZ();
@@ -328,8 +332,17 @@ export function addItems(
             if (links.length) {
               board.connections = [...board.connections, ...links];
               bus.emit('connections');
+            }
+            if (unbin.size) {
+              unbinned = [];
+              board.trash.forEach((entry, index) => { if (unbin.has(entry)) unbinned.push({ entry, index }); });
+              board.trash = board.trash.filter(entry => !unbin.has(entry));
+              if (unbinned.length) bus.emit('trash');
             } },
-    () => { const ids = new Set(added.map(a => a.id));
+    () => { // Ascending, so each lands at the index it was taken from.
+            for (const { entry, index } of unbinned) board.trash.splice(index, 0, entry);
+            if (unbinned.length) bus.emit('trash');
+            const ids = new Set(added.map(a => a.id));
             board.items = board.items.filter(i => !ids.has(i.id));
             ids.forEach(id => selection.delete(id));
             bus.emit('items', { added: [], removed: [...ids] }); bus.emit('selection');
@@ -508,7 +521,15 @@ export function duplicateInPlace(ids: Iterable<string>): Map<string, string> {
 // Clipboard commands that touch the board (cut + paste)
 // ---------------------------------------------------------------------------
 
-/** Copy then delete. Cut items go to the bin (recoverable). */
+/**
+ * The bin entries the last cut made, and the clipboard contents that cut put
+ * there. While the clipboard still holds them, a paste is the cut landing, so
+ * the paste takes those entries out of the bin: a moved card is not a deleted
+ * one. Matched by entry, not by id, so a later delete of the same card stays.
+ */
+let lastCut: { clip: readonly unknown[], entries: TrashEntry[] } | null = null;
+
+/** Copy then delete. Cut items go to the bin (recoverable) until pasted. */
 export function cutItems(ids: Iterable<string>) {
   // takeItems() instead of copyItems() to avoid a double-toast. travelling()
   // for the same set a copy takes: a paste that brought the notes back while
@@ -517,7 +538,8 @@ export function cutItems(ids: Iterable<string>) {
   const text = takeItems(src);
   if (!text) return '';
   const doomed = src.map(i => i.id);
-  removeItems(doomed, doomed.length > 1 ? `Cut ${doomed.length} items` : 'Cut');
+  const entries = removeItems(doomed, doomed.length > 1 ? `Cut ${doomed.length} items` : 'Cut');
+  lastCut = { clip: clippedItems(), entries };
   toast(`Cut ${itemCount(doomed.length)} to the bin`, '', undoAction());
   return text;
 }
@@ -526,8 +548,11 @@ export function cutItems(ids: Iterable<string>) {
 export function pasteItems(at: { x: number, y: number } | null = null) {
   const { items: copies, links } = pasteCopies(at);
   if (!copies.length) return [];
+  // takeItems() makes a new array on every copy or cut, so identity says
+  // nothing else was copied since. Entries already gone are skipped by addItems.
+  const unbin = lastCut && lastCut.clip === clippedItems() ? lastCut.entries : [];
   const added = addItems(carryChildren(copies, clippedBoards()), copies.length > 1 ? `Paste ${copies.length} items` : 'Paste',
-    { links });
+    { links, unbin });
   // Said even though the copies are visible: a paste fanned out from an
   // original off the edge of the screen can put every copy somewhere you are
   // not looking, and then a working paste and a dead key look the same.

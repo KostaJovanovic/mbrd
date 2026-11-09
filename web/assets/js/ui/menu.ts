@@ -2,6 +2,8 @@
 // One menu at a time, built fresh on each open. World point captured at open
 // so actions know "where". Entries carry an icon from icons.svg. One resting
 // home per action — repeats only where they reach something the home cannot.
+// A card opens a short menu first (shortEntries); More options turns the page
+// to the full one, and Shift+right-click goes straight there.
 
 // Imported directly — renaming is the drawn name, so the affordance stays here.
 import { canRenameItem, editItemName } from '../canvas/items.ts';
@@ -54,6 +56,8 @@ export type MenuEntry = {
   /** where the Back row goes - the parent menu it was drilled into from */
   to?: MenuEntry[];
   range?: MenuRange;
+  /** a row of icon-only cells, side by side - the short card menu's top */
+  bar?: MenuEntry[];
   action?: () => void;
 };
 
@@ -360,8 +364,8 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
   // Press, drag, release - see followPress().
   addEventListener('pointerdown', e => { down = { id: e.pointerId, x: e.clientX, y: e.clientY }; }, true);
   // Which hand the next menu comes from - see byKeys.
-  addEventListener('keydown', () => { byKeys = true; }, true);
-  addEventListener('pointerdown', () => { byKeys = false; }, true);
+  addEventListener('keydown', () => { byKeys = true; byShift = false; }, true);
+  addEventListener('pointerdown', e => { byKeys = false; byShift = e.shiftKey; }, true);
   addEventListener('pointermove', () => { byKeys = false; }, true);
   addEventListener('pointermove', followPress, true);
   addEventListener('pointerup', releasePress, true);
@@ -405,6 +409,9 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
 let down: { id: number, x: number, y: number } | null = null;
 /** The last input was a key, not a pointer: a menu it opens has nothing to animate from. */
 let byKeys = false;
+/** The last press held Shift: a card menu it opens is the full one. Not the
+ *  keyboard's, since Shift+F10 is how a keyboard opens the menu at all. */
+let byShift = false;
 /** The press a menu was opened under, and whether it has become a drag. */
 let press: { id: number, x: number, y: number, at: number, moved: boolean } | null = null;
 /** Travel that makes a press a drag rather than a click. */
@@ -570,9 +577,11 @@ export function openContextMenu(clientX: number, clientY: number, itemId: string
     close();
     opener = focusedNow();
     // No `at` — Feed drops the spatial rows that use it.
-    const own = withoutKeys(itemId
+    const full = withoutKeys(itemId
       ? itemEntries(itemId, selectionSize, null, true, rename, track)
       : sheetEntries(selectAll));
+    // A Playlist row keeps the one menu: it has no Open, Copy or Tags to put on top.
+    const own = itemId && !track && !byShift ? shortEntries(full, itemId, selectionSize, null) : full;
     render(lead.length ? [...lead, { sep: true }, ...own] : own, clientX, clientY);
     return;
   }
@@ -589,13 +598,70 @@ export function openContextMenu(clientX: number, clientY: number, itemId: string
     : !itemId ? canvasEntries(at)
     // Title card gets its own short menu when it is the sole selection.
     : selectionSize <= 1 && cmds!.isTitleCard(itemId) ? titleEntries(itemId, at)
-    : itemEntries(itemId, selectionSize, at);
+    : byShift ? itemEntries(itemId, selectionSize, at)
+    : shortEntries(itemEntries(itemId, selectionSize, at), itemId, selectionSize, at);
   render(entries, clientX, clientY);
 }
 
-/** The Feed's menu prints no key hints: a phone has no keyboard and no double-click. */
+/** The Feed's menu prints no key hints: a phone has no keyboard and no double-click.
+ *  A copied row keeps its place in the short menu. */
 const withoutKeys = (entries: MenuEntry[]): MenuEntry[] =>
-  entries.map(e => (e.accel ? { ...e, accel: '' } : e));
+  entries.map(e => {
+    if (!e.accel) return e;
+    const bare = { ...e, accel: '' };
+    const place = SHORT.get(e);
+    if (place) SHORT.set(bare, place);
+    return bare;
+  });
+
+/** Which rows of a card's full menu its short menu shows too: first, in the
+ *  body, or at the foot under More options. Marked where the row is written, so
+ *  the two menus cannot drift apart. Weak: the rows are rebuilt on every open. */
+type ShortPlace = 'lead' | 'body' | 'foot';
+const SHORT = new WeakMap<MenuEntry, ShortPlace>();
+const short = <T extends MenuEntry>(e: T, when = true, at: ShortPlace = 'body') => {
+  if (when) SHORT.set(e, at);
+  return e;
+};
+
+/**
+ * A card's short menu, Windows 11's way: Copy, Paste, Open and Tags as a row of
+ * icons, the few rows this kind of card is mostly opened for, More options for
+ * the full menu, and Rename and Delete at the foot. The icons hold their places
+ * greyed when they cannot act, so each is always where it was last time.
+ */
+function shortEntries(full: MenuEntry[], id: string, count: number, at: Point | null): MenuEntry[] {
+  const many = count > 1;
+  const board = !many && cmds!.isBoardCard(id);
+  const link = !many ? cmds!.linkURLOf(id) : null;
+  const open = many ? (cmds!.viewableSelected() >= 2 ? () => cmds!.openSelection() : null)
+    : board ? () => cmds!.openBoard(id)
+    : link ? () => cmds!.openLink(id)
+    : cmds!.canViewItem(id) ? () => cmds!.openViewer(id)
+    : null;
+  const taggable = cmds!.canTag();
+  const bar: MenuEntry[] = [
+    { label: many ? `Copy ${count} items` : 'Copy', icon: 'i-duplicate', disabled: !cmds!.canCopy(),
+      action: () => cmds!.copy() },
+    { label: 'Paste', icon: 'i-paste', disabled: !cmds!.canPaste(), action: () => cmds!.paste(at) },
+    // One icon whatever it opens, so the cell looks the same on every card.
+    { label: many ? `Open these ${count}` : board ? 'Open board' : 'Open', icon: 'i-expand',
+      disabled: !open, action: () => open?.() },
+    { label: 'Tags', icon: 'i-tag', disabled: !taggable, sub: taggable ? tagEntries() : undefined },
+  ];
+  const kept = (where: ShortPlace) => full.filter(e => SHORT.get(e) === where);
+  return [
+    { bar },
+    { sep: true },
+    ...kept('lead'),
+    ...kept('body'),
+    { sep: true },
+    // `to`, not `sub`: the page turns over to the full menu, as Windows does.
+    { label: 'More options', icon: 'i-more', to: full },
+    { sep: true },
+    ...kept('foot'),
+  ];
+}
 
 /**
  * The rows a right-click at this point would offer, for the S box
@@ -800,18 +866,20 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   // one address. Above everything else because the address is why the card exists.
   const linkURL = !many ? cmds!.linkURLOf(id) : null;
   const linkTop: MenuEntry[] = linkURL ? [
-    { label: 'Properties', icon: 'i-link', action: () => cmds!.linkProps(id) },
+    short({ label: 'Properties', icon: 'i-link', action: () => cmds!.linkProps(id) }),
     { sep: true },
   ] : [];
+  // A card whose file is gone is opened for one thing, which the short menu leads with.
+  const missing = !many && cmds!.canReplaceItemFile(id) && cmds!.itemFileMissing(id);
   return [
     ...linkTop,
     // First row on notes — the most common reason to right-click a sticky.
-    { label: 'Edit text', icon: 'i-edit-text', accel: 'dbl-click', hidden: !editable,
-      action: () => cmds!.editNote(id) },
+    short({ label: 'Edit text', icon: 'i-edit-text', accel: 'dbl-click', hidden: !editable,
+      action: () => cmds!.editNote(id) }),
     // Above Open — unsticking a rider is nearly always why you right-click it.
     // Hidden on non-stickies so it costs other types no row.
-    { label: many ? 'Unstick these' : 'Unstick', icon: 'i-lock-open',
-      hidden: !unstickable, action: () => cmds!.unstick() },
+    short({ label: many ? 'Unstick these' : 'Unstick', icon: 'i-lock-open',
+      hidden: !unstickable, action: () => cmds!.unstick() }),
     // Duplicated from canvas menu — a hold on a card is how touch starts collecting.
     // The Feed too, now that it draws the selection (ui/feed.ts).
     ...multiSelectEntry(),
@@ -834,8 +902,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: `Open these ${count}`, icon: 'i-expand', hidden: !many || cmds!.viewableSelected() < 2,
       action: () => cmds!.openSelection() },
     // Open reads a document; this writes in it.
-    { label: 'Edit', icon: 'i-edit-text', hidden: !writable,
-      action: () => cmds!.editDocument(id) },
+    short({ label: 'Edit', icon: 'i-edit-text', hidden: !writable,
+      action: () => cmds!.editDocument(id) }),
     // Copy/Paste instead of Duplicate — paste lands where the cursor is, on any
     // board. Ctrl+D still duplicates. i-duplicate icon on Copy deliberately.
     // Hidden when nothing picked may be copied - the cleaned board's card.
@@ -852,38 +920,39 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // ── What the card is ──
     { sep: true, hidden: !coverable && !covered && !editable_picture && !demosaicable
       && !flippable && !turnable && !tintable && !noteTintable && !fenceItem && !taggable },
-    { label: covered ? 'Change picture' : 'Set a picture', icon: 'i-picture',
-      hidden: !coverable, action: () => cmds!.setCover(id) },
+    // Picture before Set a picture in the short menu, which takes rows in this order.
+    // Picture edits fold — "Picture" not "Edit" because adjacent rows rename/delete the item.
+    short({ label: 'Picture', icon: 'i-crop', hidden: !editable_picture,
+      sub: editable_picture ? pictureEdits : undefined }),
+    short({ label: covered ? 'Change picture' : 'Set a picture', icon: 'i-picture',
+      hidden: !coverable, action: () => cmds!.setCover(id) }),
     { label: 'Remove picture', icon: 'i-picture-off', hidden: !covered,
       action: () => cmds!.clearCover(id) },
-    // Picture edits fold — "Picture" not "Edit" because adjacent rows rename/delete the item.
-    { label: 'Picture', icon: 'i-crop', hidden: !editable_picture,
-      sub: editable_picture ? pictureEdits : undefined },
     // A RAW card draws its camera's preview. This develops the sensor itself.
-    { label: 'Demosaic', icon: 'i-demosaic', hidden: !demosaicable,
-      action: () => cmds!.demosaic(id) },
+    short({ label: 'Demosaic', icon: 'i-demosaic', hidden: !demosaicable,
+      action: () => cmds!.demosaic(id) }),
     // Outside the fold — "No card" is about the item, not the picture.
     // Also avoids a confusing double-tick alongside the Fill/Fit radio pair.
-    { label: 'No card', icon: 'i-cut-out', check: bare, hidden: !bareable,
-      action: () => cmds!.setItemBare(id, !bare) },
+    short({ label: 'No card', icon: 'i-cut-out', check: bare, hidden: !bareable,
+      action: () => cmds!.setItemBare(id, !bare) }),
     // A sticky's answer in the same place: the paper stays, see-through.
-    { label: 'Low opacity', icon: 'i-low-opacity', check: faded, hidden: !fadeable,
-      action: () => cmds!.setItemFaded(id, !faded) },
+    short({ label: 'Low opacity', icon: 'i-low-opacity', check: faded, hidden: !fadeable,
+      action: () => cmds!.setItemFaded(id, !faded) }),
     // OBJ up-axis is ambiguous — per-item, not in Appearance.
-    { label: 'Turn it upright', icon: 'i-upright', hidden: !flippable,
-      action: () => cmds!.flipUpAxis(id) },
+    short({ label: 'Turn it upright', icon: 'i-upright', hidden: !flippable,
+      action: () => cmds!.flipUpAxis(id) }),
     // Below upright — the ordinary gesture, not the rare fix.
-    { label: 'Rotate model', icon: 'i-rotate', hidden: !turnable,
-      action: () => cmds!.rotateModel(id) },
+    short({ label: 'Rotate model', icon: 'i-rotate', hidden: !turnable,
+      action: () => cmds!.rotateModel(id) }),
     // Full palette — every shape takes every tint. Tick shows the current one.
-    { label: 'Colour', icon: 'i-swatch', hidden: !tintable,
-      sub: tintable ? stickerTintEntries(id) : undefined },
+    short({ label: 'Colour', icon: 'i-swatch', hidden: !tintable,
+      sub: tintable ? stickerTintEntries(id) : undefined }),
     // A fence's colour, washed over the whole region.
-    { label: 'Colour', icon: 'i-swatch', hidden: !fenceItem,
-      sub: fenceItem ? fenceTintEntries(id) : undefined },
+    short({ label: 'Colour', icon: 'i-swatch', hidden: !fenceItem,
+      sub: fenceItem ? fenceTintEntries(id) : undefined }),
     // A note's sheet, changed after the fact rather than retyped on another.
-    { label: 'Colour', icon: 'i-swatch', hidden: !noteTintable,
-      sub: noteTintable ? noteTintEntries(id) : undefined },
+    short({ label: 'Colour', icon: 'i-swatch', hidden: !noteTintable,
+      sub: noteTintable ? noteTintEntries(id) : undefined }),
     // Tags fold — selection-wide, on Feed too (tags are about the card, not position).
     { label: 'Tags', icon: 'i-tag', hidden: !taggable,
       sub: taggable ? tagEntries() : undefined },
@@ -893,28 +962,28 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Mirrored pair — Anchor until all locked, then Unanchor. Two rows (not
     // conditional icon) so tests/icons.test.js can grep for every icon literal.
     // "Anchor" not "Lock" — only geometry is fixed; stored key stays isLocked().
-    { label: many ? 'Anchor these' : 'Anchor', icon: 'i-anchor', accel: 'L',
-      hidden: !lockable || allLocked, action: () => cmds!.lockSelection(true) },
-    { label: many ? 'Unanchor these' : 'Unanchor', icon: 'i-anchor-off', accel: 'L',
-      hidden: !lockable || !allLocked, action: () => cmds!.lockSelection(false) },
+    short({ label: many ? 'Anchor these' : 'Anchor', icon: 'i-anchor', accel: 'L',
+      hidden: !lockable || allLocked, action: () => cmds!.lockSelection(true) }),
+    short({ label: many ? 'Unanchor these' : 'Unanchor', icon: 'i-anchor-off', accel: 'L',
+      hidden: !lockable || !allLocked, action: () => cmds!.lockSelection(false) }),
     // Works on groups. Not on Feed — tile sizes are the packer's.
     { label: many ? `Reset ${count} sizes` : 'Reset size', icon: 'i-reset-size',
       hidden: mobile, action: () => cmds!.resetSize() },
     // Single-item — arranges contents of the fence under the cursor.
-    { label: 'Rearrange fence', icon: 'i-rearrange',
+    short({ label: 'Rearrange fence', icon: 'i-rearrange',
       hidden: mobile || many || !cmds!.isFenceItem(id),
-      action: () => cmds!.rearrangeFence(id) },
+      action: () => cmds!.rearrangeFence(id) }),
     { label: 'Nudge fence', icon: 'i-nudge',
       hidden: mobile || many || !cmds!.isFenceItem(id),
       action: () => cmds!.nudgeFence(id) },
-    { label: 'Fit to contents', icon: 'i-fence',
+    short({ label: 'Fit to contents', icon: 'i-fence',
       hidden: mobile || many || !cmds!.isFenceItem(id),
-      action: () => cmds!.fitFence(id) },
+      action: () => cmds!.fitFence(id) }),
     // Mirrored pair — a fence folds down to its name bar, its cards out of sight.
-    { label: 'Roll up', icon: 'i-arrow-up', hidden: !fenceItem || rolled,
-      action: () => cmds!.setFenceRolled(id, true) },
-    { label: 'Roll down', icon: 'i-expand', hidden: !fenceItem || !rolled,
-      action: () => cmds!.setFenceRolled(id, false) },
+    short({ label: 'Roll up', icon: 'i-arrow-up', hidden: !fenceItem || rolled,
+      action: () => cmds!.setFenceRolled(id, true) }),
+    short({ label: 'Roll down', icon: 'i-expand', hidden: !fenceItem || !rolled,
+      action: () => cmds!.setFenceRolled(id, false) }),
     // Group only — relays the selection about its own centre.
     { label: `Rearrange these ${count}`, icon: 'i-rearrange', hidden: !many,
       action: () => cmds!.rearrangeSelection() },
@@ -923,13 +992,14 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       action: () => cmds!.nudgeSelection() },
     // Group only — eight alignment options stay in a fold to keep the menu short.
     // Canvas only: the Feed's column has no edges to line up.
-    { label: 'Align & distribute', icon: 'i-align-center', hidden: mobile || !many,
-      sub: alignDistributeEntries(id) },
+    short({ label: 'Align & distribute', icon: 'i-align-center', hidden: mobile || !many,
+      sub: alignDistributeEntries(id) }),
     // Group only. Also reachable via rubber-band prompt — this covers shift-click
-    // selections where there is no band. The Feed has no fences.
-    { label: many ? `Fence these ${count}` : 'Fence it', icon: 'i-fence', accel: 'Ctrl G',
+    // selections where there is no band. The Feed has no fences. Short only for a
+    // group: fencing one card is rare.
+    short({ label: many ? `Fence these ${count}` : 'Fence it', icon: 'i-fence', accel: 'Ctrl G',
       hidden: mobile || (!many && cmds!.isFenceItem(id)),
-      action: () => cmds!.fenceSelection() },
+      action: () => cmds!.fenceSelection() }, many),
     // Two or more drawings picked: one card of them, every stroke where it was.
     { label: 'Combine drawings', icon: 'i-draw', hidden: mobile || !many || !cmds!.canCombineDrawings(),
       action: () => cmds!.combineDrawings() },
@@ -944,8 +1014,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // ── The board, from here ──
     { sep: true, hidden: mobile },
     // Feed has no "here" — the packer decides placement.
-    { label: 'Add a note here', icon: 'i-pen', accel: 'N', hidden: mobile,
-      action: () => cmds!.addNoteAt(at) },
+    short({ label: 'Add a note here', icon: 'i-pen', accel: 'N', hidden: mobile,
+      action: () => cmds!.addNoteAt(at) }),
     // Not on Feed — there the tile menu is the only menu, and a board action
     // on it reads as something done to the tile.
     { label: 'Reload board', icon: 'i-reload', hidden: mobile, action: () => cmds!.reload() },
@@ -962,14 +1032,15 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // The card stays - its place, width, tags and lines - and holds another file.
     // On a card whose file is gone the same picker is the way to find it: the
     // file it lost heals the card (import/drop.ts), and any other replaces it.
-    { label: cmds!.itemFileMissing(id) ? 'Find the file…' : 'Replace file…', icon: 'i-swap',
+    short({ label: cmds!.itemFileMissing(id) ? 'Find the file…' : 'Replace file…', icon: 'i-swap',
       hidden: many || !cmds!.canReplaceItemFile(id), action: () => cmds!.replaceItemFile(id) },
-    { label: 'Rename', icon: 'i-rename', accel: 'F2', hidden: !renamable,
-      action: rename ?? (() => editItemName(id)) },
+    missing, 'lead'),
+    short({ label: 'Rename', icon: 'i-rename', accel: 'F2', hidden: !renamable,
+      action: rename ?? (() => editItemName(id)) }, true, 'foot'),
     // A fence is not a card, and "Delete item" read as if it took its cards too.
-    { label: !many && cmds!.isFenceItem(id) ? 'Remove fence' : `Delete ${what}`,
+    short({ label: !many && cmds!.isFenceItem(id) ? 'Remove fence' : `Delete ${what}`,
       icon: 'i-delete', accel: 'Del', danger: true,
-      action: () => cmds!.deleteSelection() },
+      action: () => cmds!.deleteSelection() }, true, 'foot'),
   ];
 }
 
@@ -980,12 +1051,13 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
 function multiSelectEntry(always = false): MenuEntry[] {
   const on = cmds!.multiSelect();
   if (!byTouch && !on && !always) return [];
-  return [{
+  // In the short card menu too: a hold is how a finger starts a group.
+  return [short({
     label: on ? 'Done selecting' : 'Select multiple',
     icon: 'i-select-all',
     check: on,
     action: () => cmds!.toggleMultiSelect(),
-  }];
+  })];
 }
 
 /** "Remove its connections" / "Remove their N connections", or nothing. */
@@ -1373,24 +1445,48 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
       panel.append(rangeRow(entry));
       continue;
     }
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.setAttribute('role', 'menuitem');
-    btn.className = 'ctx-item';
-    if (entry.danger) btn.classList.add('is-danger');
-    // `disabled` stops the press; arrow-key walk skips it (cannot take focus).
-    if (entry.disabled) { btn.disabled = true; btn.classList.add('is-inert'); }
-    if (entry.check != null) {
-      btn.classList.toggle('is-checked', !!entry.check);
-      btn.setAttribute('role', 'menuitemcheckbox');
-      btn.setAttribute('aria-checked', String(!!entry.check));
+    // A row of icon-only buttons - the short card menu's top. Each is a row
+    // like any other to the keyboard, the press and the hover child.
+    if (entry.bar) {
+      const bar = document.createElement('div');
+      bar.className = 'ctx-bar';
+      bar.setAttribute('role', 'group');
+      for (const cell of entry.bar) if (!cell.hidden) bar.append(rowButton(cell, entries, panel, true));
+      panel.append(bar);
+      continue;
     }
+    panel.append(rowButton(entry, entries, panel));
+  }
+  // Nor at the foot.
+  if (panel.lastElementChild?.classList.contains('ctx-sep')) panel.lastElementChild.remove();
+}
 
-    // Icon column (first of three). A swatch takes this column instead when the
-    // row's subject is a colour.
-    if (entry.swatch) btn.append(chip(entry.swatch));
-    else if (entry.icon) btn.append(icon(entry.icon));
+/** One pressable row. `iconOnly` draws the icon alone, its name kept for the
+ *  screen reader and the tooltip. */
+function rowButton(entry: MenuEntry, entries: MenuEntry[], panel: HTMLElement, iconOnly = false) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.setAttribute('role', 'menuitem');
+  btn.className = 'ctx-item';
+  if (entry.danger) btn.classList.add('is-danger');
+  // `disabled` stops the press; arrow-key walk skips it (cannot take focus).
+  if (entry.disabled) { btn.disabled = true; btn.classList.add('is-inert'); }
+  if (entry.check != null) {
+    btn.classList.toggle('is-checked', !!entry.check);
+    btn.setAttribute('role', 'menuitemcheckbox');
+    btn.setAttribute('aria-checked', String(!!entry.check));
+  }
 
+  // Icon column (first of three). A swatch takes this column instead when the
+  // row's subject is a colour.
+  if (entry.swatch) btn.append(chip(entry.swatch));
+  else if (entry.icon) btn.append(icon(entry.icon));
+
+  if (iconOnly) {
+    // Asserted, as below: a cell is a row like any other, and has a name.
+    btn.setAttribute('aria-label', entry.label!);
+    btn.title = entry.label!;
+  } else {
     const label = document.createElement('span');
     // Asserted — separator and slider (handled above) are the only label-less rows.
     label.textContent = entry.label!;
@@ -1402,66 +1498,64 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
       label.append(hint);
     }
     btn.append(label);
-
-    if (entry.accel) {
-      const accel = document.createElement('kbd');
-      accel.textContent = entry.accel;
-      btn.append(accel);
-    }
-    // Tick on the trailing edge (where accel keys sit), drawn from the icon sprite.
-    if (entry.check != null) btn.append(icon('i-check', 'ctx-tick'));
-    // Trailing specimen — see MenuEntry.swatchEnd.
-    if (entry.swatchEnd) btn.append(chip(entry.swatchEnd, 'ctx-chip is-end'));
-    // sub = child menu in place; to = Back to parent; else = action + close.
-    if (entry.sub || entry.to) {
-      btn.setAttribute('aria-haspopup', 'menu');
-      if (entry.sub) btn.append(icon('i-chevron-right', 'ctx-chevron'));
-      btn.addEventListener('click', e => {
-        // If this row's child is already open (from hover), a pointer click is
-        // a no-op — the user can already see the list. Keyboard (detail === 0)
-        // always drills in, since the child may not be visible.
-        const byKey = e.detail === 0;
-        if (entry.sub && child && childRow === btn && !byKey) return;
-        // Sound only when something actually happens.
-        cue('pick');
-        swap(entry.sub ? subMenu(entry.sub, entries) : entry.to!);
-      });
-      // Hover also opens the child — click is kept for touch/keyboard. From
-      // nothing open it waits a beat, so a pointer running down the menu does
-      // not pop every fold it crosses; from another fold it swaps at once, with
-      // no entrance, since one panel replacing another has nowhere to arrive from.
-      if (entry.sub) {
-        btn.addEventListener('pointerenter', e => {
-          if (e.pointerType !== 'mouse') return;
-          clearTimeout(dwellTimer);
-          if (child) { openChild(btn, entry.sub!, panel, entry.label, childRow !== btn); return; }
-          dwellTimer = setTimeout(() => {
-            if (btn.isConnected) openChild(btn, entry.sub!, panel, entry.label);
-          }, DWELL_MS);
-        });
-        btn.addEventListener('pointerleave', () => clearTimeout(dwellTimer));
-      }
-    } else {
-      // Hovering past a fold's row closes its child (only from the parent
-      // panel) - unless the pointer is crossing it on the way to the child,
-      // where the row's grace decides instead.
-      btn.addEventListener('pointerenter', e => {
-        if (e.pointerType !== 'mouse' || childFrom !== panel) return;
-        if (aimingAtChild(e.clientX, e.clientY)) return;
-        closeChild();
-      });
-      btn.addEventListener('click', () => {
-        close();
-        // Cue before the action so both sounds play (press + result).
-        cue('pick');
-        // This branch is all action rows — sep/slider/fold/back handled above.
-        entry.action!();
-      });
-    }
-    panel.append(btn);
   }
-  // Nor at the foot.
-  if (panel.lastElementChild?.classList.contains('ctx-sep')) panel.lastElementChild.remove();
+
+  if (entry.accel && !iconOnly) {
+    const accel = document.createElement('kbd');
+    accel.textContent = entry.accel;
+    btn.append(accel);
+  }
+  // Tick on the trailing edge (where accel keys sit), drawn from the icon sprite.
+  if (entry.check != null) btn.append(icon('i-check', 'ctx-tick'));
+  // Trailing specimen — see MenuEntry.swatchEnd.
+  if (entry.swatchEnd) btn.append(chip(entry.swatchEnd, 'ctx-chip is-end'));
+  // sub = child menu in place; to = Back to parent; else = action + close.
+  if (entry.sub || entry.to) {
+    btn.setAttribute('aria-haspopup', 'menu');
+    if (entry.sub && !iconOnly) btn.append(icon('i-chevron-right', 'ctx-chevron'));
+    btn.addEventListener('click', e => {
+      // If this row's child is already open (from hover), a pointer click is
+      // a no-op — the user can already see the list. Keyboard (detail === 0)
+      // always drills in, since the child may not be visible.
+      const byKey = e.detail === 0;
+      if (entry.sub && child && childRow === btn && !byKey) return;
+      // Sound only when something actually happens.
+      cue('pick');
+      swap(entry.sub ? subMenu(entry.sub, entries) : entry.to!);
+    });
+    // Hover also opens the child — click is kept for touch/keyboard. From
+    // nothing open it waits a beat, so a pointer running down the menu does
+    // not pop every fold it crosses; from another fold it swaps at once, with
+    // no entrance, since one panel replacing another has nowhere to arrive from.
+    if (entry.sub) {
+      btn.addEventListener('pointerenter', e => {
+        if (e.pointerType !== 'mouse') return;
+        clearTimeout(dwellTimer);
+        if (child) { openChild(btn, entry.sub!, panel, entry.label, childRow !== btn); return; }
+        dwellTimer = setTimeout(() => {
+          if (btn.isConnected) openChild(btn, entry.sub!, panel, entry.label);
+        }, DWELL_MS);
+      });
+      btn.addEventListener('pointerleave', () => clearTimeout(dwellTimer));
+    }
+  } else {
+    // Hovering past a fold's row closes its child (only from the parent
+    // panel) - unless the pointer is crossing it on the way to the child,
+    // where the row's grace decides instead.
+    btn.addEventListener('pointerenter', e => {
+      if (e.pointerType !== 'mouse' || childFrom !== panel) return;
+      if (aimingAtChild(e.clientX, e.clientY)) return;
+      closeChild();
+    });
+    btn.addEventListener('click', () => {
+      close();
+      // Cue before the action so both sounds play (press + result).
+      cue('pick');
+      // This branch is all action rows — sep/slider/fold/back handled above.
+      entry.action!();
+    });
+  }
+  return btn;
 }
 
 // ---------------------------------------------------------------------------

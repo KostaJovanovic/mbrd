@@ -2,8 +2,8 @@
 // not know survives a load and a save (normalizeBoard() keeps it, and
 // serializeBoard() writes it back). A ZIP whose leading `mimetype` names
 // another format is refused by name, while a board with no `mimetype` at all
-// - every file from before the entry existed - still opens. And a new board's
-// name stays on one line, while a header from before `wrap` existed wraps.
+// - every file from before the entry existed - still opens. And a board's
+// name wraps unless its header says `wrap: false`.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,9 +26,9 @@ test('an unknown board.json key rides through a load and a save', () => {
   assert.equal(out.title, 'Newer');
 });
 
-test('a new board keeps its name on one line, and an older header still wraps', () => {
-  // No header at all is a new board, which takes the default: off.
-  assert.equal(normalizeBoard({ title: 'T', items: [] }).mobileHeader.wrap, false);
+test('a new board wraps its name, and an older header still wraps', () => {
+  // No header at all is a new board, which takes the default: on.
+  assert.equal(normalizeBoard({ title: 'T', items: [] }).mobileHeader.wrap, true);
   // A header written before `wrap` existed was drawn wrapped, and reads so.
   assert.equal(normalizeBoard({ title: 'T', items: [], mobileHeader: { size: 13 } }).mobileHeader.wrap, true);
   for (const wrap of [true, false]) {

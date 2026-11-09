@@ -863,7 +863,9 @@ function paintTitle({ ctx, it, w, h, look, scale }: Paint) {
   const r = Math.min(look.radius * scale, w / 2, ch / 2);
   ctx.save();
   cardFace(ctx, w, ch, look, scale);
-  if (look.detail !== 'full' || !board.title) { ctx.restore(); return; }
+  // In a thumbnail too, unlike other text: the name is the one line that
+  // still reads at a board card's size, and the card is blank without it.
+  if (!board.title) { ctx.restore(); return; }
 
   roundRect(ctx, -w / 2, -ch / 2, w, ch, r);
   ctx.clip();
@@ -1686,18 +1688,21 @@ type Plan = {
  * controls without drawing anything, and so the two can never disagree about
  * it. Null when the board is empty, which is what both callers do nothing on.
  */
-function planRender(detail: Detail, opts: ExportOpts, maxEdge: number): Plan | null {
+function planRender(detail: Detail, opts: ExportOpts, maxEdge: number, aspect = 0): Plan | null {
   const only = opts.only ? new Set(opts.only) : null;
   // The lines follow: paintWeb() draws a connection only between two of these.
   const items = only ? drawable().filter(i => only.has(i.id)) : drawable();
-  const b = itemBounds(items);
-  if (!b) return null;
+  const found = itemBounds(items);
+  if (!found) return null;
 
   // A thumbnail keeps the old flat margin and the old question - draw the
   // board at its own size, shrunk to fit. An export measures both in the
   // world: a margin in millimetres of board, a scale in dots per inch of it.
   const full = detail === 'full';
   const margin = full ? toUnits(Math.max(0, opts.margin), board.settings.scale) : MARGIN;
+  // A picture wanted in a shape (width over height): more of the board round
+  // the cards, evenly on the short side, rather than the cards stretched.
+  const b = aspect > 0 ? toAspect(found, margin, aspect) : found;
   const worldW = (b.x1 - b.x0) + margin * 2;
   const worldH = (b.y1 - b.y0) + margin * 2;
   const want = full ? pixelsPerUnit(opts.ppi, board.settings.scale) : 1;
@@ -1708,6 +1713,16 @@ function planRender(detail: Detail, opts: ExportOpts, maxEdge: number): Plan | n
     h: Math.max(1, Math.ceil(worldH * scale)),
     ppi: ppiOf(scale, board.settings.scale),
   };
+}
+
+/** A bounding box grown on its short side until, with `margin` round it, it
+ *  is `aspect` wide for each unit tall. */
+function toAspect<B extends { x0: number, y0: number, x1: number, y1: number }>(b: B, margin: number, aspect: number): B {
+  const w = b.x1 - b.x0 + margin * 2;
+  const h = b.y1 - b.y0 + margin * 2;
+  const dx = Math.max(0, h * aspect - w) / 2;
+  const dy = Math.max(0, w / aspect - h) / 2;
+  return { ...b, x0: b.x0 - dx, x1: b.x1 + dx, y0: b.y0 - dy, y1: b.y1 + dy };
 }
 
 /**
@@ -1744,8 +1759,8 @@ export function exportSize(opts: ExportOpts) {
  * screen, straight for the rest, until an optional durable `meta.tilt` is
  * added deliberately rather than as an export side effect.
  */
-async function renderBoardCanvas(detail: Detail, opts: ExportOpts, maxEdge = MAX_EDGE, cards = true) {
-  const plan = planRender(detail, opts, maxEdge);
+async function renderBoardCanvas(detail: Detail, opts: ExportOpts, maxEdge = MAX_EDGE, cards = true, aspect = 0) {
+  const plan = planRender(detail, opts, maxEdge, aspect);
   if (!plan) return null;
   const { items, b, margin, scale, w: W, h: H } = plan;
 
@@ -1867,17 +1882,19 @@ export async function boardImage(opts: ExportOpts) {
  *
  * 'thumb' matters more than it used to: since the shelf started holding the
  * outgoing board, this runs on **every open and every new** - every stage
- * it skips (lattice, sheet, web, stock, shadows, text) is invisible at 360px
+ * it skips (lattice, sheet, web, stock, shadows, text but the title's) is invisible at 360px
  * and paid for on a gesture somebody is waiting on.
  */
-export async function boardThumb(max = 360) {
+export async function boardThumb(max = 360, aspect = 0) {
   // Rendered near the size it will end up, not at MAX_EDGE and shrunk. Used
   // to draw the whole board at 8000px - 256MB, four times iOS Safari's
   // canvas ceiling - so the thumbnail came back blank on exactly the
   // platform canvas/display.ts exists to protect, for a picture ending up
   // 360px wide. Four times the target leaves room for a smooth downscale,
-  // costing ~2MB instead of 256.
-  const shot = await renderBoardCanvas('thumb', EXPORT_DEFAULTS, max * 4);
+  // costing ~2MB instead of 256. `aspect` (width over height) is the shape of
+  // the window a board card shows it in (commands/boards.ts); 0 is the
+  // board's own shape.
+  const shot = await renderBoardCanvas('thumb', EXPORT_DEFAULTS, max * 4, true, aspect);
   if (!shot) return null;
   const scale = Math.min(1, max / Math.max(shot.w, shot.h));
   const tw = Math.max(1, Math.round(shot.w * scale));

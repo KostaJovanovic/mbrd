@@ -220,7 +220,9 @@ export function freezeClip(
   return picture;
 }
 
-export function removeItems(ids: Iterable<string>, label = 'Delete') {
+/** Bin these, one undo step. Answers the bin entries made, which a cut keeps
+ *  so the paste that lands it can take them back out (cutItems() in state.ts). */
+export function removeItems(ids: Iterable<string>, label = 'Delete'): TrashEntry[] {
   // Cascade folded in so delete + riders share one undo entry.
   const cascade = riderCascade(ids);
   const set = new Set([...ids, ...cascade.ids]);
@@ -229,7 +231,7 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
   board.items.forEach((item, index) => {
     if (set.has(item.id)) removed.push({ item, index });
   });
-  if (!removed.length) return;
+  if (!removed.length) return [];
   // Title card is hidden, not binned — it has its own restore button.
   const titleGone = removed.some(r => r.item.type === 'title');
   const wasHidden = board.titleHidden;
@@ -270,6 +272,7 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
   // Outside the closure: undo/redo re-run closures and must not re-announce.
   announceLimit(evicted);
   cue('fall');
+  return binned;
 }
 
 /**

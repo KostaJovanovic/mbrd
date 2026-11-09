@@ -122,6 +122,31 @@ test('cutting copies and deletes in one undo entry', () => {
   assert.equal(board.items.length, 1);
 });
 
+test('pasting a cut takes it out of the bin, in the paste\'s own undo step', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  const [b] = addItems([photo({ x: 2000, y: 0 })]);
+  cutItems([b.id]);
+  cutItems([a.id]);
+  assert.equal(board.trash.length, 2);
+  pasteItems();
+  assert.deepEqual(board.trash.map(t => t.item.id), [b.id], 'the landed cut is still in the bin');
+  pasteItems();
+  assert.equal(board.trash.length, 1, 'a second paste took something else out');
+  undo();
+  undo();
+  assert.deepEqual(board.trash.map(t => t.item.id), [a.id, b.id], 'undoing the paste left the bin short');
+});
+
+test('a paste of something copied after a cut leaves the cut in the bin', () => {
+  // Apart, or the second note rides the first and leaves with its cut.
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  const [b] = addItems([photo({ x: 2000, y: 0 })]);
+  cutItems([a.id]);
+  copyItems([b.id]);
+  pasteItems();
+  assert.deepEqual(board.trash.map(t => t.item.id), [a.id]);
+});
+
 test('the clipboard does not cross a board', () => {
   const [a] = addItems([photo()]);
   copyItems([a.id]);
